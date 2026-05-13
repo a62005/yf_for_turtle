@@ -10,6 +10,7 @@ A Python application to fetch Yahoo Fantasy NBA league data (teams and player st
 - **`storage.py`**: Defines a generic storage interface with a concrete `JsonStorage` class for currently saving JSON files to the `data/` directory.
 - **`.env`**: Stores sensitive credentials (ignored by Git).
 - **`requirements.txt`**: Project dependencies.
+- **`GEMINI.md`**: AI Agent instructions file. Provides context, architecture rules, and setup steps so any AI agent analyzing this repo in the future understands how to build, run, and modify it.
 
 ## Data Flow
 1. **Authentication**: `yahoofantasy` handles OAuth 2.0 (requires initial manual auth or cached `oauth2.json`).
