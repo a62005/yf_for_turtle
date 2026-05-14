@@ -32,13 +32,17 @@ def main():
                 logging.warning(f"Failed to load team mapping from {mapping_file}: {e}")
                 
         fetcher = YahooFantasyFetcher(team_mapping=team_mapping)
-        logging.info("Fetching data from Yahoo API...")
-        # Note: This will attempt to authenticate if oauth2.json is missing
-        data = fetcher.fetch_league_data(league_id)
-        
         storage = JsonStorage()
-        filepath = storage.save(data, league_id)
-        logging.info(f"Successfully saved data to {filepath}")
+
+        logging.info("Fetching roster data from Yahoo API...")
+        roster_data = fetcher.fetch_league_data(league_id)
+        roster_filepath = storage.save(roster_data, league_id)
+        logging.info(f"Successfully saved roster data to {roster_filepath}")
+        
+        logging.info("Fetching team stats from Yahoo API...")
+        stats_data = fetcher.fetch_team_stats(league_id)
+        stats_filepath = storage.save(stats_data, f"{league_id}_stats")
+        logging.info(f"Successfully saved team stats to {stats_filepath}")
         
     except Exception as e:
         logging.error(f"An error occurred: {e}")
