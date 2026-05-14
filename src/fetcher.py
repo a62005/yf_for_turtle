@@ -42,24 +42,44 @@ class YahooFantasyFetcher:
         league = yahoofantasy.League(self.ctx, league_id)
         team_stats_data = []
         
-        for team in league.teams():
+        # Use league.standings() as it often contains more data than league.teams()
+        try:
+            teams_from_standings = league.standings()
+        except Exception:
+            teams_from_standings = league.teams()
+            
+        for team in teams_from_standings:
             team_id = str(getattr(team, "team_id", ""))
             team_name = self.team_mapping.get(team_id, str(getattr(team, "name", "Unknown")))
             
-            # Attempt to safely extract some stats, depending on yahoofantasy model
             stats_dict = {}
+            
+            # 1. Extract from team_standings
             standings = getattr(team, "team_standings", None)
             if standings:
-                # Extract simple numeric/string attributes
                 for attr in dir(standings):
                     if not attr.startswith('_') and not callable(getattr(standings, attr)):
-                        stats_dict[attr] = getattr(standings, attr)
+                        val = getattr(standings, attr)
+                        # Handle nested objects like outcome_totals
+                        if hasattr(val, '__dict__') or (hasattr(val, 'ctx') and hasattr(val, 'id')):
+                            for sub_attr in dir(val):
+                                if not sub_attr.startswith('_') and not callable(getattr(val, sub_attr)):
+                                    stats_dict[f"{attr}_{sub_attr}"] = getattr(val, sub_attr)
+                        else:
+                            stats_dict[attr] = val
                         
-            # Also try team.team_stats or team.stats if available
-            team_stats = getattr(team, "team_stats", None) or getattr(team, "stats", None)
-            if team_stats and hasattr(team_stats, 'stats'):
-                # Assuming yahoofantasy's team_stats.stats is a list of Stat objects or dict
-                stats_dict['detailed_stats'] = str(team_stats.stats)
+            # 2. Extract from team_stats
+            tstats = getattr(team, "team_stats", None)
+            if tstats and hasattr(tstats, 'stats'):
+                # In some versions, stats is a list of objects with stat_id and value
+                try:
+                    for s in tstats.stats:
+                        s_id = getattr(s, 'stat_id', None)
+                        s_val = getattr(s, 'value', None)
+                        if s_id is not None:
+                            stats_dict[f"stat_{s_id}"] = s_val
+                except Exception:
+                    stats_dict['raw_stats'] = str(tstats.stats)
 
             team_stats_data.append({
                 "name": team_name,
