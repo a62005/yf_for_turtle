@@ -34,3 +34,36 @@ class YahooFantasyFetcher:
             teams_data.append(team_info)
             
         return {"teams": teams_data}
+
+    def fetch_team_stats(self, league_id: str) -> dict:
+        if not league_id.startswith('nba.l.'):
+            league_id = f"nba.l.{league_id}"
+            
+        league = yahoofantasy.League(self.ctx, league_id)
+        team_stats_data = []
+        
+        for team in league.teams():
+            team_id = str(getattr(team, "team_id", ""))
+            team_name = self.team_mapping.get(team_id, str(getattr(team, "name", "Unknown")))
+            
+            # Attempt to safely extract some stats, depending on yahoofantasy model
+            stats_dict = {}
+            standings = getattr(team, "team_standings", None)
+            if standings:
+                # Extract simple numeric/string attributes
+                for attr in dir(standings):
+                    if not attr.startswith('_') and not callable(getattr(standings, attr)):
+                        stats_dict[attr] = getattr(standings, attr)
+                        
+            # Also try team.team_stats or team.stats if available
+            team_stats = getattr(team, "team_stats", None) or getattr(team, "stats", None)
+            if team_stats and hasattr(team_stats, 'stats'):
+                # Assuming yahoofantasy's team_stats.stats is a list of Stat objects or dict
+                stats_dict['detailed_stats'] = str(team_stats.stats)
+
+            team_stats_data.append({
+                "name": team_name,
+                "stats": stats_dict
+            })
+            
+        return {"team_stats": team_stats_data}
