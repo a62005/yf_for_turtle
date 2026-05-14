@@ -17,6 +17,8 @@ class MockTeam:
         self.team_id = team_id
         # Add mock standings/stats
         self.team_standings = type('Standings', (), {'points_for': 100, 'points_against': 90})()
+        # Add team_stats for Task 2
+        self.team_stats = type('TeamStats', (), {'stats': 'mock_stats_list'})()
     
     def roster(self):
         return MockRoster()
@@ -70,3 +72,4 @@ def test_fetch_team_stats(mocker):
     assert stats_data["team_stats"][0]["name"] == "A01"
     # Verify stats extraction
     assert stats_data["team_stats"][0]["stats"].get("points_for") == 100
+    assert stats_data["team_stats"][0]["stats"].get("detailed_stats") == "mock_stats_list"
