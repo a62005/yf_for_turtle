@@ -6,18 +6,22 @@ class YahooFantasyFetcher:
         self.ctx = yahoofantasy.Context()
         
     def fetch_league_data(self, league_id: str) -> dict:
-        league = self.ctx.get_league(league_id)
+        # Ensure league_id has the correct prefix for NBA
+        if not league_id.startswith('nba.l.'):
+            league_id = f"nba.l.{league_id}"
+            
+        league = yahoofantasy.League(self.ctx, league_id)
         teams_data = []
         
         for team in league.teams():
             team_info = {
-                "name": getattr(team, "name", "Unknown"),
+                "name": str(getattr(team, "name", "Unknown")),
                 "roster": []
             }
             
-            for player in team.roster():
+            for player in team.roster().players:
                 player_info = {
-                    "name": getattr(player, "name", "Unknown")
+                    "name": str(getattr(player, "name", "Unknown"))
                 }
                 # To extend in the future: fetch stats for each player
                 team_info["roster"].append(player_info)

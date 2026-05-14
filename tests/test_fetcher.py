@@ -6,21 +6,26 @@ class MockPlayer:
     def __init__(self, name):
         self.name = name
 
+class MockRoster:
+    def __init__(self):
+        self.players = [MockPlayer("Player 1"), MockPlayer("Player 2")]
+
 class MockTeam:
     def __init__(self, name, team_name):
         self.name = team_name
     
     def roster(self):
-        return [MockPlayer("Player 1"), MockPlayer("Player 2")]
+        return MockRoster()
 
 class MockLeague:
     def teams(self):
         return [MockTeam("Team A", "Team A")]
 
 def test_fetch_league_data(mocker):
-    # Mock yahoofantasy Context
+    # Mock yahoofantasy Context and League
     mock_ctx = mocker.patch("src.fetcher.yahoofantasy.Context")
-    mock_ctx.return_value.get_league.return_value = MockLeague()
+    mock_league = mocker.patch("src.fetcher.yahoofantasy.League")
+    mock_league.return_value = MockLeague()
     
     fetcher = YahooFantasyFetcher()
     data = fetcher.fetch_league_data("mock_league_id")
