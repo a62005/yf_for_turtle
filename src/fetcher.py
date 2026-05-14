@@ -1,9 +1,21 @@
-# src/fetcher.py
 import yahoofantasy
+import os
+import json
 
 class YahooFantasyFetcher:
     def __init__(self):
         self.ctx = yahoofantasy.Context()
+        self.team_mapping = self._load_team_mapping()
+
+    def _load_team_mapping(self) -> dict:
+        mapping_file = "team_mapping.json"
+        if os.path.exists(mapping_file):
+            try:
+                with open(mapping_file, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception:
+                return {}
+        return {}
         
     def fetch_league_data(self, league_id: str) -> dict:
         # Ensure league_id has the correct prefix for NBA
@@ -14,8 +26,13 @@ class YahooFantasyFetcher:
         teams_data = []
         
         for team in league.teams():
+            # Get team ID safely
+            team_id = str(getattr(team, "team_id", ""))
+            # Use custom name if mapped, else fallback to API name
+            team_name = self.team_mapping.get(team_id, str(getattr(team, "name", "Unknown")))
+            
             team_info = {
-                "name": str(getattr(team, "name", "Unknown")),
+                "name": team_name,
                 "roster": []
             }
             
