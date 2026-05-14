@@ -1,6 +1,8 @@
 # main.py
 import logging
 import sys
+import os
+import json
 from src.config import load_config
 from src.fetcher import YahooFantasyFetcher
 from src.storage import JsonStorage
@@ -20,7 +22,16 @@ def main():
         league_id = config["LEAGUE_ID"]
         logging.info(f"Loaded config for League ID: {league_id}")
         
-        fetcher = YahooFantasyFetcher()
+        mapping_file = config.get("TEAM_MAPPING_FILE", "team_mapping.json")
+        team_mapping = {}
+        if os.path.exists(mapping_file):
+            try:
+                with open(mapping_file, "r", encoding="utf-8") as f:
+                    team_mapping = json.load(f)
+            except (json.JSONDecodeError, OSError) as e:
+                logging.warning(f"Failed to load team mapping from {mapping_file}: {e}")
+                
+        fetcher = YahooFantasyFetcher(team_mapping=team_mapping)
         logging.info("Fetching data from Yahoo API...")
         # Note: This will attempt to authenticate if oauth2.json is missing
         data = fetcher.fetch_league_data(league_id)

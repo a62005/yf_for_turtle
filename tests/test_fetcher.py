@@ -44,11 +44,7 @@ def test_fetch_league_data_with_mapping(mocker):
     mock_league = mocker.patch("src.fetcher.yahoofantasy.League")
     mock_league.return_value = MockLeague()
     
-    # Mock os.path.exists and json.load for team_mapping.json
-    mocker.patch("os.path.exists", return_value=True)
-    mocker.patch("builtins.open", mocker.mock_open(read_data='{"1": "A01"}'))
-    
-    fetcher = YahooFantasyFetcher()
+    fetcher = YahooFantasyFetcher(team_mapping={"1": "A01"})
     data = fetcher.fetch_league_data("mock_league_id")
     
     assert "teams" in data
