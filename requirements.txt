@@ -1,4 +1,5 @@
 yahoofantasy
 python-dotenv
 pytest
-pytest-mockpytz
+pytest-mock
+pytz
