@@ -3,3 +3,4 @@ python-dotenv
 pytest
 pytest-mock
 pytz
+Jinja2
