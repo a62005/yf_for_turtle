@@ -56,16 +56,22 @@ class YahooFantasyFetcher:
         
         # Try team_stats
         tstats = getattr(team_obj, "team_stats", None)
-        if tstats and hasattr(tstats, 'stats'):
-            try:
-                for s in tstats.stats:
-                    s_id = getattr(s, 'stat_id', None)
-                    s_val = getattr(s, 'value', None)
-                    if s_id is not None:
-                        label = translate_stat_id(s_id)
-                        stats_dict[label] = s_val
-            except Exception:
-                pass
+        if tstats:
+            # print(f"DEBUG: tstats type={type(tstats)}, dir={dir(tstats)}")
+            if hasattr(tstats, 'stats'):
+                # print(f"DEBUG: tstats.stats type={type(tstats.stats)}, dir={dir(tstats.stats)}")
+                try:
+                    # stats might have a 'stat' attribute which is a list
+                    stat_list = getattr(tstats.stats, 'stat', [])
+                    for s in as_list(stat_list):
+                        s_id = getattr(s, 'stat_id', None)
+                        s_val = getattr(s, 'value', None)
+                        if s_id is not None:
+                            label = translate_stat_id(s_id)
+                            stats_dict[label] = s_val
+                except Exception as e:
+                    # print(f"DEBUG: Error parsing tstats.stats: {e}")
+                    pass
         return stats_dict
 
     def fetch_team_stats(self, league_id: str) -> dict:

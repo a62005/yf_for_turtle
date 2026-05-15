@@ -48,14 +48,20 @@ def main():
         logging.info(f"Successfully saved season stats to {season_path}")
         
         # 3. Weekly Stats
-        current_week = get_fantasy_week(config["SEASON_START_DATE"])
+        # Test override:
+        test_week = os.getenv("TEST_WEEK")
+        current_week = int(test_week) if test_week else get_fantasy_week(config["SEASON_START_DATE"])
+        
         logging.info(f"Fetching weekly stats for Week {current_week}...")
         weekly_stats = fetcher.fetch_weekly_stats(league_id, current_week)
         weekly_path = storage.save(weekly_stats, f"week_{current_week}", sub_dir="weekly", overwrite=True)
         logging.info(f"Successfully saved weekly stats to {weekly_path}")
         
         # 4. Daily Stats
-        today_str = get_pacific_date()
+        # Test override:
+        test_date = os.getenv("TEST_DATE")
+        today_str = test_date if test_date else get_pacific_date()
+        
         logging.info(f"Fetching daily stats for {today_str}...")
         daily_stats = fetcher.fetch_daily_stats(league_id, today_str)
         daily_path = storage.save(daily_stats, today_str, sub_dir="daily", overwrite=True)
