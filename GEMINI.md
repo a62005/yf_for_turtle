@@ -18,7 +18,7 @@ This project is a Python scraper for Yahoo Fantasy NBA data. It uses the `yahoof
 - **Branching Strategy**: The `master` branch is protected and no direct commits are allowed.
 - **Main Development**: All work must be based on the `dev` branch.
 - **Feature/Fix Branches**: Create new branches from `dev` using the naming convention `feat/xxxx` for new features or `fix/xxxx` for bug fixes.
-- **Merging**: Once implementation is complete, merge the `feat/xxxx` or `fix/xxxx` branch back into `dev`.
+- **Merging**: Once implementation is complete, merge the `feat/xxxx` or `fix/xxxx` branch back into `dev`. **CRITICAL: Merging into the `dev` branch requires explicit user approval. Do NOT automatically merge branches into `dev` without asking.**
 
 ## Language Preference
 - Always respond to the user in Traditional Chinese (繁體中文) via the CLI.
