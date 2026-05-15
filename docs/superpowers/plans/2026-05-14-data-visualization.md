@@ -85,19 +85,20 @@ GIT_AUTHOR_NAME="AI Bot" GIT_AUTHOR_EMAIL="bot@example.com" GIT_COMMITTER_NAME="
 ### Task 2: HTML Template and Renderer
 
 **Files:**
-- Create: `src/visualizer/templates/stats_table.html`
-- Create: `src/visualizer/renderer.py`
+- Modify: `src/visualizer/templates/stats_table.html`
+- Modify: `src/visualizer/renderer.py`
 
-- [ ] **Step 1: Create Jinja2 Template**
+- [ ] **Step 1: Update Jinja2 Template**
 
-Create `src/visualizer/templates/stats_table.html` with:
-- Horizontal tight alignment of all 11 stat categories.
-- Zero gap grid using `border-collapse: collapse` and `margin-left: -1px`.
-- Black centered text, 13px mono-spaced font.
-- Merged headers for category labels.
-- Simple double horizontal line separator for combined mode (no text labels).
+Update `src/visualizer/templates/stats_table.html` with:
+- **Microsoft JhengHei** font.
+- 2px thick outside borders for each category table.
+- `margin-left: -2px` to ensure overlapping 2px borders remain consistent.
+- `box-sizing: border-box` for consistent cell sizing.
+- Uniform `min-width` for cells to ensure vertical alignment between daily and weekly rows.
+- Double horizontal line separator (approx 2px top/bottom borders) without text.
 
-- [ ] **Step 2: Implement Renderer**
+- [ ] **Step 2: Implement/Verify Renderer**
 
 ```python
 from jinja2 import Environment, FileSystemLoader

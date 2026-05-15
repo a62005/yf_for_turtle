@@ -20,14 +20,19 @@ The image will display 11 stat categories horizontally in a single row:
 11. **TO**: Sorted by Value (Ascending - Less is Better)
 
 ### 2.2 Visual Style
-*   **Horizontal Alignment**: All 11 stat categories must be aligned horizontally in a single tight row.
-*   **Grid Layout**: A full mesh grid with zero spacing between cells (`border-collapse: collapse`, `margin-left: -1px`).
-*   **Typography**: All text must be **black**, **centered**, and set in a compact mono-spaced font (approx 13px).
-*   **Compact Sizing**: Cell widths should be narrow (approx 60px) but sufficient to prevent text wrapping.
-*   **Header**: The first row of each table merges the left and right columns into a single centered header (e.g., "PTS").
+*   **Typography**: Use **Microsoft JhengHei** (微軟正黑體) for all text. Font size approx 13px.
+*   **Color**: All text and borders must be **black**.
+*   **Table Layout**: 
+    *   Horizontal tight alignment for all 11 stat categories.
+    *   **Thick Outside Borders**: Each stat category table has a **2px** outside border to distinguish categories.
+    *   **Internal Borders**: 1px mesh grid inside each table.
+    *   **Perfect Overlap**: Adjacent tables use `margin-left: -2px` to ensure shared 2px borders don't double in thickness.
+    *   **Centered Content**: All text (player names and values) centered within cells.
+    *   **Header**: Merged top row for category labels (e.g., "PTS"), centered and bold.
+    *   **No Wrapping**: Ensure names and values do not wrap (`white-space: nowrap`).
 
 ### 2.3 Output Versions
-1.  **Combined Version**: Daily stats row on top, Weekly stats row directly below. Separated by a simple **double horizontal line** with no additional text labels like "Above is Daily".
+1.  **Combined Version**: Daily stats row on top, Weekly stats row directly below. Separated by a simple **double horizontal line** (created by two 2px borders) with no text labels. Rows must be perfectly vertically aligned.
 2.  **Separate Version**: Two independent images, one for Daily and one for Weekly.
 
 ### 2.4 Export Format
