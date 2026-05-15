@@ -26,6 +26,8 @@
         text-align: center;
         box-sizing: border-box;
         margin-left: -2px; /* Perfect overlap for 2px borders */
+        table-layout: fixed;
+        width: 130px;
     }
     .category-table:first-child {
         margin-left: 0;
@@ -35,24 +37,25 @@
     }
     .category-table td {
         border: 1px solid #000;
-        padding: 4px 6px;
+        padding: 4px 2px;
         text-align: center;
         white-space: nowrap;
-        min-width: 65px;
         box-sizing: border-box;
+    }
+    .category-table td.name-cell {
+        width: 70px;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
     .category-table td.header-cell {
         border-bottom: 2px solid #000;
     }
     .category-table td.value-cell {
-        min-width: 55px;
+        width: 60px;
     }
     .separator {
         width: 100%;
-        margin: 8px 0;
-        border-top: 2px solid #000;
-        border-bottom: 2px solid #000;
-        height: 2px;
+        height: 4px;
         background: transparent;
     }
 </style>
@@ -69,7 +72,7 @@
                     </tr>
                     {% for row in cat.rows %}
                         <tr>
-                            <td>{{ row.name }}</td>
+                            <td class="name-cell">{{ row.name }}</td>
                             <td class="value-cell">{{ row.value }}</td>
                         </tr>
                     {% endfor %}
@@ -91,7 +94,7 @@
                     </tr>
                     {% for row in cat.rows %}
                         <tr>
-                            <td>{{ row.name }}</td>
+                            <td class="name-cell">{{ row.name }}</td>
                             <td class="value-cell">{{ row.value }}</td>
                         </tr>
                     {% endfor %}
