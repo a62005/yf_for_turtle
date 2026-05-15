@@ -38,6 +38,16 @@ class YahooFantasyFetcher:
             
         return {"teams": teams_data}
 
+    def _get_val(self, obj):
+        """Helper to get a serializable value from a Yahoo API object."""
+        if hasattr(obj, "$"):
+            return getattr(obj, "$")
+        if hasattr(obj, "__dict__"):
+            # If it's a complex object, we might want to return it as a dict or just its string representation
+            # For stats, usually they are simple values under the attribute
+            return str(obj)
+        return obj
+
     def _parse_stats(self, team_obj) -> dict:
         """Extract and translate stats from a team object (standings or scoreboard)."""
         stats_dict = {}
@@ -47,30 +57,27 @@ class YahooFantasyFetcher:
             for attr in dir(standings):
                 if not attr.startswith('_') and not callable(getattr(standings, attr)):
                     val = getattr(standings, attr)
-                    if hasattr(val, '__dict__') or (hasattr(val, 'ctx') and hasattr(val, 'id')):
-                        for sub_attr in dir(val):
+                    # Handle nested objects like outcome_totals
+                    if hasattr(val, 'outcome_totals') or hasattr(val, 'wins'):
+                         for sub_attr in dir(val):
                             if not sub_attr.startswith('_') and not callable(getattr(val, sub_attr)):
-                                stats_dict[f"{attr}_{sub_attr}"] = getattr(val, sub_attr)
+                                stats_dict[f"{attr}_{sub_attr}"] = self._get_val(getattr(val, sub_attr))
                     else:
-                        stats_dict[attr] = val
+                        stats_dict[attr] = self._get_val(val)
         
         # Try team_stats
         tstats = getattr(team_obj, "team_stats", None)
         if tstats:
-            # print(f"DEBUG: tstats type={type(tstats)}, dir={dir(tstats)}")
             if hasattr(tstats, 'stats'):
-                # print(f"DEBUG: tstats.stats type={type(tstats.stats)}, dir={dir(tstats.stats)}")
                 try:
-                    # stats might have a 'stat' attribute which is a list
                     stat_list = getattr(tstats.stats, 'stat', [])
                     for s in as_list(stat_list):
                         s_id = getattr(s, 'stat_id', None)
                         s_val = getattr(s, 'value', None)
                         if s_id is not None:
                             label = translate_stat_id(s_id)
-                            stats_dict[label] = s_val
-                except Exception as e:
-                    # print(f"DEBUG: Error parsing tstats.stats: {e}")
+                            stats_dict[label] = self._get_val(s_val)
+                except Exception:
                     pass
         return stats_dict
 
@@ -110,9 +117,28 @@ class YahooFantasyFetcher:
     def fetch_daily_stats(self, league_id: str, date_str: str) -> dict:
         if not league_id.startswith('nba.l.'): league_id = f"nba.l.{league_id}"
         league = yahoofantasy.League(self.ctx, league_id)
-        # scoreboard;type=day;date=YYYY-MM-DD
-        data = self.ctx._load_or_fetch(f"daily_stats.{league_id}.{date_str}", f"scoreboard;type=day;date={date_str}", league=league_id)
-        return self._parse_scoreboard(data)
+        # Using teams/stats;type=date;date=YYYY-MM-DD for true daily totals
+        url = f"teams/stats;type=date;date={date_str}"
+        data = self.ctx._load_or_fetch(f"daily_stats.{league_id}.{date_str}", url, league=league_id)
+        return self._parse_teams_from_content(data)
+
+    def _parse_teams_from_content(self, data) -> dict:
+        """Common parser for responses containing a list of teams (standings or teams/stats)."""
+        team_stats_data = []
+        try:
+            teams_data = data["fantasy_content"]["league"]["teams"]["team"]
+            for team_item in as_list(teams_data):
+                t = Team(self.ctx, None, team_item["team_id"])
+                from_response_object(t, team_item)
+                team_id = str(getattr(t, "team_id", ""))
+                team_name = self.team_mapping.get(team_id, str(getattr(t, "name", "Unknown")))
+                team_stats_data.append({
+                    "name": team_name,
+                    "stats": self._parse_stats(t)
+                })
+        except Exception:
+            pass
+        return {"team_stats": team_stats_data}
 
     def _parse_scoreboard(self, data) -> dict:
         team_stats_data = []
