@@ -1,4 +1,5 @@
 import yahoofantasy
+from src.constants.stat_map import translate_stat_id
 
 class YahooFantasyFetcher:
     def __init__(self, team_mapping: dict = None):
@@ -35,6 +36,36 @@ class YahooFantasyFetcher:
             
         return {"teams": teams_data}
 
+    def _parse_stats(self, team_obj) -> dict:
+        """Extract and translate stats from a team object (standings or scoreboard)."""
+        stats_dict = {}
+        # Try team_standings
+        standings = getattr(team_obj, "team_standings", None)
+        if standings:
+            for attr in dir(standings):
+                if not attr.startswith('_') and not callable(getattr(standings, attr)):
+                    val = getattr(standings, attr)
+                    if hasattr(val, '__dict__') or (hasattr(val, 'ctx') and hasattr(val, 'id')):
+                        for sub_attr in dir(val):
+                            if not sub_attr.startswith('_') and not callable(getattr(val, sub_attr)):
+                                stats_dict[f"{attr}_{sub_attr}"] = getattr(val, sub_attr)
+                    else:
+                        stats_dict[attr] = val
+        
+        # Try team_stats
+        tstats = getattr(team_obj, "team_stats", None)
+        if tstats and hasattr(tstats, 'stats'):
+            try:
+                for s in tstats.stats:
+                    s_id = getattr(s, 'stat_id', None)
+                    s_val = getattr(s, 'value', None)
+                    if s_id is not None:
+                        label = translate_stat_id(s_id)
+                        stats_dict[label] = s_val
+            except Exception:
+                pass
+        return stats_dict
+
     def fetch_team_stats(self, league_id: str) -> dict:
         if not league_id.startswith('nba.l.'):
             league_id = f"nba.l.{league_id}"
@@ -52,38 +83,46 @@ class YahooFantasyFetcher:
             team_id = str(getattr(team, "team_id", ""))
             team_name = self.team_mapping.get(team_id, str(getattr(team, "name", "Unknown")))
             
-            stats_dict = {}
-            
-            # 1. Extract from team_standings
-            standings = getattr(team, "team_standings", None)
-            if standings:
-                for attr in dir(standings):
-                    if not attr.startswith('_') and not callable(getattr(standings, attr)):
-                        val = getattr(standings, attr)
-                        # Handle nested objects like outcome_totals
-                        if hasattr(val, '__dict__') or (hasattr(val, 'ctx') and hasattr(val, 'id')):
-                            for sub_attr in dir(val):
-                                if not sub_attr.startswith('_') and not callable(getattr(val, sub_attr)):
-                                    stats_dict[f"{attr}_{sub_attr}"] = getattr(val, sub_attr)
-                        else:
-                            stats_dict[attr] = val
-                        
-            # 2. Extract from team_stats
-            tstats = getattr(team, "team_stats", None)
-            if tstats and hasattr(tstats, 'stats'):
-                # In some versions, stats is a list of objects with stat_id and value
-                try:
-                    for s in tstats.stats:
-                        s_id = getattr(s, 'stat_id', None)
-                        s_val = getattr(s, 'value', None)
-                        if s_id is not None:
-                            stats_dict[f"stat_{s_id}"] = s_val
-                except Exception:
-                    stats_dict['raw_stats'] = str(tstats.stats)
+            stats_dict = self._parse_stats(team)
 
             team_stats_data.append({
                 "name": team_name,
                 "stats": stats_dict
             })
             
+        return {"team_stats": team_stats_data}
+
+    def fetch_weekly_stats(self, league_id: str, week: int) -> dict:
+        if not league_id.startswith('nba.l.'): league_id = f"nba.l.{league_id}"
+        league = yahoofantasy.League(self.ctx, league_id)
+        # scoreboard;week=N
+        data = self.ctx._load_or_fetch(f"weekly_stats.{league_id}.{week}", f"scoreboard;week={week}", league=league_id)
+        return self._parse_scoreboard(data)
+
+    def fetch_daily_stats(self, league_id: str, date_str: str) -> dict:
+        if not league_id.startswith('nba.l.'): league_id = f"nba.l.{league_id}"
+        league = yahoofantasy.League(self.ctx, league_id)
+        # scoreboard;type=day;date=YYYY-MM-DD
+        data = self.ctx._load_or_fetch(f"daily_stats.{league_id}.{date_str}", f"scoreboard;type=day;date={date_str}", league=league_id)
+        return self._parse_scoreboard(data)
+
+    def _parse_scoreboard(self, data) -> dict:
+        from yahoofantasy.api.parse import as_list, from_response_object
+        from yahoofantasy.resources.team import Team
+        
+        team_stats_data = []
+        try:
+            matchups = data["fantasy_content"]["league"]["scoreboard"]["matchups"]["matchup"]
+            for matchup in as_list(matchups):
+                for team_data in as_list(matchup["teams"]["team"]):
+                    t = Team(self.ctx, None, team_data["team_id"])
+                    from_response_object(t, team_data)
+                    team_id = str(getattr(t, "team_id", ""))
+                    team_name = self.team_mapping.get(team_id, str(getattr(t, "name", "Unknown")))
+                    team_stats_data.append({
+                        "name": team_name,
+                        "stats": self._parse_stats(t)
+                    })
+        except Exception:
+            pass
         return {"team_stats": team_stats_data}
