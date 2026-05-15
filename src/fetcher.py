@@ -5,7 +5,7 @@ from yahoofantasy.resources.team import Team
 
 class YahooFantasyFetcher:
     def __init__(self, team_mapping: dict = None):
-        self.ctx = yahoofantasy.Context()
+        self.ctx = yahoofantasy.Context(persist_key="credentials/")
         self.team_mapping = team_mapping or {}
         
     def fetch_league_data(self, league_id: str) -> dict:
