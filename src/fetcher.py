@@ -1,5 +1,7 @@
 import yahoofantasy
 from src.constants.stat_map import translate_stat_id
+from yahoofantasy.api.parse import as_list, from_response_object
+from yahoofantasy.resources.team import Team
 
 class YahooFantasyFetcher:
     def __init__(self, team_mapping: dict = None):
@@ -107,9 +109,6 @@ class YahooFantasyFetcher:
         return self._parse_scoreboard(data)
 
     def _parse_scoreboard(self, data) -> dict:
-        from yahoofantasy.api.parse import as_list, from_response_object
-        from yahoofantasy.resources.team import Team
-        
         team_stats_data = []
         try:
             matchups = data["fantasy_content"]["league"]["scoreboard"]["matchups"]["matchup"]

@@ -35,22 +35,31 @@ def main():
         fetcher = YahooFantasyFetcher(team_mapping=team_mapping)
         storage = JsonStorage()
 
-        # 1. Season Stats
+        # 1. Roster Data
+        logging.info("Fetching roster data from Yahoo API...")
+        roster_data = fetcher.fetch_league_data(league_id)
+        roster_path = storage.save(roster_data, league_id)
+        logging.info(f"Successfully saved roster data to {roster_path}")
+
+        # 2. Season Stats
         logging.info("Fetching season stats...")
         season_stats = fetcher.fetch_team_stats(league_id)
-        storage.save(season_stats, "season_stats", overwrite=True)
+        season_path = storage.save(season_stats, f"{league_id}_season_stats", overwrite=True)
+        logging.info(f"Successfully saved season stats to {season_path}")
         
-        # 2. Weekly Stats
+        # 3. Weekly Stats
         current_week = get_fantasy_week(config["SEASON_START_DATE"])
         logging.info(f"Fetching weekly stats for Week {current_week}...")
         weekly_stats = fetcher.fetch_weekly_stats(league_id, current_week)
-        storage.save(weekly_stats, f"week_{current_week}", sub_dir="weekly", overwrite=True)
+        weekly_path = storage.save(weekly_stats, f"week_{current_week}", sub_dir="weekly", overwrite=True)
+        logging.info(f"Successfully saved weekly stats to {weekly_path}")
         
-        # 3. Daily Stats
+        # 4. Daily Stats
         today_str = get_pacific_date()
         logging.info(f"Fetching daily stats for {today_str}...")
         daily_stats = fetcher.fetch_daily_stats(league_id, today_str)
-        storage.save(daily_stats, today_str, sub_dir="daily", overwrite=True)
+        daily_path = storage.save(daily_stats, today_str, sub_dir="daily", overwrite=True)
+        logging.info(f"Successfully saved daily stats to {daily_path}")
         
         logging.info("All fetches completed successfully.")
         
