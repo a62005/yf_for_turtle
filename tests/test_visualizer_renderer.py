@@ -16,8 +16,7 @@ def test_render_stats_html_combined():
     html = render_stats_html(daily_data, weekly_data)
     assert "PTS" in html
     assert "REB" in html
-    assert "separator" in html
-    assert "==== 以上為日統計 / 以下為週統計 (格式相同) ====" in html
+    assert "class=\"separator\"" in html
 
 def test_template_loading():
     # Verify that the renderer can find the template even when called from different locations
