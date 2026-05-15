@@ -6,7 +6,7 @@ This design specifies the implementation of a data visualization module that con
 ## 2. Requirements & Layout
 
 ### 2.1 Stat Columns & Sorting
-The image will display 11 stat categories in the following order:
+The image will display 11 stat categories horizontally in a single row:
 1.  **FG**: Sorted by FG% (Descending)
 2.  **FG%**: Sorted by FG% (Descending)
 3.  **FT**: Sorted by FT% (Descending)
@@ -20,13 +20,14 @@ The image will display 11 stat categories in the following order:
 11. **TO**: Sorted by Value (Ascending - Less is Better)
 
 ### 2.2 Visual Style
-*   **Grid Layout**: A full mesh grid with no gaps between cells.
-*   **Typography**: All text must be **black** and **centered** within cells.
-*   **Header**: The first row of each table merges the left column (usually player name) and the right column (stat value) into a single centered header (e.g., "PTS").
-*   **ASCII-inspired**: Clean, mono-spaced or clear sans-serif font for maximum clarity.
+*   **Horizontal Alignment**: All 11 stat categories must be aligned horizontally in a single tight row.
+*   **Grid Layout**: A full mesh grid with zero spacing between cells (`border-collapse: collapse`, `margin-left: -1px`).
+*   **Typography**: All text must be **black**, **centered**, and set in a compact mono-spaced font (approx 13px).
+*   **Compact Sizing**: Cell widths should be narrow (approx 60px) but sufficient to prevent text wrapping.
+*   **Header**: The first row of each table merges the left and right columns into a single centered header (e.g., "PTS").
 
 ### 2.3 Output Versions
-1.  **Combined Version**: Daily stats on top, Weekly stats on bottom, separated by a distinct horizontal line (e.g., double line) in a single image.
+1.  **Combined Version**: Daily stats row on top, Weekly stats row directly below. Separated by a simple **double horizontal line** with no additional text labels like "Above is Daily".
 2.  **Separate Version**: Two independent images, one for Daily and one for Weekly.
 
 ### 2.4 Export Format
