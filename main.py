@@ -38,12 +38,6 @@ def main():
         fetcher = YahooFantasyFetcher(team_mapping=team_mapping)
         storage = JsonStorage()
 
-        # 1. Roster Data
-        logging.info("Fetching roster data from Yahoo API...")
-        roster_data = fetcher.fetch_league_data(league_id)
-        roster_path = storage.save(roster_data, league_id)
-        logging.info(f"Successfully saved roster data to {roster_path}")
-
         # 2. Season Stats
         logging.info("Fetching season stats...")
         season_stats = fetcher.fetch_team_stats(league_id)
