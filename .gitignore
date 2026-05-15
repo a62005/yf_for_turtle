@@ -19,3 +19,7 @@ oauth2.json
 
 # Testing
 .pytest_cache/
+
+# Credentials
+credentials/
+.yahoofantasy
