@@ -110,9 +110,10 @@ class YahooFantasyFetcher:
     def fetch_weekly_stats(self, league_id: str, week: int) -> dict:
         if not league_id.startswith('nba.l.'): league_id = f"nba.l.{league_id}"
         league = yahoofantasy.League(self.ctx, league_id)
-        # scoreboard;week=N
-        data = self.ctx._load_or_fetch(f"weekly_stats.{league_id}.{week}", f"scoreboard;week={week}", league=league_id)
-        return self._parse_scoreboard(data)
+        # Using teams/stats;type=week;week=N to get all 12 teams instead of scoreboard (which only shows matchups)
+        url = f"teams/stats;type=week;week={week}"
+        data = self.ctx._load_or_fetch(f"weekly_teams_stats.{league_id}.{week}", url, league=league_id)
+        return self._parse_teams_from_content(data)
 
     def fetch_daily_stats(self, league_id: str, date_str: str) -> dict:
         if not league_id.startswith('nba.l.'): league_id = f"nba.l.{league_id}"
