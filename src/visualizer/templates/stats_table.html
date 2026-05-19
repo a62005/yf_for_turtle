@@ -59,6 +59,10 @@
     .category-table td.value-cell {
         width: 60px;
     }
+    .category-table td.status-cell {
+        background-color: #e6f3ff; /* Light blue for participation stats */
+        font-weight: bold;
+    }
     .separator {
         width: 100%;
         height: 4px;
@@ -79,7 +83,7 @@
                     {% for row in cat.rows %}
                         <tr>
                             <td class="name-cell">{{ row.name }}</td>
-                            <td class="value-cell">{{ row.value }}</td>
+                            <td class="value-cell {% if cat.label in ['Today Player', 'Game Player'] %}status-cell{% endif %}">{{ row.value }}</td>
                         </tr>
                     {% endfor %}
                 </table>
@@ -101,7 +105,7 @@
                     {% for row in cat.rows %}
                         <tr>
                             <td class="name-cell">{{ row.name }}</td>
-                            <td class="value-cell">{{ row.value }}</td>
+                            <td class="value-cell {% if cat.label in ['Today Player', 'Game Player'] %}status-cell{% endif %}">{{ row.value }}</td>
                         </tr>
                     {% endfor %}
                 </table>
