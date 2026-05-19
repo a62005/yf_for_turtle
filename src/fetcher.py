@@ -13,11 +13,15 @@ class YahooFantasyFetcher:
             client_secret=client_secret
         )
         self.team_mapping = team_mapping or {}
+
+    def _normalize_league_id(self, league_id: str) -> str:
+        if league_id and not str(league_id).startswith('nba.l.'):
+            return f"nba.l.{league_id}"
+        return str(league_id)
         
     def fetch_league_data(self, league_id: str) -> dict:
         # Ensure league_id has the correct prefix for NBA
-        if not league_id.startswith('nba.l.'):
-            league_id = f"nba.l.{league_id}"
+        league_id = self._normalize_league_id(league_id)
             
         league = yahoofantasy.League(self.ctx, league_id)
         teams_data = []
@@ -91,8 +95,7 @@ class YahooFantasyFetcher:
         return stats_dict
 
     def fetch_team_stats(self, league_id: str) -> dict:
-        if not league_id.startswith('nba.l.'):
-            league_id = f"nba.l.{league_id}"
+        league_id = self._normalize_league_id(league_id)
             
         league = yahoofantasy.League(self.ctx, league_id)
         team_stats_data = []
@@ -117,7 +120,7 @@ class YahooFantasyFetcher:
         return {"team_stats": team_stats_data}
 
     def fetch_weekly_stats(self, league_id: str, week: int) -> dict:
-        if not league_id.startswith('nba.l.'): league_id = f"nba.l.{league_id}"
+        league_id = self._normalize_league_id(league_id)
         league = yahoofantasy.League(self.ctx, league_id)
         # Using teams/stats;type=week;week=N to get all 12 teams instead of scoreboard (which only shows matchups)
         url = f"teams/stats;type=week;week={week}"
@@ -125,7 +128,7 @@ class YahooFantasyFetcher:
         return self._parse_teams_from_content(data)
 
     def fetch_daily_stats(self, league_id: str, date_str: str) -> dict:
-        if not league_id.startswith('nba.l.'): league_id = f"nba.l.{league_id}"
+        league_id = self._normalize_league_id(league_id)
         league = yahoofantasy.League(self.ctx, league_id)
         # Using teams/stats;type=date;date=YYYY-MM-DD for true daily totals
         url = f"teams/stats;type=date;date={date_str}"
@@ -171,7 +174,7 @@ class YahooFantasyFetcher:
 
     def fetch_batch_rosters(self, league_id: str, date_str: str) -> dict:
         """Fetch non-bench player counts for all teams in the league for a specific date."""
-        if not league_id.startswith('nba.l.'): league_id = f"nba.l.{league_id}"
+        league_id = self._normalize_league_id(league_id)
         # Fetching rosters for all teams via batch request
         url = f"teams/roster;date={date_str}"
         data = self.ctx.make_request(url, league=league_id)
@@ -200,7 +203,7 @@ class YahooFantasyFetcher:
 
     def fetch_league_scoreboard(self, league_id: str, week: int) -> dict:
         """Fetch played and total game counts for all teams from the scoreboard."""
-        if not league_id.startswith('nba.l.'): league_id = f"nba.l.{league_id}"
+        league_id = self._normalize_league_id(league_id)
         url = f"league/{league_id}/scoreboard;week={week}"
         data = self.ctx.make_request(url)
         
