@@ -4,8 +4,12 @@ from yahoofantasy.api.parse import as_list, from_response_object
 from yahoofantasy.resources.team import Team
 
 class YahooFantasyFetcher:
-    def __init__(self, team_mapping: dict = None):
-        self.ctx = yahoofantasy.Context(persist_key="credentials/")
+    def __init__(self, team_mapping: dict = None, client_id: str = None, client_secret: str = None):
+        self.ctx = yahoofantasy.Context(
+            persist_key="credentials/",
+            client_id=client_id,
+            client_secret=client_secret
+        )
         self.team_mapping = team_mapping or {}
         
     def fetch_league_data(self, league_id: str) -> dict:

@@ -6,7 +6,7 @@ This project is a Python scraper for Yahoo Fantasy NBA data. It uses the `yahoof
 ## Architecture Rules
 1. **Separation of Concerns**: `fetcher.py` handles API calls, `storage.py` handles saving data, `config.py` handles environment variables.
 2. **Data Format**: Currently outputs to JSON in the `data/` directory. If changing to a database, implement a new class in `storage.py` conforming to a common interface.
-3. **Authentication**: Handled via `oauth2.json` which must NOT be committed. **CRITICAL: NEVER delete, modify, or overwrite the `credentials/` directory, `.yahoofantasy` directory, or `oauth2.json` file. These contain user credentials and are strictly off-limits.**
+3. **Authentication & Config**: Handled via `oauth2.json` and `.env`. **CRITICAL: NEVER delete, modify, or overwrite the `.env` file (especially `LEAGUE_ID`), `credentials/` directory, `.yahoofantasy` directory, or `oauth2.json` file. These contain essential configurations and user credentials and are strictly off-limits.**
 4. **Testing**: Use `pytest`. Run tests before committing.
 
 ## Setup Instructions

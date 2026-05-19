@@ -37,18 +37,24 @@
     }
     .category-table td {
         border: 1px solid #000;
-        padding: 4px 2px;
+        padding: 0 2px;
         text-align: center;
         white-space: nowrap;
         box-sizing: border-box;
+        height: 28px; /* Fixed height for all cells */
+        vertical-align: middle;
     }
     .category-table td.name-cell {
-        width: 70px;
+        width: 75px;
+        max-width: 75px;
         overflow: hidden;
         text-overflow: ellipsis;
+        font-size: 12px;
     }
     .category-table td.header-cell {
         border-bottom: 2px solid #000;
+        background-color: #f0f0f0; /* Light gray for headers */
+        height: 32px; /* Slightly taller header */
     }
     .category-table td.value-cell {
         width: 60px;

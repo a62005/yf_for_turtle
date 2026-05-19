@@ -14,5 +14,7 @@ def load_config() -> dict:
     return {
         "LEAGUE_ID": league_id,
         "TEAM_MAPPING_FILE": mapping_file,
-        "SEASON_START_DATE": season_start
+        "SEASON_START_DATE": season_start,
+        "YAHOO_CLIENT_ID": os.getenv("YAHOO_CLIENT_ID"),
+        "YAHOO_CLIENT_SECRET": os.getenv("YAHOO_CLIENT_SECRET")
     }

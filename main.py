@@ -35,7 +35,11 @@ def main():
             except (json.JSONDecodeError, OSError) as e:
                 logging.warning(f"Failed to load team mapping from {mapping_file}: {e}")
                 
-        fetcher = YahooFantasyFetcher(team_mapping=team_mapping)
+        fetcher = YahooFantasyFetcher(
+            team_mapping=team_mapping,
+            client_id=config.get("YAHOO_CLIENT_ID"),
+            client_secret=config.get("YAHOO_CLIENT_SECRET")
+        )
         storage = JsonStorage()
 
         # 2. Season Stats
