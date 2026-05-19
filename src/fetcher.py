@@ -5,6 +5,8 @@ from src.constants.stat_map import translate_stat_id
 from yahoofantasy.api.parse import as_list, from_response_object
 from yahoofantasy.resources.team import Team
 
+YAHOO_NS = {'ns': 'http://fantasysports.yahooapis.com/fantasy/v2/base.rng'}
+
 class YahooFantasyFetcher:
     def __init__(self, team_mapping: dict = None, client_id: str = None, client_secret: str = None):
         self.ctx = yahoofantasy.Context(
@@ -19,6 +21,12 @@ class YahooFantasyFetcher:
             return f"nba.l.{league_id}"
         return str(league_id)
         
+    def _find_node(self, parent, path):
+        return parent.find(path, YAHOO_NS)
+
+    def _find_all_nodes(self, parent, path):
+        return parent.findall(path, YAHOO_NS)
+
     def fetch_league_data(self, league_id: str) -> dict:
         # Ensure league_id has the correct prefix for NBA
         league_id = self._normalize_league_id(league_id)
@@ -182,16 +190,15 @@ class YahooFantasyFetcher:
         roster_counts = {}
         try:
             root = ET.fromstring(data)
-            ns = {'ns': 'http://fantasysports.yahooapis.com/fantasy/v2/base.rng'}
-            for team in root.findall('.//ns:team', ns):
-                team_id_node = team.find('ns:team_id', ns)
+            for team in self._find_all_nodes(root, './/ns:team'):
+                team_id_node = self._find_node(team, 'ns:team_id')
                 if team_id_node is None:
                     continue
                 team_id = team_id_node.text
                 
                 active_count = 0
-                for player in team.findall('.//ns:player', ns):
-                    pos_node = player.find('.//ns:selected_position/ns:position', ns)
+                for player in self._find_all_nodes(team, './/ns:player'):
+                    pos_node = self._find_node(player, './/ns:selected_position/ns:position')
                     pos = pos_node.text if pos_node is not None else None
                     # Non-starting positions to exclude
                     if pos and pos not in ['BN', 'IL', 'IL+', 'NA']:
@@ -210,17 +217,16 @@ class YahooFantasyFetcher:
         game_counts = {}
         try:
             root = ET.fromstring(data)
-            ns = {'ns': 'http://fantasysports.yahooapis.com/fantasy/v2/base.rng'}
-            for team in root.findall('.//ns:team', ns):
-                team_id_node = team.find('ns:team_id', ns)
+            for team in self._find_all_nodes(root, './/ns:team'):
+                team_id_node = self._find_node(team, 'ns:team_id')
                 if team_id_node is None:
                     continue
                 team_id = team_id_node.text
                 
-                rem_games_node = team.find('.//ns:team_remaining_games/ns:total', ns)
+                rem_games_node = self._find_node(team, './/ns:team_remaining_games/ns:total')
                 if rem_games_node is not None:
                     def get_int_text(node_path):
-                        node = rem_games_node.find(node_path, ns)
+                        node = self._find_node(rem_games_node, node_path)
                         if node is not None and node.text:
                             try:
                                 return int(node.text)
