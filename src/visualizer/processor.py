@@ -3,8 +3,26 @@ def process_stats_for_visual(data: dict) -> list:
     if not team_stats:
         return []
 
-    # Map display labels to (data_key, sort_key, reverse_sort)
-    categories = [
+    # Prepare categories list
+    categories = []
+    
+    # Check for Game Player data
+    if any("GP_PLAYED" in t["stats"] for t in team_stats):
+        # Add composite sort key: Played * 1000 + Total
+        for t in team_stats:
+            played = t["stats"].get("GP_PLAYED", 0)
+            total = t["stats"].get("GP_TOTAL", 0)
+            t["stats"]["GP_SORT_KEY"] = (played * 1000) + total
+            t["stats"]["Game Player"] = f"{played} / {total}"
+        
+        categories.append({"label": "Game Player", "data_key": "Game Player", "sort_key": "GP_SORT_KEY", "reverse": True})
+
+    # Check for Today Player data
+    if any("Today Player" in t["stats"] for t in team_stats):
+        categories.append({"label": "Today Player", "data_key": "Today Player", "sort_key": "Today Player", "reverse": True})
+
+    # Standard categories
+    categories += [
         {"label": "FG", "data_key": "FGM/FGA", "sort_key": "FG%", "reverse": True},
         {"label": "FG%", "data_key": "FG%", "sort_key": "FG%", "reverse": True},
         {"label": "FT", "data_key": "FTM/FTA", "sort_key": "FT%", "reverse": True},
@@ -22,7 +40,11 @@ def process_stats_for_visual(data: dict) -> list:
     for cat in categories:
         def sort_key_func(team):
             val = team["stats"].get(cat["sort_key"], 0)
-            return val if isinstance(val, (int, float)) else 0
+            if isinstance(val, (int, float)):
+                return val
+            # Handle percentage strings if necessary
+            try: return float(str(val).strip('%'))
+            except: return 0
 
         sorted_teams = sorted(team_stats, key=sort_key_func, reverse=cat["reverse"])
         
