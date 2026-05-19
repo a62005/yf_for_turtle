@@ -26,7 +26,7 @@ class YahooFantasyFetcher:
             # Get team ID safely
             team_id = str(getattr(team, "team_id", ""))
             # Use custom name if mapped, else fallback to API name
-            team_name = self.team_mapping.get(team_id, str(getattr(team, "name", "Unknown")))
+            team_name = self.get_team_name(team_id, str(getattr(team, "name", "Unknown")))
             
             team_info = {
                 "name": team_name,
@@ -43,6 +43,9 @@ class YahooFantasyFetcher:
             teams_data.append(team_info)
             
         return {"teams": teams_data}
+
+    def get_team_name(self, team_id: str, default_name: str = "Unknown") -> str:
+        return self.team_mapping.get(str(team_id), default_name)
 
     def _get_val(self, obj):
         """Helper to get a serializable value from a Yahoo API object."""
@@ -138,8 +141,9 @@ class YahooFantasyFetcher:
                 t = Team(self.ctx, None, team_item["team_id"])
                 from_response_object(t, team_item)
                 team_id = str(getattr(t, "team_id", ""))
-                team_name = self.team_mapping.get(team_id, str(getattr(t, "name", "Unknown")))
+                team_name = self.get_team_name(team_id, str(getattr(t, "name", "Unknown")))
                 team_stats_data.append({
+                    "team_id": team_id,
                     "name": team_name,
                     "stats": self._parse_stats(t)
                 })
