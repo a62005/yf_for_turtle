@@ -1,4 +1,6 @@
 import yahoofantasy
+import logging
+import xml.etree.ElementTree as ET
 from src.constants.stat_map import translate_stat_id
 from yahoofantasy.api.parse import as_list, from_response_object
 from yahoofantasy.resources.team import Team
@@ -172,20 +174,23 @@ class YahooFantasyFetcher:
         
         roster_counts = {}
         try:
-            import xml.etree.ElementTree as ET
             root = ET.fromstring(data)
             ns = {'ns': 'http://fantasysports.yahooapis.com/fantasy/v2/base.rng'}
             for team in root.findall('.//ns:team', ns):
-                team_id = team.find('ns:team_id', ns).text
+                team_id_node = team.find('ns:team_id', ns)
+                if team_id_node is None:
+                    continue
+                team_id = team_id_node.text
+                
                 active_count = 0
                 for player in team.findall('.//ns:player', ns):
-                    pos = player.find('.//ns:selected_position/ns:position', ns).text
+                    pos_node = player.find('.//ns:selected_position/ns:position', ns)
+                    pos = pos_node.text if pos_node is not None else None
                     # Non-starting positions to exclude
-                    if pos not in ['BN', 'IL', 'IL+', 'NA']:
+                    if pos and pos not in ['BN', 'IL', 'IL+', 'NA']:
                         active_count += 1
                 roster_counts[team_id] = active_count
         except Exception as e:
-            import logging
             logging.error(f"Error parsing batch rosters: {e}")
         return roster_counts
 
@@ -197,21 +202,33 @@ class YahooFantasyFetcher:
         
         game_counts = {}
         try:
-            import xml.etree.ElementTree as ET
             root = ET.fromstring(data)
             ns = {'ns': 'http://fantasysports.yahooapis.com/fantasy/v2/base.rng'}
             for team in root.findall('.//ns:team', ns):
-                team_id = team.find('ns:team_id', ns).text
+                team_id_node = team.find('ns:team_id', ns)
+                if team_id_node is None:
+                    continue
+                team_id = team_id_node.text
+                
                 rem_games_node = team.find('.//ns:team_remaining_games/ns:total', ns)
                 if rem_games_node is not None:
-                    completed = int(rem_games_node.find('ns:completed_games', ns).text or 0)
-                    live = int(rem_games_node.find('ns:live_games', ns).text or 0)
-                    remaining = int(rem_games_node.find('ns:remaining_games', ns).text or 0)
+                    def get_int_text(node_path):
+                        node = rem_games_node.find(node_path, ns)
+                        if node is not None and node.text:
+                            try:
+                                return int(node.text)
+                            except ValueError:
+                                return 0
+                        return 0
+
+                    completed = get_int_text('ns:completed_games')
+                    live = get_int_text('ns:live_games')
+                    remaining = get_int_text('ns:remaining_games')
+                    
                     played = completed + live
                     total = played + remaining
                     game_counts[team_id] = {"played": played, "total": total}
         except Exception as e:
-            import logging
             logging.error(f"Error parsing scoreboard games: {e}")
         return game_counts
 
