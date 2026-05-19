@@ -165,3 +165,33 @@ def test_fetch_daily_stats(mocker):
     assert "team_stats" in data
     assert len(data["team_stats"]) == 1
     assert data["team_stats"][0]["stats"]["PTS"] == "20"
+
+def test_fetch_batch_rosters(mocker):
+    mock_ctx = mocker.patch("src.fetcher.yahoofantasy.Context").return_value
+    xml_response = """
+    <fantasy_content xmlns="http://fantasysports.yahooapis.com/fantasy/v2/base.rng">
+      <league>
+        <teams>
+          <team>
+            <team_id>1</team_id>
+            <roster>
+              <players>
+                <player>
+                  <selected_position><position>PG</position></selected_position>
+                </player>
+                <player>
+                  <selected_position><position>BN</position></selected_position>
+                </player>
+              </players>
+            </roster>
+          </team>
+        </teams>
+      </league>
+    </fantasy_content>
+    """
+    mock_ctx.make_request.return_value = xml_response
+    
+    fetcher = YahooFantasyFetcher()
+    data = fetcher.fetch_batch_rosters("12345", "2023-11-01")
+    
+    assert data == {"1": 1}
