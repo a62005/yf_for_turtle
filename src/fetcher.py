@@ -162,3 +162,56 @@ class YahooFantasyFetcher:
         except Exception:
             pass
         return {"team_stats": team_stats_data}
+
+    def fetch_batch_rosters(self, league_id: str, date_str: str) -> dict:
+        """Fetch non-bench player counts for all teams in the league for a specific date."""
+        if not league_id.startswith('nba.l.'): league_id = f"nba.l.{league_id}"
+        # Fetching rosters for all teams via batch request
+        url = f"teams/roster;date={date_str}"
+        data = self.ctx.make_request(url, league=league_id)
+        
+        roster_counts = {}
+        try:
+            import xml.etree.ElementTree as ET
+            root = ET.fromstring(data)
+            ns = {'ns': 'http://fantasysports.yahooapis.com/fantasy/v2/base.rng'}
+            for team in root.findall('.//ns:team', ns):
+                team_id = team.find('ns:team_id', ns).text
+                active_count = 0
+                for player in team.findall('.//ns:player', ns):
+                    pos = player.find('.//ns:selected_position/ns:position', ns).text
+                    # Non-starting positions to exclude
+                    if pos not in ['BN', 'IL', 'IL+', 'NA']:
+                        active_count += 1
+                roster_counts[team_id] = active_count
+        except Exception as e:
+            import logging
+            logging.error(f"Error parsing batch rosters: {e}")
+        return roster_counts
+
+    def fetch_league_scoreboard(self, league_id: str, week: int) -> dict:
+        """Fetch played and total game counts for all teams from the scoreboard."""
+        if not league_id.startswith('nba.l.'): league_id = f"nba.l.{league_id}"
+        url = f"league/{league_id}/scoreboard;week={week}"
+        data = self.ctx.make_request(url)
+        
+        game_counts = {}
+        try:
+            import xml.etree.ElementTree as ET
+            root = ET.fromstring(data)
+            ns = {'ns': 'http://fantasysports.yahooapis.com/fantasy/v2/base.rng'}
+            for team in root.findall('.//ns:team', ns):
+                team_id = team.find('ns:team_id', ns).text
+                rem_games_node = team.find('.//ns:team_remaining_games/ns:total', ns)
+                if rem_games_node is not None:
+                    completed = int(rem_games_node.find('ns:completed_games', ns).text or 0)
+                    live = int(rem_games_node.find('ns:live_games', ns).text or 0)
+                    remaining = int(rem_games_node.find('ns:remaining_games', ns).text or 0)
+                    played = completed + live
+                    total = played + remaining
+                    game_counts[team_id] = {"played": played, "total": total}
+        except Exception as e:
+            import logging
+            logging.error(f"Error parsing scoreboard games: {e}")
+        return game_counts
+
