@@ -19,7 +19,8 @@ class MockTeam:
         self.team_standings = type('Standings', (), {'points_for': 100, 'points_against': 90})()
         # Add team_stats with stat_id for Task 4
         mock_stat = type('Stat', (), {'stat_id': '12', 'value': '50'})()
-        self.team_stats = type('TeamStats', (), {'stats': [mock_stat]})()
+        mock_stats_obj = type('StatsObj', (), {'stat': [mock_stat]})()
+        self.team_stats = type('TeamStats', (), {'stats': mock_stats_obj})()
     
     def roster(self):
         return MockRoster()
@@ -81,27 +82,19 @@ def test_fetch_weekly_stats(mocker):
     mocker.patch("src.fetcher.yahoofantasy.League")
     
     # Mock _load_or_fetch data
-    scoreboard_data = {
+    teams_data = {
         "fantasy_content": {
             "league": {
-                "scoreboard": {
-                    "matchups": {
-                        "matchup": [
-                            {
-                                "teams": {
-                                    "team": [
-                                        {"team_id": "1", "name": "Team 1"},
-                                        {"team_id": "2", "name": "Team 2"}
-                                    ]
-                                }
-                            }
-                        ]
-                    }
+                "teams": {
+                    "team": [
+                        {"team_id": "1", "name": "Team 1"},
+                        {"team_id": "2", "name": "Team 2"}
+                    ]
                 }
             }
         }
     }
-    mock_ctx._load_or_fetch.return_value = scoreboard_data
+    mock_ctx._load_or_fetch.return_value = teams_data
     
     # Mock Team and as_list/from_response_object
     mocker.patch("yahoofantasy.resources.team.Team")
@@ -128,26 +121,18 @@ def test_fetch_daily_stats(mocker):
     mock_ctx = mocker.patch("src.fetcher.yahoofantasy.Context").return_value
     mocker.patch("src.fetcher.yahoofantasy.League")
     
-    scoreboard_data = {
+    teams_data = {
         "fantasy_content": {
             "league": {
-                "scoreboard": {
-                    "matchups": {
-                        "matchup": [
-                            {
-                                "teams": {
-                                    "team": [
-                                        {"team_id": "1", "name": "Team 1"}
-                                    ]
-                                }
-                            }
-                        ]
-                    }
+                "teams": {
+                    "team": [
+                        {"team_id": "1", "name": "Team 1"}
+                    ]
                 }
             }
         }
     }
-    mock_ctx._load_or_fetch.return_value = scoreboard_data
+    mock_ctx._load_or_fetch.return_value = teams_data
     
     mocker.patch("yahoofantasy.resources.team.Team")
     mocker.patch("yahoofantasy.api.parse.as_list", side_effect=lambda x: x if isinstance(x, list) else [x])
@@ -195,3 +180,49 @@ def test_fetch_batch_rosters(mocker):
     data = fetcher.fetch_batch_rosters("12345", "2023-11-01")
     
     assert data == {"1": 1}
+
+def test_fetch_league_scoreboard(mocker):
+    mock_ctx = mocker.patch("src.fetcher.yahoofantasy.Context").return_value
+    xml_response = """
+    <fantasy_content xmlns="http://fantasysports.yahooapis.com/fantasy/v2/base.rng">
+      <league>
+        <scoreboard>
+          <matchups>
+            <matchup>
+              <teams>
+                <team>
+                  <team_id>1</team_id>
+                  <team_remaining_games>
+                    <total>
+                      <completed_games>2</completed_games>
+                      <live_games>1</live_games>
+                      <remaining_games>3</remaining_games>
+                    </total>
+                  </team_remaining_games>
+                </team>
+                <team>
+                  <team_id>2</team_id>
+                  <team_remaining_games>
+                    <total>
+                      <completed_games>1</completed_games>
+                      <live_games>0</live_games>
+                      <remaining_games>4</remaining_games>
+                    </total>
+                  </team_remaining_games>
+                </team>
+              </teams>
+            </matchup>
+          </matchups>
+        </scoreboard>
+      </league>
+    </fantasy_content>
+    """
+    mock_ctx.make_request.return_value = xml_response
+    
+    fetcher = YahooFantasyFetcher()
+    data = fetcher.fetch_league_scoreboard("12345", 1)
+    
+    assert data == {
+        "1": {"played": 3, "total": 6},
+        "2": {"played": 1, "total": 5}
+    }
