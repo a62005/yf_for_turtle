@@ -56,3 +56,41 @@ def test_process_stats_missing_fallback():
 def test_process_stats_empty():
     assert process_stats_for_visual({}) == []
     assert process_stats_for_visual({"team_stats": []}) == []
+
+def test_process_stats_today_player():
+    raw_data = {
+        "team_stats": [
+            {"name": "Team A", "stats": {"Today Player": 5}},
+            {"name": "Team B", "stats": {"Today Player": 8}}
+        ]
+    }
+    processed = process_stats_for_visual(raw_data)
+    today_column = next(c for c in processed if c['label'] == 'Today Player')
+    assert today_column['rows'][0]['name'] == 'Team B'
+    assert today_column['rows'][0]['value'] == 8
+    assert today_column['rows'][1]['name'] == 'Team A'
+    assert today_column['rows'][1]['value'] == 5
+
+def test_process_stats_game_player():
+    raw_data = {
+        "team_stats": [
+            {"name": "Team A", "stats": {"GP_PLAYED": 10, "GP_TOTAL": 40}},
+            {"name": "Team B", "stats": {"GP_PLAYED": 12, "GP_TOTAL": 42}},
+            {"name": "Team C", "stats": {"GP_PLAYED": 10, "GP_TOTAL": 45}}
+        ]
+    }
+    processed = process_stats_for_visual(raw_data)
+    gp_column = next(c for c in processed if c['label'] == 'Game Player')
+    
+    # Sorting logic: (played * 1000) + total, descending
+    # Team A: 10 * 1000 + 40 = 10040
+    # Team B: 12 * 1000 + 42 = 12042
+    # Team C: 10 * 1000 + 45 = 10045
+    # Order: Team B (12042), Team C (10045), Team A (10040)
+    
+    assert gp_column['rows'][0]['name'] == 'Team B'
+    assert gp_column['rows'][0]['value'] == "12 / 42"
+    assert gp_column['rows'][1]['name'] == 'Team C'
+    assert gp_column['rows'][1]['value'] == "10 / 45"
+    assert gp_column['rows'][2]['name'] == 'Team A'
+    assert gp_column['rows'][2]['value'] == "10 / 40"

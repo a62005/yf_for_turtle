@@ -44,7 +44,7 @@ def process_stats_for_visual(data: dict) -> list:
                 return val
             # Handle percentage strings if necessary
             try: return float(str(val).strip('%'))
-            except: return 0
+            except (ValueError, TypeError): return 0
 
         sorted_teams = sorted(team_stats, key=sort_key_func, reverse=cat["reverse"])
         

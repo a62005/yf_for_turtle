@@ -8,6 +8,8 @@ from yahoofantasy.resources.team import Team
 YAHOO_NS = {'ns': 'http://fantasysports.yahooapis.com/fantasy/v2/base.rng'}
 
 class YahooFantasyFetcher:
+    NON_STARTING_POSITIONS = ['BN', 'IL', 'IL+', 'NA']
+
     def __init__(self, team_mapping: dict = None, client_id: str = None, client_secret: str = None):
         self.ctx = yahoofantasy.Context(
             persist_key="credentials/",
@@ -201,7 +203,7 @@ class YahooFantasyFetcher:
                     pos_node = self._find_node(player, './/ns:selected_position/ns:position')
                     pos = pos_node.text if pos_node is not None else None
                     # Non-starting positions to exclude
-                    if pos and pos not in ['BN', 'IL', 'IL+', 'NA']:
+                    if pos and pos not in self.NON_STARTING_POSITIONS:
                         active_count += 1
                 roster_counts[team_id] = active_count
         except Exception as e:
