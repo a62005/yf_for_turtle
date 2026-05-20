@@ -154,14 +154,39 @@ class YahooFantasyFetcher:
                 t = Team(self.ctx, None, team_item["team_id"])
                 from_response_object(t, team_item)
                 team_id = str(getattr(t, "team_id", ""))
-                team_name = self.get_team_name(team_id, str(getattr(t, "name", "Unknown")))
+                team_name = self.get_team_name(team_id)
+
+                stats_dict = self._parse_stats(t)
+
+                # Extract game counts if available (useful for weekly stats)
+                if "team_remaining_games" in team_item:
+                    try:
+                        total_node = team_item["team_remaining_games"]["total"]
+                        def get_num(key):
+                            val = total_node.get(key, 0)
+                            if isinstance(val, dict):
+                                return int(val.get("$", 0))
+                            return int(val or 0)
+                            
+                        completed = get_num("completed_games")
+                        live = get_num("live_games")
+                        remaining = get_num("remaining_games")
+                        played = completed + live
+                        total = played + remaining
+                        stats_dict["GP_PLAYED"] = played
+                        stats_dict["GP_TOTAL"] = total
+                    except Exception as e:
+                        import logging
+                        logging.debug(f"Could not parse game counts for team {team_id}: {e}")
+
                 team_stats_data.append({
                     "team_id": team_id,
                     "name": team_name,
-                    "stats": self._parse_stats(t)
+                    "stats": stats_dict
                 })
-        except Exception:
-            pass
+        except Exception as e:
+            import logging
+            logging.error(f"Error parsing teams from content: {e}")
         return {"team_stats": team_stats_data}
 
     def _parse_scoreboard(self, data) -> dict:

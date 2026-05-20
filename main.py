@@ -55,15 +55,7 @@ def main():
         
         logging.info(f"Fetching weekly stats for Week {current_week}...")
         weekly_stats = fetcher.fetch_weekly_stats(league_id, current_week)
-        game_counts = fetcher.fetch_league_scoreboard(league_id, current_week)
         
-        # Merge Game Player data
-        for t in weekly_stats.get("team_stats", []):
-            tid = t.get("team_id")
-            if tid in game_counts:
-                t["stats"]["GP_PLAYED"] = game_counts[tid]["played"]
-                t["stats"]["GP_TOTAL"] = game_counts[tid]["total"]
-                
         weekly_path = storage.save(weekly_stats, f"week_{current_week}", sub_dir="weekly", overwrite=True)
         logging.info(f"Successfully saved weekly stats to {weekly_path}")
         
