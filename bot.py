@@ -8,9 +8,10 @@ import pytz
 from flask import Flask, request, abort, send_from_directory
 from linebot.v3 import WebhookHandler
 from linebot.v3.exceptions import InvalidSignatureError
-from linebot.v3.messaging import Configuration, ApiClient, MessagingApi, ReplyMessageRequest, TextMessage, ImageMessage
+from linebot.v3.messaging import Configuration, ApiClient, MessagingApi, ReplyMessageRequest, TextMessage, ImageMessage, SetWebhookEndpointRequest
 from linebot.v3.webhooks import MessageEvent, TextMessageContent
 from dotenv import load_dotenv
+from pyngrok import ngrok
 from src.cache_utils import is_empty_data
 from src.utils.time_utils import get_pacific_date, get_fantasy_week
 from src.config import load_config
@@ -18,6 +19,26 @@ from src.config import load_config
 def get_tw_hour():
     tw_tz = pytz.timezone("Asia/Taipei")
     return datetime.now(tw_tz).hour
+
+def setup_ngrok(authtoken: str, port: int) -> str:
+    """Start ngrok tunnel and return the public URL."""
+    ngrok.set_auth_token(authtoken)
+    tunnel = ngrok.connect(port)
+    return tunnel.public_url
+
+def update_line_webhook(configuration: Configuration, url: str):
+    """Update the LINE Messaging API Webhook URL."""
+    with ApiClient(configuration) as api_client:
+        line_bot_api = MessagingApi(api_client)
+        endpoint = f"{url}/callback"
+        set_webhook_request = SetWebhookEndpointRequest(endpoint=endpoint)
+        try:
+            line_bot_api.set_webhook_endpoint(set_webhook_request)
+            # Verify connectivity
+            line_bot_api.test_webhook_endpoint()
+            logging.info(f"Successfully updated LINE Webhook URL to: {endpoint}")
+        except Exception as e:
+            logging.error(f"Failed to update LINE Webhook: {e}")
 
 # Load env
 load_dotenv()
@@ -156,4 +177,26 @@ def handle_message(event):
     subprocess.Popen([sys.executable, "main.py"], env=env)
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    config = load_config()
+    port = 5000
+    
+    # Logic to decide mode
+    # If NGROK_AUTHTOKEN exists, assume local automation mode
+    if config.get("NGROK_AUTHTOKEN"):
+        logging.info("NGROK_AUTHTOKEN found. Starting automated setup...")
+        try:
+            public_url = setup_ngrok(config["NGROK_AUTHTOKEN"], port)
+            # Override global SERVER_URL
+            global SERVER_URL
+            SERVER_URL = public_url
+            logging.info(f"ngrok tunnel opened at: {public_url}")
+            
+            # Sync with LINE
+            update_line_webhook(configuration, public_url)
+        except Exception as e:
+            logging.error(f"ngrok setup failed: {e}")
+            logging.info("Falling back to manual SERVER_URL.")
+    else:
+        logging.info("No NGROK_AUTHTOKEN found. Using existing SERVER_URL.")
+
+    app.run(host="0.0.0.0", port=port)
