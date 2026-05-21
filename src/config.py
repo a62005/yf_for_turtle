@@ -16,5 +16,9 @@ def load_config() -> dict:
         "TEAM_MAPPING_FILE": mapping_file,
         "SEASON_START_DATE": season_start,
         "YAHOO_CLIENT_ID": os.getenv("YAHOO_CLIENT_ID"),
-        "YAHOO_CLIENT_SECRET": os.getenv("YAHOO_CLIENT_SECRET")
+        "YAHOO_CLIENT_SECRET": os.getenv("YAHOO_CLIENT_SECRET"),
+        "NGROK_AUTHTOKEN": os.getenv("NGROK_AUTHTOKEN"),
+        "LINE_CHANNEL_SECRET": os.getenv("LINE_CHANNEL_SECRET"),
+        "LINE_CHANNEL_ACCESS_TOKEN": os.getenv("LINE_CHANNEL_ACCESS_TOKEN"),
+        "SERVER_URL": os.getenv("SERVER_URL")
     }
