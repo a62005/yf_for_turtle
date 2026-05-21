@@ -30,6 +30,37 @@ handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
+# Regex patterns
+combined_pattern = re.compile(r"^#戰績$")
+daily_pattern = re.compile(r"^#當天戰績$")
+weekly_pattern = re.compile(r"^#當週戰績$")
+specific_week_pattern = re.compile(r"^#戰績W(\d+)$", re.IGNORECASE)
+specific_date_pattern = re.compile(r"^#戰績(\d{8})$")
+
+def parse_command(user_text: str) -> tuple[str | None, str | int | None]:
+    cmd_type = None
+    cmd_val = None
+    
+    if combined_pattern.match(user_text):
+        cmd_type = "combined"
+    elif daily_pattern.match(user_text):
+        cmd_type = "daily"
+    elif weekly_pattern.match(user_text):
+        cmd_type = "weekly"
+    else:
+        m_week = specific_week_pattern.match(user_text)
+        if m_week:
+            cmd_type = "specific_week"
+            cmd_val = int(m_week.group(1))
+        else:
+            m_date = specific_date_pattern.match(user_text)
+            if m_date:
+                cmd_type = "specific_date"
+                raw_date = m_date.group(1)
+                cmd_val = f"{raw_date[:4]}-{raw_date[4:6]}-{raw_date[6:8]}"
+                
+    return cmd_type, cmd_val
+
 @app.route("/callback", methods=['POST'])
 def callback():
     signature = request.headers['X-Line-Signature']
@@ -51,33 +82,7 @@ def serve_image(filename):
 def handle_message(event):
     user_text = event.message.text.strip()
     
-    # Regex patterns
-    combined_pattern = re.compile(r"^#戰績$")
-    daily_pattern = re.compile(r"^#當天戰績$")
-    weekly_pattern = re.compile(r"^#當週戰績$")
-    specific_week_pattern = re.compile(r"^#戰績W(\d+)$", re.IGNORECASE)
-    specific_date_pattern = re.compile(r"^#戰績(\d{8})$")
-    
-    cmd_type = None
-    cmd_val = None
-    
-    if combined_pattern.match(user_text):
-        cmd_type = "combined"
-    elif daily_pattern.match(user_text):
-        cmd_type = "daily"
-    elif weekly_pattern.match(user_text):
-        cmd_type = "weekly"
-    else:
-        m_week = specific_week_pattern.match(user_text)
-        if m_week:
-            cmd_type = "specific_week"
-            cmd_val = int(m_week.group(1))
-        else:
-            m_date = specific_date_pattern.match(user_text)
-            if m_date:
-                cmd_type = "specific_date"
-                raw_date = m_date.group(1)
-                cmd_val = f"{raw_date[:4]}-{raw_date[4:6]}-{raw_date[6:8]}"
+    cmd_type, cmd_val = parse_command(user_text)
                 
     if not cmd_type:
         return # Ignore non-matching messages
