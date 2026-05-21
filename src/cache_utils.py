@@ -9,13 +9,15 @@ def _load_cache():
     try:
         with open(CACHE_FILE, "r") as f:
             return json.load(f)
-    except Exception:
+    except (OSError, json.JSONDecodeError):
         return {}
 
 def _save_cache(data):
     os.makedirs(os.path.dirname(CACHE_FILE), exist_ok=True)
-    with open(CACHE_FILE, "w") as f:
+    temp_file = CACHE_FILE + '.tmp'
+    with open(temp_file, "w") as f:
         json.dump(data, f)
+    os.replace(temp_file, CACHE_FILE)
 
 def is_empty_data(key: str) -> bool:
     cache = _load_cache()

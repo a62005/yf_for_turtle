@@ -1,15 +1,12 @@
 import os
-import json
 import pytest
-from src.cache_utils import is_empty_data, mark_empty_data, CACHE_FILE
+import src.cache_utils as cache_utils
+from src.cache_utils import is_empty_data, mark_empty_data
 
 @pytest.fixture(autouse=True)
-def clean_cache():
-    if os.path.exists(CACHE_FILE):
-        os.remove(CACHE_FILE)
-    yield
-    if os.path.exists(CACHE_FILE):
-        os.remove(CACHE_FILE)
+def setup_cache(tmp_path, monkeypatch):
+    cache_file = tmp_path / "empty_records.json"
+    monkeypatch.setattr(cache_utils, "CACHE_FILE", str(cache_file))
 
 def test_cache_operations():
     assert is_empty_data("test_key") is False
