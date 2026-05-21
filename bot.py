@@ -1,11 +1,22 @@
 import os
 import logging
+import re
+import subprocess
+from datetime import datetime
+import pytz
 from flask import Flask, request, abort, send_from_directory
 from linebot.v3 import WebhookHandler
 from linebot.v3.exceptions import InvalidSignatureError
-from linebot.v3.messaging import Configuration, ApiClient, MessagingApi, ReplyMessageRequest, TextMessage
+from linebot.v3.messaging import Configuration, ApiClient, MessagingApi, ReplyMessageRequest, TextMessage, ImageMessage
 from linebot.v3.webhooks import MessageEvent, TextMessageContent
 from dotenv import load_dotenv
+from src.cache_utils import is_empty_data
+from src.utils.time_utils import get_pacific_date, get_fantasy_week
+from src.config import load_config
+
+def get_tw_hour():
+    tw_tz = pytz.timezone("Asia/Taipei")
+    return datetime.now(tw_tz).hour
 
 # Load env
 load_dotenv()
@@ -38,16 +49,93 @@ def serve_image(filename):
 
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
+    user_text = event.message.text.strip()
+    
+    # Regex patterns
+    combined_pattern = re.compile(r"^#戰績$")
+    daily_pattern = re.compile(r"^#當天戰績$")
+    weekly_pattern = re.compile(r"^#當週戰績$")
+    specific_week_pattern = re.compile(r"^#戰績W(\d+)$", re.IGNORECASE)
+    specific_date_pattern = re.compile(r"^#戰績(\d{8})$")
+    
+    cmd_type = None
+    cmd_val = None
+    
+    if combined_pattern.match(user_text):
+        cmd_type = "combined"
+    elif daily_pattern.match(user_text):
+        cmd_type = "daily"
+    elif weekly_pattern.match(user_text):
+        cmd_type = "weekly"
+    else:
+        m_week = specific_week_pattern.match(user_text)
+        if m_week:
+            cmd_type = "specific_week"
+            cmd_val = int(m_week.group(1))
+        else:
+            m_date = specific_date_pattern.match(user_text)
+            if m_date:
+                cmd_type = "specific_date"
+                raw_date = m_date.group(1)
+                cmd_val = f"{raw_date[:4]}-{raw_date[4:6]}-{raw_date[6:8]}"
+                
+    if not cmd_type:
+        return # Ignore non-matching messages
+
+    config = load_config()
+    current_date = get_pacific_date()
+    current_week = get_fantasy_week(config.get("SEASON_START_DATE", "2025-10-21"))
+    
+    target_date = cmd_val if cmd_type == "specific_date" else current_date
+    target_week = cmd_val if cmd_type == "specific_week" else current_week
+    
+    # Determine expected filenames and cache keys based on command
+    if cmd_type == "combined":
+        img_filename = f"{target_date}_combined.png"
+        cache_key = f"{target_date}_combined"
+    elif cmd_type in ["daily", "specific_date"]:
+        img_filename = f"{target_date}_daily.png"
+        cache_key = f"{target_date}_daily"
+    else: # weekly, specific_week
+        img_filename = f"week_{target_week}_weekly.png"
+        cache_key = f"week_{target_week}_weekly"
+
+    img_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "images", img_filename)
+    
+    # Step 1: Check standard cache (Image exists)
+    if os.path.exists(img_path):
+        img_url = f"{SERVER_URL}/images/{img_filename}"
+        reply_img = ImageMessage(original_content_url=img_url, preview_image_url=img_url)
+        with ApiClient(configuration) as api_client:
+            MessagingApi(api_client).reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[reply_img]))
+        return
+
+    # Step 1.5: Check negative cache
+    if is_empty_data(cache_key):
+        err_msg = "查無當週數據" if "weekly" in cache_key else "查無當天數據"
+        with ApiClient(configuration) as api_client:
+            MessagingApi(api_client).reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text=err_msg)]))
+        return
+
+    # Step 2: Time Gate for current period
+    is_current = cmd_type in ["combined", "daily", "weekly"]
+    if is_current and get_tw_hour() < 14:
+        with ApiClient(configuration) as api_client:
+            MessagingApi(api_client).reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="請於 14:00 後再進行查詢。")]))
+        return
+        
+    # Step 3: Trigger main.py fetch
     with ApiClient(configuration) as api_client:
-        line_bot_api = MessagingApi(api_client)
-        reply_req = ReplyMessageRequest(
-            reply_token=event.reply_token,
-            messages=[TextMessage(text="Webhook received")]
-        )
-        try:
-            line_bot_api.reply_message(reply_req)
-        except Exception as e:
-            logging.error(f"Failed to reply: {e}")
+        MessagingApi(api_client).reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="數據更新中，請稍候再試...")]))
+    
+    # Spawn subprocess
+    env = os.environ.copy()
+    if cmd_type == "specific_date":
+        env["TEST_DATE"] = target_date
+    elif cmd_type == "specific_week":
+        env["TEST_WEEK"] = str(target_week)
+        
+    subprocess.Popen(["python3", "main.py"], env=env)
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
