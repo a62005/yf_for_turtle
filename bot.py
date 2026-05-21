@@ -187,7 +187,6 @@ if __name__ == "__main__":
         try:
             public_url = setup_ngrok(config["NGROK_AUTHTOKEN"], port)
             # Override global SERVER_URL
-            global SERVER_URL
             SERVER_URL = public_url
             logging.info(f"ngrok tunnel opened at: {public_url}")
             
