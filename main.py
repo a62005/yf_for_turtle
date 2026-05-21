@@ -4,6 +4,7 @@ import sys
 import os
 import json
 from src.config import load_config
+from src.cache_utils import mark_empty_data
 from src.fetcher import YahooFantasyFetcher
 from src.storage import JsonStorage
 from src.utils.time_utils import get_fantasy_week, get_pacific_date
@@ -56,8 +57,12 @@ def main():
         logging.info(f"Fetching weekly stats for Week {current_week}...")
         weekly_stats = fetcher.fetch_weekly_stats(league_id, current_week)
         
-        weekly_path = storage.save(weekly_stats, f"week_{current_week}", sub_dir="weekly", overwrite=True)
-        logging.info(f"Successfully saved weekly stats to {weekly_path}")
+        if not weekly_stats.get("team_stats"):
+            logging.warning(f"No weekly stats found for Week {current_week}")
+            mark_empty_data(f"week_{current_week}_weekly")
+        else:
+            weekly_path = storage.save(weekly_stats, f"week_{current_week}", sub_dir="weekly", overwrite=True)
+            logging.info(f"Successfully saved weekly stats to {weekly_path}")
         
         # 4. Daily Stats
         # Test override:
@@ -66,46 +71,55 @@ def main():
         
         logging.info(f"Fetching daily stats for {today_str}...")
         daily_stats = fetcher.fetch_daily_stats(league_id, today_str)
-        roster_counts = fetcher.fetch_batch_rosters(league_id, today_str)
         
-        # Merge Today Player data
-        for t in daily_stats.get("team_stats", []):
-            tid = t.get("team_id")
-            if tid in roster_counts:
-                t["stats"]["Today Player"] = roster_counts[tid]
-                
-        daily_path = storage.save(daily_stats, today_str, sub_dir="daily", overwrite=True)
-        logging.info(f"Successfully saved daily stats to {daily_path}")
+        if not daily_stats.get("team_stats"):
+            logging.warning(f"No daily stats found for {today_str}")
+            mark_empty_data(f"{today_str}_daily")
+            mark_empty_data(f"{today_str}_combined")
+        else:
+            roster_counts = fetcher.fetch_batch_rosters(league_id, today_str)
+            
+            # Merge Today Player data
+            for t in daily_stats.get("team_stats", []):
+                tid = t.get("team_id")
+                if tid in roster_counts:
+                    t["stats"]["Today Player"] = roster_counts[tid]
+                    
+            daily_path = storage.save(daily_stats, today_str, sub_dir="daily", overwrite=True)
+            logging.info(f"Successfully saved daily stats to {daily_path}")
         
         # 5. Visualization
         logging.info("Generating visualization images...")
         try:
-            daily_processed = process_stats_for_visual(daily_stats)
-            weekly_processed = process_stats_for_visual(weekly_stats)
-            
             image_dir = os.path.join("data", "images")
             os.makedirs(image_dir, exist_ok=True)
             
+            daily_processed = process_stats_for_visual(daily_stats) if daily_stats.get("team_stats") else []
+            weekly_processed = process_stats_for_visual(weekly_stats) if weekly_stats.get("team_stats") else []
+            
             # Combined image
-            logging.info("Capturing combined stats image...")
-            combined_html = render_stats_html(daily_processed, weekly_processed)
-            combined_path = os.path.join(image_dir, f"{today_str}_combined.png")
-            capture_html_to_png(combined_html, combined_path)
-            logging.info(f"Successfully saved combined image to {combined_path}")
+            if daily_processed and weekly_processed:
+                logging.info("Capturing combined stats image...")
+                combined_html = render_stats_html(daily_processed, weekly_processed)
+                combined_path = os.path.join(image_dir, f"{today_str}_combined.png")
+                capture_html_to_png(combined_html, combined_path)
+                logging.info(f"Successfully saved combined image to {combined_path}")
             
             # Daily image
-            logging.info("Capturing daily stats image...")
-            daily_html = render_stats_html(daily_processed)
-            daily_path_img = os.path.join(image_dir, f"{today_str}_daily.png")
-            capture_html_to_png(daily_html, daily_path_img)
-            logging.info(f"Successfully saved daily image to {daily_path_img}")
+            if daily_processed:
+                logging.info("Capturing daily stats image...")
+                daily_html = render_stats_html(daily_processed)
+                daily_path_img = os.path.join(image_dir, f"{today_str}_daily.png")
+                capture_html_to_png(daily_html, daily_path_img)
+                logging.info(f"Successfully saved daily image to {daily_path_img}")
             
             # Weekly image
-            logging.info("Capturing weekly stats image...")
-            weekly_html = render_stats_html([], weekly_processed)
-            weekly_path_img = os.path.join(image_dir, f"week_{current_week}_weekly.png")
-            capture_html_to_png(weekly_html, weekly_path_img)
-            logging.info(f"Successfully saved weekly image to {weekly_path_img}")
+            if weekly_processed:
+                logging.info("Capturing weekly stats image...")
+                weekly_html = render_stats_html([], weekly_processed)
+                weekly_path_img = os.path.join(image_dir, f"week_{current_week}_weekly.png")
+                capture_html_to_png(weekly_html, weekly_path_img)
+                logging.info(f"Successfully saved weekly image to {weekly_path_img}")
             
         except Exception as ve:
             logging.error(f"Failed to generate visualization: {ve}")
