@@ -175,11 +175,10 @@ def handle_message(event):
         env["TEST_WEEK"] = str(target_week)
         
     subprocess.Popen([sys.executable, "main.py"], env=env)
-
 if __name__ == "__main__":
     config = load_config()
-    port = 5000
-    
+    port = 5001
+
     # Logic to decide mode
     # If NGROK_AUTHTOKEN exists, assume local automation mode
     if config.get("NGROK_AUTHTOKEN"):
@@ -187,9 +186,10 @@ if __name__ == "__main__":
         try:
             public_url = setup_ngrok(config["NGROK_AUTHTOKEN"], port)
             # Override global SERVER_URL
+            global SERVER_URL
             SERVER_URL = public_url
             logging.info(f"ngrok tunnel opened at: {public_url}")
-            
+
             # Sync with LINE
             update_line_webhook(configuration, public_url)
         except Exception as e:
@@ -199,3 +199,4 @@ if __name__ == "__main__":
         logging.info("No NGROK_AUTHTOKEN found. Using existing SERVER_URL.")
 
     app.run(host="0.0.0.0", port=port)
+
