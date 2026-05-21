@@ -131,6 +131,15 @@ def main():
         # In a real scenario, we might want to exit with a non-zero code
         # sys.exit(1)
         raise
+    finally:
+        # Cleanup fetch lock if requested
+        lock_path = os.getenv("FETCH_LOCK_PATH")
+        if lock_path and os.path.exists(lock_path):
+            try:
+                os.remove(lock_path)
+                logging.info(f"Successfully removed fetch lock: {lock_path}")
+            except OSError as e:
+                logging.warning(f"Failed to remove fetch lock {lock_path}: {e}")
 
 if __name__ == "__main__":
     main()

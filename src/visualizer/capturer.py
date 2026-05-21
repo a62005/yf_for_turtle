@@ -16,6 +16,8 @@ def capture_html_to_png(html_content: str, output_path: str):
         
         # Take a screenshot of the body which contains our tables
         # full_page=True ensures we get the entire height if it scrolls
-        page.locator("body").screenshot(path=output_path)
+        temp_path = output_path + ".tmp"
+        page.locator("body").screenshot(path=temp_path)
+        os.replace(temp_path, output_path)
         
         browser.close()

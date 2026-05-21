@@ -1,4 +1,5 @@
 import os
+import sys
 import logging
 import re
 import subprocess
@@ -129,18 +130,30 @@ def handle_message(event):
             MessagingApi(api_client).reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="請於 14:00 後再進行查詢。")]))
         return
         
+    # Step 2.5: Check lock to prevent cache stampede
+    lock_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", f"{cache_key}_fetch.lock")
+    os.makedirs(os.path.dirname(lock_file), exist_ok=True)
+    try:
+        fd = os.open(lock_file, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        os.close(fd)
+    except FileExistsError:
+        with ApiClient(configuration) as api_client:
+            MessagingApi(api_client).reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="數據更新中")]))
+        return
+
     # Step 3: Trigger main.py fetch
     with ApiClient(configuration) as api_client:
         MessagingApi(api_client).reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="數據更新中，請稍候再試...")]))
     
     # Spawn subprocess
     env = os.environ.copy()
+    env["FETCH_LOCK_PATH"] = lock_file
     if cmd_type == "specific_date":
         env["TEST_DATE"] = target_date
     elif cmd_type == "specific_week":
         env["TEST_WEEK"] = str(target_week)
         
-    subprocess.Popen(["python3", "main.py"], env=env)
+    subprocess.Popen([sys.executable, "main.py"], env=env)
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)

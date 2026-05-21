@@ -7,3 +7,4 @@ Jinja2
 playwright
 flask
 line-bot-sdk
+filelock
