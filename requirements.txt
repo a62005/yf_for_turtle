@@ -5,3 +5,5 @@ pytest-mock
 pytz
 Jinja2
 playwright
+flask
+line-bot-sdk
