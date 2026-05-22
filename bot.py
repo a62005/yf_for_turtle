@@ -127,6 +127,7 @@ def handle_message(event):
     config = load_config()
     meta = load_league_metadata()
     today_pacific = get_pacific_date()
+    is_offseason = meta.get('end_date') and today_pacific > meta['end_date']
     
     target_date = cmd_val if cmd_type == "specific_date" else today_pacific
     
@@ -191,7 +192,7 @@ def handle_message(event):
 
     # Step 2: Time Gate for current period
     is_current = cmd_type in ["combined", "daily", "weekly"]
-    if is_current and get_tw_hour() < 14:
+    if is_current and not is_offseason and get_tw_hour() < 14:
         with ApiClient(configuration) as api_client:
             MessagingApi(api_client).reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="請於 14:00 後再進行查詢。")]))
         return
