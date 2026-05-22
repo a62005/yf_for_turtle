@@ -29,6 +29,29 @@ class YahooFantasyFetcher:
     def _find_all_nodes(self, parent, path):
         return parent.findall(path, YAHOO_NS)
 
+    def fetch_league_metadata(self, league_id: str) -> dict:
+        """Fetch basic league metadata including season start and end dates."""
+        league_id = self._normalize_league_id(league_id)
+        league = yahoofantasy.League(self.ctx, league_id)
+        
+        # Accessing the underlying league data which contains settings
+        # The league object itself has many properties, but for start/end dates
+        # we might need to look at league settings if not directly available.
+        # In yahoofantasy, these are often directly accessible or via 'settings'
+        
+        start_date = getattr(league, "start_date", None)
+        end_date = getattr(league, "end_date", None)
+        name = getattr(league, "name", "Unknown League")
+        season = getattr(league, "season", None)
+        
+        return {
+            "league_id": league_id,
+            "name": name,
+            "season": season,
+            "start_date": str(start_date) if start_date else None,
+            "end_date": str(end_date) if end_date else None
+        }
+
     def fetch_league_data(self, league_id: str) -> dict:
         # Ensure league_id has the correct prefix for NBA
         league_id = self._normalize_league_id(league_id)
@@ -154,7 +177,7 @@ class YahooFantasyFetcher:
                 t = Team(self.ctx, None, team_item["team_id"])
                 from_response_object(t, team_item)
                 team_id = str(getattr(t, "team_id", ""))
-                team_name = self.get_team_name(team_id)
+                team_name = self.get_team_name(team_id, team_item.get("name", "Unknown"))
 
                 stats_dict = self._parse_stats(t)
 
