@@ -18,6 +18,7 @@ from src.utils.time_utils import get_pacific_date, get_fantasy_week
 from src.config import load_config
 from src.fetcher import YahooFantasyFetcher
 from src.cache_utils import is_empty_data, save_league_metadata, load_league_metadata
+from src.utils.token_utils import is_token_processed
 
 def cleanup_port(port):
     for proc in psutil.process_iter(['pid', 'name']):
@@ -116,6 +117,9 @@ def serve_image(filename):
 
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
+    if is_token_processed(event.reply_token):
+        return
+
     user_text = event.message.text.strip()
     logging.info(f"[LINE] 收到指令: {user_text}")
     
