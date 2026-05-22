@@ -103,6 +103,7 @@ def serve_image(filename):
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
     user_text = event.message.text.strip()
+    logging.info(f"[LINE] 收到指令: {user_text}")
     
     cmd_type, cmd_val = parse_command(user_text)
                 
@@ -131,6 +132,7 @@ def handle_message(event):
     
     # Step 1: Check standard cache (Image exists)
     if os.path.exists(img_path):
+        logging.info(f"[CACHE] 命中圖片快取: {img_filename}")
         img_url = f"{SERVER_URL}/images/{img_filename}"
         reply_img = ImageMessage(original_content_url=img_url, preview_image_url=img_url)
         with ApiClient(configuration) as api_client:
@@ -139,6 +141,7 @@ def handle_message(event):
 
     # Step 1.5: Check negative cache
     if is_empty_data(cache_key):
+        logging.info(f"[CACHE] 命中負向快取 (無數據): {cache_key}")
         err_msg = "查無當週數據" if "weekly" in cache_key else "查無當天數據"
         with ApiClient(configuration) as api_client:
             MessagingApi(api_client).reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text=err_msg)]))
@@ -158,6 +161,7 @@ def handle_message(event):
         fd = os.open(lock_file, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
         os.close(fd)
     except FileExistsError:
+        logging.warning(f"[LOCK] 任務正在執行中，跳過重複請求: {cache_key}")
         with ApiClient(configuration) as api_client:
             MessagingApi(api_client).reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="數據更新中")]))
         return
@@ -173,7 +177,8 @@ def handle_message(event):
         env["TEST_DATE"] = target_date
     elif cmd_type == "specific_week":
         env["TEST_WEEK"] = str(target_week)
-        
+    
+    logging.info(f"[TASK] 啟動背景更新任務 (main.py)，模式: {cmd_type}")
     subprocess.Popen([sys.executable, "main.py"], env=env)
 if __name__ == "__main__":
     config = load_config()
