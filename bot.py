@@ -15,6 +15,8 @@ from pyngrok import ngrok
 from src.cache_utils import is_empty_data
 from src.utils.time_utils import get_pacific_date, get_fantasy_week
 from src.config import load_config
+from src.fetcher import YahooFantasyFetcher
+from src.cache_utils import is_empty_data, save_league_metadata, load_league_metadata
 
 def get_tw_hour():
     tw_tz = pytz.timezone("Asia/Taipei")
@@ -111,11 +113,39 @@ def handle_message(event):
         return # Ignore non-matching messages
 
     config = load_config()
-    current_date = get_pacific_date()
-    current_week = get_fantasy_week(config.get("SEASON_START_DATE", "2025-10-21"))
+    meta = load_league_metadata()
+    today_pacific = get_pacific_date()
     
-    target_date = cmd_val if cmd_type == "specific_date" else current_date
-    target_week = cmd_val if cmd_type == "specific_week" else current_week
+    target_date = cmd_val if cmd_type == "specific_date" else today_pacific
+    
+    # 未來攔截
+    if target_date > today_pacific:
+        with ApiClient(configuration) as api_client:
+            MessagingApi(api_client).reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="我不是未來人，無法提供未來數據")]))
+        return
+
+    # 賽季前攔截
+    if meta.get('start_date') and target_date < meta['start_date']:
+        with ApiClient(configuration) as api_client:
+            MessagingApi(api_client).reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="查無當天數據")]))
+        return
+
+    # 休賽季導向
+    is_undated_cmd = cmd_type in ["combined", "daily", "weekly"]
+    if meta.get('end_date') and today_pacific > meta['end_date'] and is_undated_cmd:
+        logging.info(f"[SYSTEM] 休賽季導向: {today_pacific} > {meta['end_date']}")
+        target_date = meta['end_date']
+        target_dt = pytz.timezone("US/Pacific").localize(datetime.strptime(target_date, "%Y-%m-%d"))
+        target_week = get_fantasy_week(meta['start_date'], target_dt)
+    else:
+        target_dt = pytz.timezone("US/Pacific").localize(datetime.strptime(target_date, "%Y-%m-%d"))
+        target_week = cmd_val if cmd_type == "specific_week" else get_fantasy_week(meta.get('start_date', config.get("SEASON_START_DATE", "2025-10-21")), target_dt)
+
+    # 賽季後攔截
+    if meta.get('end_date') and target_date > meta['end_date']:
+        with ApiClient(configuration) as api_client:
+            MessagingApi(api_client).reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="查無當天數據")]))
+        return
     
     # Determine expected filenames and cache keys based on command
     if cmd_type == "combined":
@@ -182,6 +212,14 @@ def handle_message(event):
     subprocess.Popen([sys.executable, "main.py"], env=env)
 if __name__ == "__main__":
     config = load_config()
+    fetcher = YahooFantasyFetcher(client_id=config.get("YAHOO_CLIENT_ID"), client_secret=config.get("YAHOO_CLIENT_SECRET"))
+    try:
+        logging.info("[SYSTEM] 同步賽季中繼資料...")
+        meta = fetcher.fetch_league_metadata(config["LEAGUE_ID"])
+        save_league_metadata(meta)
+    except Exception as e:
+        logging.error(f"[SYSTEM] 賽季資料同步失敗: {e}")
+
     port = 5001
 
     # Logic to decide mode
