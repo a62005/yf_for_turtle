@@ -19,12 +19,12 @@ logging.basicConfig(
 )
 
 def main():
-    logging.info("Starting Yahoo Fantasy Scraper...")
+    logging.info("[TASK] 開始執行數據更新任務...")
     
     try:
         config = load_config()
         league_id = config["LEAGUE_ID"]
-        logging.info(f"Loaded config for League ID: {league_id}")
+        logging.info(f"[CONFIG] 載入聯盟設定，League ID: {league_id}")
         
         mapping_file = config.get("TEAM_MAPPING_FILE", "team_mapping.json")
         team_mapping = {}
@@ -43,7 +43,7 @@ def main():
         storage = JsonStorage()
 
         # 2. Season Stats
-        logging.info("Fetching season stats...")
+        logging.info("[YAHOO] 正在抓取賽季總戰績 (Season Standings)...")
         season_stats = fetcher.fetch_team_stats(league_id)
         season_path = storage.save(season_stats, f"{league_id}_season_stats", overwrite=True)
         logging.info(f"Successfully saved season stats to {season_path}")
@@ -53,7 +53,7 @@ def main():
         test_week = os.getenv("TEST_WEEK")
         current_week = int(test_week) if test_week else get_fantasy_week(config["SEASON_START_DATE"])
         
-        logging.info(f"Fetching weekly stats for Week {current_week}...")
+        logging.info(f"[YAHOO] 正在抓取第 {current_week} 週週戰績 (Weekly Stats)...")
         weekly_stats = fetcher.fetch_weekly_stats(league_id, current_week)
         
         weekly_path = storage.save(weekly_stats, f"week_{current_week}", sub_dir="weekly", overwrite=True)
@@ -64,7 +64,7 @@ def main():
         test_date = os.getenv("TEST_DATE")
         today_str = test_date if test_date else get_pacific_date()
         
-        logging.info(f"Fetching daily stats for {today_str}...")
+        logging.info(f"[YAHOO] 正在抓取 {today_str} 當日戰績 (Daily Stats)...")
         daily_stats = fetcher.fetch_daily_stats(league_id, today_str)
         roster_counts = fetcher.fetch_batch_rosters(league_id, today_str)
         
@@ -78,7 +78,7 @@ def main():
         logging.info(f"Successfully saved daily stats to {daily_path}")
         
         # 5. Visualization
-        logging.info("Generating visualization images...")
+        logging.info("[VISUAL] 正在渲染統計 HTML 模板...")
         try:
             daily_processed = process_stats_for_visual(daily_stats)
             weekly_processed = process_stats_for_visual(weekly_stats)
@@ -91,21 +91,21 @@ def main():
             combined_html = render_stats_html(daily_processed, weekly_processed)
             combined_path = os.path.join(image_dir, f"{today_str}_combined.png")
             capture_html_to_png(combined_html, combined_path)
-            logging.info(f"Successfully saved combined image to {combined_path}")
+            logging.info(f"[VISUAL] 圖片製作完成並儲存至: {combined_path}")
             
             # Daily image
             logging.info("Capturing daily stats image...")
             daily_html = render_stats_html(daily_processed)
             daily_path_img = os.path.join(image_dir, f"{today_str}_daily.png")
             capture_html_to_png(daily_html, daily_path_img)
-            logging.info(f"Successfully saved daily image to {daily_path_img}")
+            logging.info(f"[VISUAL] 圖片製作完成並儲存至: {daily_path_img}")
             
             # Weekly image
             logging.info("Capturing weekly stats image...")
             weekly_html = render_stats_html([], weekly_processed)
             weekly_path_img = os.path.join(image_dir, f"week_{current_week}_weekly.png")
             capture_html_to_png(weekly_html, weekly_path_img)
-            logging.info(f"Successfully saved weekly image to {weekly_path_img}")
+            logging.info(f"[VISUAL] 圖片製作完成並儲存至: {weekly_path_img}")
             
         except Exception as ve:
             logging.error(f"Failed to generate visualization: {ve}")
