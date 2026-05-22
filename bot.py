@@ -176,7 +176,13 @@ def handle_message(event):
     # Step 1: Check standard cache (Image exists)
     if os.path.exists(img_path):
         logging.info(f"[CACHE] 命中圖片快取: {img_filename}")
-        img_url = f"{SERVER_URL}/images/{img_filename}"
+        
+        # 強制使用 HTTPS (LINE Bot 要求)
+        https_url = SERVER_URL.replace("http://", "https://")
+        if not https_url.startswith("https://"):
+            https_url = f"https://{https_url.lstrip('https://')}"
+            
+        img_url = f"{https_url}/images/{img_filename}"
         reply_img = ImageMessage(original_content_url=img_url, preview_image_url=img_url)
         with ApiClient(configuration) as api_client:
             MessagingApi(api_client).reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[reply_img]))
