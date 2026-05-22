@@ -13,8 +13,7 @@ def load_config() -> dict:
         raise ValueError("LEAGUE_ID is not set in environment, .env, or league.env file.")
     
     mapping_file = os.getenv("TEAM_MAPPING_FILE", "team_mapping.json")
-    # Default to a placeholder if not set
-    season_start = os.getenv("SEASON_START_DATE", "2025-10-21")
+    season_start = os.getenv("SEASON_START_DATE")
     
     return {
         "LEAGUE_ID": league_id,
