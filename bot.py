@@ -152,7 +152,7 @@ def handle_message(event):
         target_week = get_fantasy_week(meta['start_date'], target_dt)
     else:
         target_dt = pytz.timezone("US/Pacific").localize(datetime.strptime(target_date, "%Y-%m-%d"))
-        target_week = cmd_val if cmd_type == "specific_week" else get_fantasy_week(meta.get('start_date', config.get("SEASON_START_DATE", "2025-10-21")), target_dt)
+        target_week = cmd_val if cmd_type == "specific_week" else get_fantasy_week(meta.get('start_date', config.get("DEFAULT_SEASON_START", "2025-10-21")), target_dt)
 
     # 賽季後攔截
     if meta.get('end_date') and target_date > meta['end_date']:
