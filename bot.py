@@ -1,5 +1,6 @@
 import os
 import sys
+import psutil
 import logging
 import re
 import subprocess
@@ -17,6 +18,17 @@ from src.utils.time_utils import get_pacific_date, get_fantasy_week
 from src.config import load_config
 from src.fetcher import YahooFantasyFetcher
 from src.cache_utils import is_empty_data, save_league_metadata, load_league_metadata
+
+def cleanup_port(port):
+    for proc in psutil.process_iter(['pid', 'name']):
+        try:
+            for conns in proc.connections(kind='inet'):
+                if conns.laddr.port == port:
+                    logging.info(f"[SYSTEM] 發現佔用 Port {port} 的進程 (PID: {proc.pid})，正在關閉...")
+                    proc.terminate()
+                    proc.wait(timeout=3)
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.TimeoutExpired):
+            pass
 
 def get_tw_hour():
     tw_tz = pytz.timezone("Asia/Taipei")
@@ -211,6 +223,7 @@ def handle_message(event):
     logging.info(f"[TASK] 啟動背景更新任務 (main.py)，模式: {cmd_type}")
     subprocess.Popen([sys.executable, "main.py"], env=env)
 if __name__ == "__main__":
+    cleanup_port(5001)
     config = load_config()
     fetcher = YahooFantasyFetcher(client_id=config.get("YAHOO_CLIENT_ID"), client_secret=config.get("YAHOO_CLIENT_SECRET"))
     try:
