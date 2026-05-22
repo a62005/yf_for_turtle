@@ -3,14 +3,14 @@ from dotenv import load_dotenv
 
 def load_config() -> dict:
     # 1. 載入公開的聯盟設定 (不覆蓋系統環境變數)
-    load_dotenv("league.env")
+    load_dotenv("league.env", encoding="utf-8")
     
     # 2. 載入私密設定 (override=True 以便覆蓋 league.env 中的值)
-    load_dotenv(".env", override=True)
+    load_dotenv(".env", override=True, encoding="utf-8")
     
     league_id = os.getenv("LEAGUE_ID")
     if not league_id:
-        raise ValueError("LEAGUE_ID is not set in environment or .env file.")
+        raise ValueError("LEAGUE_ID is not set in environment, .env, or league.env file.")
     
     mapping_file = os.getenv("TEAM_MAPPING_FILE", "team_mapping.json")
     # Default to a placeholder if not set
