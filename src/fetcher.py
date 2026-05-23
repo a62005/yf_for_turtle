@@ -32,24 +32,50 @@ class YahooFantasyFetcher:
     def fetch_league_metadata(self, league_id: str) -> dict:
         """Fetch basic league metadata including season start and end dates."""
         league_id = self._normalize_league_id(league_id)
-        league = yahoofantasy.League(self.ctx, league_id)
+        url = f"league/{league_id}"
         
-        # Accessing the underlying league data which contains settings
-        # The league object itself has many properties, but for start/end dates
-        # we might need to look at league settings if not directly available.
-        # In yahoofantasy, these are often directly accessible or via 'settings'
-        
-        start_date = getattr(league, "start_date", None)
-        end_date = getattr(league, "end_date", None)
-        name = getattr(league, "name", "Unknown League")
-        season = getattr(league, "season", None)
-        
+        try:
+            import xml.etree.ElementTree as ET
+            data = self.ctx.make_request(url)
+            root = ET.fromstring(data)
+            
+            # The namespace handling for Yahoo Fantasy XML
+            ns = {'ns': 'http://fantasysports.yahooapis.com/fantasy/v2/base.rng'}
+            league_node = root.find('ns:league', ns)
+            
+            if league_node is not None:
+                start_date_node = league_node.find('ns:start_date', ns)
+                end_date_node = league_node.find('ns:end_date', ns)
+                season_node = league_node.find('ns:season', ns)
+                name_node = league_node.find('ns:name', ns)
+                end_week_node = league_node.find('ns:end_week', ns)
+                
+                start_date = start_date_node.text if start_date_node is not None else None
+                end_date = end_date_node.text if end_date_node is not None else None
+                season = season_node.text if season_node is not None else None
+                name = name_node.text if name_node is not None else "Unknown League"
+                end_week = end_week_node.text if end_week_node is not None else None
+            else:
+                start_date, end_date, season, name, end_week = None, None, None, "Unknown League", None
+                
+        except Exception as e:
+            # Fallback if XML parsing fails
+            import logging
+            logging.error(f"Failed to parse league metadata XML: {e}")
+            league = yahoofantasy.League(self.ctx, league_id)
+            start_date = getattr(league, "start_date", None)
+            end_date = getattr(league, "end_date", None)
+            name = getattr(league, "name", "Unknown League")
+            season = getattr(league, "season", None)
+            end_week = getattr(league, "end_week", None)
+
         return {
             "league_id": league_id,
             "name": name,
             "season": season,
             "start_date": str(start_date) if start_date else None,
-            "end_date": str(end_date) if end_date else None
+            "end_date": str(end_date) if end_date else None,
+            "end_week": int(end_week) if end_week else None
         }
 
     def fetch_league_data(self, league_id: str) -> dict:

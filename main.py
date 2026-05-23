@@ -51,7 +51,16 @@ def main():
         # 3. Weekly Stats
         # Test override:
         test_week = os.getenv("TEST_WEEK")
-        current_week = int(test_week) if test_week else get_fantasy_week(config["SEASON_START_DATE"])
+        if test_week:
+            current_week = int(test_week)
+        else:
+            from src.cache_utils import load_league_metadata
+            meta = load_league_metadata()
+            calculated_week = get_fantasy_week(config["SEASON_START_DATE"])
+            if meta.get("end_week") and calculated_week > meta["end_week"]:
+                current_week = meta["end_week"]
+            else:
+                current_week = calculated_week
         
         logging.info(f"[YAHOO] 正在抓取第 {current_week} 週週戰績 (Weekly Stats)...")
         weekly_stats = fetcher.fetch_weekly_stats(league_id, current_week)
