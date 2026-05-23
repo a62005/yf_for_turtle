@@ -136,13 +136,13 @@ def handle_message(event):
     target_date = cmd_val if cmd_type == "specific_date" else today_pacific
     
     # 未來攔截
-    if target_date > today_pacific:
+    if cmd_type != "specific_week" and target_date > today_pacific:
         with ApiClient(configuration) as api_client:
             MessagingApi(api_client).reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="我不是未來人，無法提供未來數據")]))
         return
 
     # 賽季前攔截
-    if meta.get('start_date') and target_date < meta['start_date']:
+    if cmd_type != "specific_week" and meta.get('start_date') and target_date < meta['start_date']:
         with ApiClient(configuration) as api_client:
             MessagingApi(api_client).reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="查無當天數據")]))
         return
@@ -156,10 +156,14 @@ def handle_message(event):
         target_week = get_fantasy_week(meta['start_date'], target_dt)
     else:
         target_dt = pytz.timezone("US/Pacific").localize(datetime.strptime(target_date, "%Y-%m-%d"))
-        target_week = cmd_val if cmd_type == "specific_week" else get_fantasy_week(meta.get('start_date', config.get("DEFAULT_SEASON_START", "2025-10-21")), target_dt)
+        calculated_week = get_fantasy_week(meta.get('start_date') or config.get("DEFAULT_SEASON_START", "2025-10-21"), target_dt)
+        if meta.get('end_week') and calculated_week > meta['end_week']:
+            target_week = meta['end_week']
+        else:
+            target_week = cmd_val if cmd_type == "specific_week" else calculated_week
 
     # 賽季後攔截
-    if meta.get('end_date') and target_date > meta['end_date']:
+    if cmd_type != "specific_week" and meta.get('end_date') and target_date > meta['end_date']:
         with ApiClient(configuration) as api_client:
             MessagingApi(api_client).reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="查無當天數據")]))
         return
@@ -226,10 +230,8 @@ def handle_message(event):
     # Spawn subprocess
     env = os.environ.copy()
     env["FETCH_LOCK_PATH"] = lock_file
-    if cmd_type == "specific_date":
-        env["TEST_DATE"] = target_date
-    elif cmd_type == "specific_week":
-        env["TEST_WEEK"] = str(target_week)
+    env["TEST_DATE"] = target_date
+    env["TEST_WEEK"] = str(target_week)
     
     logging.info(f"[TASK] 啟動背景更新任務 (main.py)，模式: {cmd_type}")
     subprocess.Popen([sys.executable, "main.py"], env=env)
