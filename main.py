@@ -56,11 +56,14 @@ def main():
         else:
             from src.cache_utils import load_league_metadata
             meta = load_league_metadata()
-            calculated_week = get_fantasy_week(config["SEASON_START_DATE"])
-            if meta.get("end_week") and calculated_week > meta["end_week"]:
+            today_str = get_pacific_date()
+            date_to_week = meta.get("date_to_week", {})
+            
+            # Use cached mapping if available, otherwise fallback to mathematical calculation
+            current_week = date_to_week.get(today_str) or get_fantasy_week(config["SEASON_START_DATE"])
+            
+            if meta.get("end_week") and current_week > meta["end_week"]:
                 current_week = meta["end_week"]
-            else:
-                current_week = calculated_week
         
         logging.info(f"[YAHOO] 正在抓取第 {current_week} 週週戰績 (Weekly Stats)...")
         weekly_stats = fetcher.fetch_weekly_stats(league_id, current_week)
