@@ -17,6 +17,7 @@ This project is a Python scraper for Yahoo Fantasy NBA data. It uses the `yahoof
 ## Git Workflow Rules
 - **Branching Strategy**: The `master` branch is protected and no direct commits are allowed.
 - **Main Development**: All work must be based on the `dev` branch. **CRITICAL: DEV 一律只能做 BRANCH 與 MERGE，禁止在 DEV 上直接 COMMIT。任何新需求或修改，一律先從 DEV 開新分支。**
+  - **MANDATORY PRE-COMMIT CHECK**: Before running ANY `git commit` command, you MUST run `git branch --show-current`. If the output is `dev` or `master`, you MUST ABORT the commit, create a new branch (`git checkout -b feat/xxxx` or `fix/xxxx`), and only then proceed with the commit.
 - **Feature/Fix Branches**: Create new branches from `dev` using the naming convention `feat/xxxx` for new features or `fix/xxxx` for bug fixes.
 - **Merging**: Once implementation is complete, merge the `feat/xxxx` or `fix/xxxx` branch back into `dev`. **CRITICAL: Merging into the `dev` branch requires explicit user approval. Do NOT automatically merge branches into `dev` without asking.**
 
