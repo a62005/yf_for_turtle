@@ -4,7 +4,7 @@ import sys
 import psutil
 import logging
 import subprocess
-from datetime import datetime
+from datetime import datetime, timedelta
 import pytz
 from linebot.v3.webhooks import MessageEvent
 from linebot.v3.messaging import Configuration, ApiClient, MessagingApi, ReplyMessageRequest, TextMessage, ImageMessage
@@ -12,8 +12,9 @@ from .base_handler import BaseHandler
 
 # Required project imports
 from src.config import load_config
-from src.cache_utils import load_league_metadata, is_empty_data
+from src.cache_utils import load_league_metadata, is_empty_data, save_league_metadata
 from src.utils.time_utils import get_pacific_date, get_fantasy_week
+from src.fetcher import YahooFantasyFetcher
 
 def get_tw_hour():
     tw_tz = pytz.timezone("Asia/Taipei")
@@ -22,33 +23,50 @@ def get_tw_hour():
 class StatsHandler(BaseHandler):
     def __init__(self):
         self.combined_pattern = re.compile(r"^#戰績$")
-        self.daily_pattern = re.compile(r"^#當天戰績$")
-        self.weekly_pattern = re.compile(r"^#當週戰績$")
+        self.yesterday_pattern = re.compile(r"^#戰績昨天$")
+        self.last_week_pattern = re.compile(r"^#戰績上週$")
         self.specific_week_pattern = re.compile(r"^#戰績W(\d+)$", re.IGNORECASE)
         self.specific_date_pattern = re.compile(r"^#戰績(\d{8})$")
 
     def parse_command(self, user_text: str) -> tuple[str | None, str | int | None]:
         if self.combined_pattern.match(user_text):
             return "combined", None
-        elif self.daily_pattern.match(user_text):
-            return "daily", None
-        elif self.weekly_pattern.match(user_text):
-            return "weekly", None
-        
+        elif self.yesterday_pattern.match(user_text):
+            return "yesterday", None
+        elif self.last_week_pattern.match(user_text):
+            return "last_week", None
+
         m_week = self.specific_week_pattern.match(user_text)
         if m_week:
             return "specific_week", int(m_week.group(1))
-            
+
         m_date = self.specific_date_pattern.match(user_text)
         if m_date:
             raw_date = m_date.group(1)
             return "specific_date", f"{raw_date[:4]}-{raw_date[4:6]}-{raw_date[6:8]}"
-            
+
         return None, None
 
     def can_handle(self, user_text: str) -> bool:
         cmd_type, _ = self.parse_command(user_text)
         return cmd_type is not None
+
+    def _get_week_end_date(self, week: int) -> str | None:
+        meta = load_league_metadata()
+        week_str = str(week)
+        if "week_dates" in meta and week_str in meta["week_dates"]:
+            return meta["week_dates"][week_str]
+        
+        config = load_config()
+        fetcher = YahooFantasyFetcher(config["LEAGUE_ID"])
+        end_date = fetcher.fetch_week_end_date(config["LEAGUE_ID"], week)
+        
+        if end_date:
+            if "week_dates" not in meta:
+                meta["week_dates"] = {}
+            meta["week_dates"][week_str] = end_date
+            save_league_metadata(meta)
+        return end_date
 
     def execute(self, event: MessageEvent, configuration: Configuration) -> None:
         user_text = event.message.text.strip()
@@ -60,62 +78,82 @@ class StatsHandler(BaseHandler):
         config = load_config()
         meta = load_league_metadata()
         today_pacific = get_pacific_date()
+        today_dt = pytz.timezone("US/Pacific").localize(datetime.strptime(today_pacific, "%Y-%m-%d"))
+        
         is_offseason = meta.get('end_date') and today_pacific > meta['end_date']
         
-        target_date = cmd_val if cmd_type == "specific_date" else today_pacific
+        # Calculate target_date and target_week based on cmd_type
+        target_date = None
+        target_week = None
         
-        if cmd_type != "specific_week" and target_date > today_pacific:
+        start_date = meta.get('start_date') or config.get("DEFAULT_SEASON_START", "2025-10-21")
+        
+        if cmd_type == "specific_date":
+            target_date = cmd_val
+            target_dt = pytz.timezone("US/Pacific").localize(datetime.strptime(target_date, "%Y-%m-%d"))
+            target_week = get_fantasy_week(start_date, target_dt)
+        elif cmd_type == "specific_week":
+            target_week = cmd_val
+        elif cmd_type == "yesterday":
+            target_dt = today_dt - timedelta(days=1)
+            target_date = target_dt.strftime("%Y-%m-%d")
+            target_week = get_fantasy_week(start_date, target_dt)
+        elif cmd_type == "last_week":
+            current_week = get_fantasy_week(start_date, today_dt)
+            target_week = max(1, current_week - 1)
+        elif cmd_type == "combined":
+            # Default #戰績 logic
+            target_date = today_pacific
+            if is_offseason:
+                logging.info(f"[SYSTEM] 休賽季導向: {today_pacific} > {meta['end_date']}")
+                target_date = meta['end_date']
+            target_dt = pytz.timezone("US/Pacific").localize(datetime.strptime(target_date, "%Y-%m-%d"))
+            target_week = get_fantasy_week(start_date, target_dt)
+            if meta.get('end_week') and target_week > meta['end_week']:
+                target_week = meta['end_week']
+                
+        # Validate week limits (fix for out-of-bounds bug)
+        if target_week is not None and meta.get('end_week'):
+            if target_week > meta['end_week'] or target_week < 1:
+                with ApiClient(configuration) as api_client:
+                    MessagingApi(api_client).reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="查無當週戰績")]))
+                return
+                
+        # Lazy load date for week queries if date isn't set yet
+        if not target_date and target_week:
+            fetched_date = self._get_week_end_date(target_week)
+            if not fetched_date:
+                with ApiClient(configuration) as api_client:
+                    MessagingApi(api_client).reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="查無當週戰績")]))
+                return
+            target_date = fetched_date
+
+        # Future date guard
+        if cmd_type != "specific_week" and cmd_type != "last_week" and target_date > today_pacific:
             with ApiClient(configuration) as api_client:
                 MessagingApi(api_client).reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="我不是未來人，無法提供未來數據")]))
             return
 
-        if cmd_type != "specific_week" and meta.get('start_date') and target_date < meta['start_date']:
+        # Past date guard
+        if meta.get('start_date') and target_date < meta['start_date']:
             with ApiClient(configuration) as api_client:
                 MessagingApi(api_client).reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="查無當天數據")]))
             return
 
-        is_undated_cmd = cmd_type in ["combined", "daily", "weekly"]
-        if meta.get('end_date') and today_pacific > meta['end_date'] and is_undated_cmd:
-            logging.info(f"[SYSTEM] 休賽季導向: {today_pacific} > {meta['end_date']}")
-            target_date = meta['end_date']
-            target_dt = pytz.timezone("US/Pacific").localize(datetime.strptime(target_date, "%Y-%m-%d"))
-            target_week = get_fantasy_week(meta['start_date'], target_dt)
-        else:
-            target_dt = pytz.timezone("US/Pacific").localize(datetime.strptime(target_date, "%Y-%m-%d"))
-            calculated_week = get_fantasy_week(meta.get('start_date') or config.get("DEFAULT_SEASON_START", "2025-10-21"), target_dt)
-            if meta.get('end_week') and calculated_week > meta['end_week']:
-                target_week = meta['end_week']
-            else:
-                target_week = cmd_val if cmd_type == "specific_week" else calculated_week
+        # Unified image cache key
+        img_filename = f"{target_date}_combined.png"
+        cache_key = f"{target_date}_combined"
 
-        if cmd_type != "specific_week" and meta.get('end_date') and target_date > meta['end_date']:
-            with ApiClient(configuration) as api_client:
-                MessagingApi(api_client).reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="查無當天數據")]))
-            return
-        
-        if cmd_type == "combined":
-            img_filename = f"{target_date}_combined.png"
-            cache_key = f"{target_date}_combined"
-        elif cmd_type in ["daily", "specific_date"]:
-            img_filename = f"{target_date}_daily.png"
-            cache_key = f"{target_date}_daily"
-        else: # weekly, specific_week
-            img_filename = f"week_{target_week}_weekly.png"
-            cache_key = f"week_{target_week}_weekly"
-
-        # Note: os.path.dirname is resolving from src/handlers/stats_handler.py, so we need to go up two levels to get to project root
+        # The rest is the same standard cache checking/execution
         project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         img_path = os.path.join(project_root, "data", "images", img_filename)
         
         if os.path.exists(img_path):
             logging.info(f"[CACHE] 命中圖片快取: {img_filename}")
-            
-            # Fetch SERVER_URL from env or config if needed, here we use os.getenv to mirror bot.py behavior safely
             SERVER_URL = os.getenv('SERVER_URL', 'http://localhost:5000')
             https_url = SERVER_URL.replace("http://", "https://")
             if not https_url.startswith("https://"):
                 https_url = f"https://{https_url.lstrip('https://')}"
-                
             img_url = f"{https_url}/images/{img_filename}"
             reply_img = ImageMessage(original_content_url=img_url, preview_image_url=img_url)
             with ApiClient(configuration) as api_client:
@@ -124,12 +162,11 @@ class StatsHandler(BaseHandler):
 
         if is_empty_data(cache_key):
             logging.info(f"[CACHE] 命中負向快取 (無數據): {cache_key}")
-            err_msg = "查無當週數據" if "weekly" in cache_key else "查無當天數據"
             with ApiClient(configuration) as api_client:
-                MessagingApi(api_client).reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text=err_msg)]))
+                MessagingApi(api_client).reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="查無當天數據")]))
             return
 
-        is_current = cmd_type in ["combined", "daily", "weekly"]
+        is_current = cmd_type == "combined"
         if is_current and not is_offseason and get_tw_hour() < 14:
             with ApiClient(configuration) as api_client:
                 MessagingApi(api_client).reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="請於 14:00 後再進行查詢。")]))
@@ -153,6 +190,8 @@ class StatsHandler(BaseHandler):
         env["FETCH_LOCK_PATH"] = lock_file
         env["TEST_DATE"] = target_date
         env["TEST_WEEK"] = str(target_week)
+        # Force combined mode in env if needed by main.py
+        env["MODE"] = "combined" 
         
-        logging.info(f"[TASK] 啟動背景更新任務 (main.py)，模式: {cmd_type}")
+        logging.info(f"[TASK] 啟動背景更新任務 (main.py)，模式: combined")
         subprocess.Popen([sys.executable, os.path.join(project_root, "main.py")], env=env)
