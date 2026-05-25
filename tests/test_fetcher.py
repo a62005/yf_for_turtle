@@ -226,3 +226,40 @@ def test_fetch_league_scoreboard(mocker):
         "1": {"played": 3, "total": 6},
         "2": {"played": 1, "total": 5}
     }
+
+def test_fetch_week_end_date(mocker):
+    from src.fetcher import YahooFantasyFetcher
+    mock_ctx = mocker.patch("yahoofantasy.Context")
+    
+    mock_xml = """<?xml version="1.0" encoding="UTF-8"?>
+    <fantasy_content xml:lang="en-US" yahoo:uri="http://fantasysports.yahooapis.com/fantasy/v2/league/12345/scoreboard;week=16" xmlns:yahoo="http://www.yahooapis.com/v1/base.rng" xmlns="http://fantasysports.yahooapis.com/fantasy/v2/base.rng">
+      <league>
+        <scoreboard>
+          <matchups>
+            <matchup>
+              <week>16</week>
+              <week_start>2025-02-03</week_start>
+              <week_end>2025-02-09</week_end>
+            </matchup>
+          </matchups>
+        </scoreboard>
+      </league>
+    </fantasy_content>
+    """
+    mock_ctx.return_value.make_request.return_value = mock_xml
+    
+    fetcher = YahooFantasyFetcher("12345")
+    fetcher.ctx = mock_ctx.return_value
+    
+    # Assert successful parsing
+    end_date = fetcher.fetch_week_end_date("12345", 16)
+    assert end_date == "2025-02-09"
+    
+    # Test error handling (missing matchup)
+    mock_error_xml = """<?xml version="1.0" encoding="UTF-8"?>
+    <fantasy_content xmlns="http://fantasysports.yahooapis.com/fantasy/v2/base.rng">
+      <league><scoreboard><matchups></matchups></scoreboard></league>
+    </fantasy_content>"""
+    mock_ctx.return_value.make_request.return_value = mock_error_xml
+    end_date_err = fetcher.fetch_week_end_date("12345", 16)
+    assert end_date_err is None

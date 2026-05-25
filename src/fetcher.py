@@ -78,6 +78,27 @@ class YahooFantasyFetcher:
             "end_week": int(end_week) if end_week else None
         }
 
+    def fetch_week_end_date(self, league_id: str, week: int) -> str | None:
+        """Fetch the end date for a specific week from the scoreboard."""
+        league_id = self._normalize_league_id(league_id)
+        url = f"league/{league_id}/scoreboard;week={week}"
+        try:
+            import xml.etree.ElementTree as ET
+            import logging
+            data = self.ctx.make_request(url)
+            root = ET.fromstring(data)
+            ns = {'ns': 'http://fantasysports.yahooapis.com/fantasy/v2/base.rng'}
+            matchup_node = root.find('.//ns:matchups/ns:matchup', ns)
+            if matchup_node is not None:
+                end_node = matchup_node.find('ns:week_end', ns)
+                if end_node is not None:
+                    return end_node.text
+            return None
+        except Exception as e:
+            import logging
+            logging.error(f"Failed to fetch week end date for week {week}: {e}")
+            return None
+
     def fetch_league_data(self, league_id: str) -> dict:
         # Ensure league_id has the correct prefix for NBA
         league_id = self._normalize_league_id(league_id)
