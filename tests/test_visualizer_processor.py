@@ -94,3 +94,28 @@ def test_process_stats_game_player():
     assert gp_column['rows'][1]['value'] == "10 / 45"
     assert gp_column['rows'][2]['name'] == 'Team A'
     assert gp_column['rows'][2]['value'] == "10 / 40"
+
+def test_process_stats_percentage_formatting():
+    raw_data = {
+        "team_stats": [
+            {"name": "Team A", "stats": {"FG%": 0.1234, "FT%": 0.8}},
+            {"name": "Team B", "stats": {"FG%": 0, "FT%": None}},
+            {"name": "Team C", "stats": {"FG%": 0.5, "FT%": 0.00}}
+        ]
+    }
+    processed = process_stats_for_visual(raw_data)
+    
+    fg_pct_column = next(c for c in processed if c['label'] == 'FG%')
+    ft_pct_column = next(c for c in processed if c['label'] == 'FT%')
+    
+    # Team A: 0.1234 -> 12.3%, 0.8 -> 80.0%
+    assert any(r['name'] == 'Team A' and r['value'] == '12.3%' for r in fg_pct_column['rows'])
+    assert any(r['name'] == 'Team A' and r['value'] == '80.0%' for r in ft_pct_column['rows'])
+    
+    # Team B: 0 -> "-", None -> "-"
+    assert any(r['name'] == 'Team B' and r['value'] == '-' for r in fg_pct_column['rows'])
+    assert any(r['name'] == 'Team B' and r['value'] == '-' for r in ft_pct_column['rows'])
+    
+    # Team C: 0.5 -> 50.0%, 0.00 -> "-"
+    assert any(r['name'] == 'Team C' and r['value'] == '50.0%' for r in fg_pct_column['rows'])
+    assert any(r['name'] == 'Team C' and r['value'] == '-' for r in ft_pct_column['rows'])
