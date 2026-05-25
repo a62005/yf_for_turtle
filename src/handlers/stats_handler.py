@@ -87,19 +87,20 @@ class StatsHandler(BaseHandler):
         target_week = None
         
         start_date = meta.get('start_date') or config.get("DEFAULT_SEASON_START", "2025-10-21")
+        date_to_week = meta.get("date_to_week", {})
         
         if cmd_type == "specific_date":
             target_date = cmd_val
             target_dt = pytz.timezone("US/Pacific").localize(datetime.strptime(target_date, "%Y-%m-%d"))
-            target_week = get_fantasy_week(start_date, target_dt)
+            target_week = date_to_week.get(target_date) or get_fantasy_week(start_date, target_dt)
         elif cmd_type == "specific_week":
             target_week = cmd_val
         elif cmd_type == "yesterday":
             target_dt = today_dt - timedelta(days=1)
             target_date = target_dt.strftime("%Y-%m-%d")
-            target_week = get_fantasy_week(start_date, target_dt)
+            target_week = date_to_week.get(target_date) or get_fantasy_week(start_date, target_dt)
         elif cmd_type == "last_week":
-            current_week = get_fantasy_week(start_date, today_dt)
+            current_week = date_to_week.get(today_pacific) or get_fantasy_week(start_date, today_dt)
             target_week = max(1, current_week - 1)
         elif cmd_type == "combined":
             # Default #戰績 logic
@@ -108,7 +109,7 @@ class StatsHandler(BaseHandler):
                 logging.info(f"[SYSTEM] 休賽季導向: {today_pacific} > {meta['end_date']}")
                 target_date = meta['end_date']
             target_dt = pytz.timezone("US/Pacific").localize(datetime.strptime(target_date, "%Y-%m-%d"))
-            target_week = get_fantasy_week(start_date, target_dt)
+            target_week = date_to_week.get(target_date) or get_fantasy_week(start_date, target_dt)
             if meta.get('end_week') and target_week > meta['end_week']:
                 target_week = meta['end_week']
                 

@@ -98,9 +98,8 @@ if __name__ == "__main__":
     config = load_config()
     fetcher = YahooFantasyFetcher(client_id=config.get("YAHOO_CLIENT_ID"), client_secret=config.get("YAHOO_CLIENT_SECRET"))
     try:
-        logging.info("[SYSTEM] 同步賽季中繼資料...")
-        meta = fetcher.fetch_league_metadata(config["LEAGUE_ID"])
-        save_league_metadata(meta)
+        from src.utils.season_utils import sync_season_metadata
+        sync_season_metadata(fetcher, config["LEAGUE_ID"])
     except Exception as e:
         logging.error(f"[SYSTEM] 賽季資料同步失敗: {e}")
 
