@@ -36,6 +36,18 @@ def process_stats_for_visual(data: dict) -> list:
         {"label": "TO", "data_key": "TO", "sort_key": "TO", "reverse": False},
     ]
 
+    # helper for percentage formatting
+    def format_val(label, val):
+        if "%" in label:
+            try:
+                num = float(val)
+                if num == 0:
+                    return "-"
+                return f"{num * 100:.1f}%"
+            except (ValueError, TypeError):
+                return "-"
+        return val if val is not None else "-"
+
     result = []
     for cat in categories:
         def sort_key_func(team):
@@ -50,9 +62,10 @@ def process_stats_for_visual(data: dict) -> list:
         
         rows = []
         for t in sorted_teams:
+            raw_val = t["stats"].get(cat["data_key"])
             rows.append({
                 "name": t["name"],
-                "value": t["stats"].get(cat["data_key"], "-")
+                "value": format_val(cat["label"], raw_val)
             })
         result.append({"label": cat["label"], "rows": rows})
     return result
