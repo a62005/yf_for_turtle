@@ -5,3 +5,6 @@ pytest-mock
 pytz
 Jinja2
 playwright
+google-cloud-storage
+google-cloud-pubsub
+gunicorn
