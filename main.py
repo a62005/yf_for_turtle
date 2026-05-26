@@ -122,6 +122,30 @@ def main():
         except Exception as ve:
             logging.error(f"Failed to generate visualization: {ve}")
 
+        # 6. Push Messaging and Job Cleanup
+        cache_key = os.getenv("CACHE_KEY", f"{today_str}_combined")
+        from src.utils.job_tracker import JobTracker
+        from src.utils.notify import send_push_image
+        
+        storage_type = config.get("STORAGE_TYPE", "local")
+        bucket_name = os.getenv("GCS_BUCKET_NAME")
+        tracker = JobTracker(mode=storage_type, bucket_name=bucket_name)
+        
+        users_to_notify = tracker.get_job_users(cache_key)
+        if users_to_notify:
+            # Determine image URL
+            if storage_type == "gcs":
+                img_url = f"https://storage.googleapis.com/{bucket_name}/images/{today_str}_combined.png"
+            else:
+                server_url = os.getenv('SERVER_URL', 'http://localhost:5000')
+                https_url = server_url.replace("http://", "https://")
+                if not https_url.startswith("https://"):
+                    https_url = f"https://{https_url.lstrip('https://')}"
+                img_url = f"{https_url}/images/{today_str}_combined.png"
+            
+            send_push_image(users_to_notify, img_url)
+            tracker.clear_job(cache_key)
+
         logging.info("All fetches completed successfully.")
         
     except Exception as e:

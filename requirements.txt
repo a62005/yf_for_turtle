@@ -8,3 +8,5 @@ playwright
 google-cloud-storage
 google-cloud-pubsub
 gunicorn
+line-bot-sdk
+cachetools
