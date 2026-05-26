@@ -282,10 +282,9 @@ class YahooFantasyFetcher:
         league_id = self._normalize_league_id(league_id)
         # Fetching rosters for all teams via batch request
         url = f"teams/roster;date={date_str}"
-        data = self.ctx.make_request(url, league=league_id)
-        
         roster_counts = {}
         try:
+            data = self.ctx.make_request(url, league=league_id)
             root = ET.fromstring(data)
             for team in self._find_all_nodes(root, './/ns:team'):
                 team_id_node = self._find_node(team, 'ns:team_id')
@@ -309,10 +308,10 @@ class YahooFantasyFetcher:
         """Fetch played and total game counts for all teams from the scoreboard."""
         league_id = self._normalize_league_id(league_id)
         url = f"league/{league_id}/scoreboard;week={week}"
-        data = self.ctx.make_request(url)
         
         game_counts = {}
         try:
+            data = self.ctx.make_request(url)
             root = ET.fromstring(data)
             for team in self._find_all_nodes(root, './/ns:team'):
                 team_id_node = self._find_node(team, 'ns:team_id')
