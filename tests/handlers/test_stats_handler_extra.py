@@ -10,6 +10,8 @@ def mock_event():
     event = MagicMock(spec=MessageEvent)
     event.message = MagicMock()
     event.reply_token = "dummy_token"
+    event.source = MagicMock()
+    event.source.user_id = "user123"
     return event
 
 @pytest.fixture
@@ -157,13 +159,14 @@ def test_execute_offseason_redirection(mock_exists, mock_messaging_api, mock_api
 @patch("src.handlers.stats_handler.MessagingApi")
 @patch("src.handlers.stats_handler.is_empty_data", return_value=False)
 @patch("os.path.exists", return_value=False)
-@patch("os.open", side_effect=FileExistsError) # Simulate lock file exists
-def test_execute_lock_file_exists(mock_open, mock_exists, mock_is_empty, mock_messaging_api, mock_api_client, mock_tw_hour, mock_get_pacific, mock_load_meta, mock_load_config, mock_event, mock_config):
+@patch("src.handlers.stats_handler.JobTracker")
+def test_execute_job_already_running(mock_job_tracker, mock_exists, mock_is_empty, mock_messaging_api, mock_api_client, mock_tw_hour, mock_get_pacific, mock_load_meta, mock_load_config, mock_event, mock_config):
     mock_load_meta.return_value = {"start_date": "2025-10-21"}
+    mock_job_tracker.return_value.add_job.return_value = False # Job already running
     handler = StatsHandler()
     mock_event.message.text = "#戰績"
     
     handler.execute(mock_event, mock_config)
     
     reply_req = mock_messaging_api.return_value.reply_message.call_args[0][0]
-    assert reply_req.messages[0].text == "數據更新中"
+    assert "稍後將主動通知您" in reply_req.messages[0].text

@@ -37,9 +37,8 @@ def test_stats_handler_parse_command():
 @patch("src.handlers.stats_handler.subprocess.Popen")
 @patch("os.path.exists")
 @patch("os.makedirs")
-@patch("os.open")
-@patch("os.close")
-def test_stats_handler_execute_sanity(mock_os_close, mock_os_open, mock_makedirs, mock_exists, mock_popen, mock_messaging_api, mock_api_client, mock_is_empty_data, mock_get_pacific, mock_load_meta, mock_load_config):
+@patch("src.handlers.stats_handler.JobTracker")
+def test_stats_handler_execute_sanity(mock_job_tracker, mock_makedirs, mock_exists, mock_popen, mock_messaging_api, mock_api_client, mock_is_empty_data, mock_get_pacific, mock_load_meta, mock_load_config):
     handler = StatsHandler()
     
     # Setup mocks
@@ -48,11 +47,14 @@ def test_stats_handler_execute_sanity(mock_os_close, mock_os_open, mock_makedirs
     mock_get_pacific.return_value = "2024-11-01"
     mock_exists.return_value = False # Image does not exist
     mock_is_empty_data.return_value = False # Data is not marked empty
+    mock_job_tracker.return_value.add_job.return_value = True # New job
     
     event = MagicMock(spec=MessageEvent)
     event.message = MagicMock()
     event.message.text = "#戰績"
     event.reply_token = "dummy_token"
+    event.source = MagicMock()
+    event.source.user_id = "user123"
     
     config = MagicMock(spec=Configuration)
     

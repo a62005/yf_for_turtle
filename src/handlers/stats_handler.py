@@ -15,6 +15,7 @@ from src.config import load_config
 from src.cache_utils import load_league_metadata, is_empty_data, save_league_metadata
 from src.utils.time_utils import get_pacific_date, get_fantasy_week
 from src.fetcher import YahooFantasyFetcher
+from src.utils.job_tracker import JobTracker
 
 def get_tw_hour():
     tw_tz = pytz.timezone("Asia/Taipei")
@@ -173,26 +174,46 @@ class StatsHandler(BaseHandler):
                 MessagingApi(api_client).reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="請於 14:00 後再進行查詢。")]))
             return
             
-        lock_file = os.path.join(project_root, "data", f"{cache_key}_fetch.lock")
-        os.makedirs(os.path.dirname(lock_file), exist_ok=True)
-        try:
-            fd = os.open(lock_file, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-            os.close(fd)
-        except FileExistsError:
-            logging.warning(f"[LOCK] 任務正在執行中，跳過重複請求: {cache_key}")
+        bucket_name = os.getenv("GCS_BUCKET_NAME")
+        tracker = JobTracker(mode=config.get("STORAGE_TYPE", "local"), bucket_name=bucket_name)
+        
+        user_id = event.source.user_id if hasattr(event.source, 'user_id') else "unknown"
+        is_new_job = tracker.add_job(cache_key, user_id)
+        
+        if not is_new_job:
+            logging.info(f"[TRACKER] 任務正在執行中，加入等待名單: {cache_key}")
             with ApiClient(configuration) as api_client:
-                MessagingApi(api_client).reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="數據更新中")]))
+                MessagingApi(api_client).reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="數據更新中，稍後將主動通知您")]))
             return
 
         with ApiClient(configuration) as api_client:
-            MessagingApi(api_client).reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="數據更新中，請稍候再試...")]))
+            MessagingApi(api_client).reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="數據更新中，請稍候...")]))
         
-        env = os.environ.copy()
-        env["FETCH_LOCK_PATH"] = lock_file
-        env["TEST_DATE"] = target_date
-        env["TEST_WEEK"] = str(target_week)
-        # Force combined mode in env if needed by main.py
-        env["MODE"] = "combined" 
+        task_mode = config.get("TASK_MODE", "subprocess")
         
-        logging.info(f"[TASK] 啟動背景更新任務 (main.py)，模式: combined")
-        subprocess.Popen([sys.executable, os.path.join(project_root, "main.py")], env=env)
+        if task_mode == "pubsub":
+            import json
+            from google.cloud import pubsub_v1
+            publisher = pubsub_v1.PublisherClient()
+            project_id = os.getenv("GCP_PROJECT_ID")
+            topic_id = os.getenv("PUBSUB_TOPIC_NAME")
+            topic_path = publisher.topic_path(project_id, topic_id)
+            
+            payload = json.dumps({
+                "target_date": target_date,
+                "target_week": target_week,
+                "cache_key": cache_key
+            }).encode("utf-8")
+            
+            publisher.publish(topic_path, data=payload)
+            logging.info(f"[TASK] 啟動背景更新任務 (Pub/Sub)")
+        else:
+            env = os.environ.copy()
+            env["TEST_DATE"] = target_date
+            if target_week:
+                env["TEST_WEEK"] = str(target_week)
+            env["MODE"] = "combined" 
+            env["CACHE_KEY"] = cache_key
+            
+            logging.info(f"[TASK] 啟動背景更新任務 (main.py)，模式: combined")
+            subprocess.Popen([sys.executable, os.path.join(project_root, "main.py")], env=env)
