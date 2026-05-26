@@ -15,7 +15,14 @@ def load_config() -> dict:
     mapping_file = os.getenv("TEAM_MAPPING_FILE", "team_mapping.json")
     season_start = os.getenv("SEASON_START_DATE")
     
+    env_mode = os.getenv("ENV", "local")
+    storage_type = "gcs" if env_mode == "production" else "local"
+    task_mode = "pubsub" if env_mode == "production" else "subprocess"
+    
     return {
+        "ENV": env_mode,
+        "STORAGE_TYPE": storage_type,
+        "TASK_MODE": task_mode,
         "LEAGUE_ID": league_id,
         "TEAM_MAPPING_FILE": mapping_file,
         "SEASON_START_DATE": season_start,
