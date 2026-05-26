@@ -3,6 +3,8 @@ import sys
 import psutil
 import logging
 import subprocess
+import base64
+import json
 from flask import Flask, request, abort, send_from_directory
 from linebot.v3 import WebhookHandler
 from linebot.v3.exceptions import InvalidSignatureError
@@ -76,6 +78,39 @@ def callback():
     except InvalidSignatureError:
         abort(400)
     return 'OK'
+
+@app.route("/pubsub-worker", methods=['POST'])
+def pubsub_worker():
+    envelope = request.get_json()
+    if not envelope:
+        return 'Bad Request: no JSON provided', 400
+
+    pubsub_message = envelope.get('message')
+    if not pubsub_message or not pubsub_message.get('data'):
+        return 'Bad Request: invalid Pub/Sub message format', 400
+
+    try:
+        data_str = base64.b64decode(pubsub_message['data']).decode('utf-8')
+        payload = json.loads(data_str)
+        logging.info(f"[PUBSUB] 收到背景任務: {payload}")
+        
+        # Trigger main.py just like the subprocess does, but blockingly or in a sub-process
+        # Since this is a Cloud Run worker route, we can just run the subprocess and let Cloud Run bill for it
+        env = os.environ.copy()
+        if "target_date" in payload:
+            env["TEST_DATE"] = payload["target_date"]
+        if "target_week" in payload and payload["target_week"]:
+            env["TEST_WEEK"] = str(payload["target_week"])
+        env["MODE"] = "combined"
+        
+        project_root = os.path.dirname(os.path.abspath(__file__))
+        proc = subprocess.Popen([sys.executable, os.path.join(project_root, "main.py")], env=env)
+        proc.wait() # Block until done so Cloud Run knows the task is active
+        
+        return 'OK', 200
+    except Exception as e:
+        logging.error(f"[PUBSUB] 任務執行失敗: {e}")
+        return f'Error: {str(e)}', 500
 
 @app.route("/images/<path:filename>")
 def serve_image(filename):
