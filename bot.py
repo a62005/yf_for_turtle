@@ -15,9 +15,9 @@ from src.fetcher import YahooFantasyFetcher
 from src.cache_utils import save_league_metadata
 from src.utils.token_utils import is_token_processed
 
-# Import our new handlers
 from src.handlers.dispatcher import CommandDispatcher
 from src.handlers.stats_handler import StatsHandler
+from src.handlers.player_handler import PlayerHandler
 
 def cleanup_port(port):
     for proc in psutil.process_iter(['pid', 'name']):
@@ -64,6 +64,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 # Initialize Dispatcher
 dispatcher = CommandDispatcher()
 dispatcher.register(StatsHandler())
+dispatcher.register(PlayerHandler())
 
 @app.route("/callback", methods=['POST'])
 def callback():
