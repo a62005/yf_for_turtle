@@ -5,3 +5,4 @@ pytest-mock
 pytz
 Jinja2
 playwright
+google-generativeai
