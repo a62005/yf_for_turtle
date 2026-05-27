@@ -14,7 +14,16 @@ SYSTEM_PROMPT = """你是一個精準的 NBA 籃球專家，專門負責將使�
    - "字母哥" -> Giannis Antetokounmpo
    - "77", "胖虎" -> Luka Doncic
 3. 如果輸入是完全無意義、非籃球球員、或非現役球員的字詞（例如 "喬丹", "科比", "哈囉", "測試"），你必須將 is_known_player 設為 false，並拒絕胡亂臆測。
-4. 必須以指定的 JSON 格式回傳，不要包含任何額外的說明、Markdown 標記或 ```json 包裹。"""
+4. 必須以指定的 JSON 格式回傳，不要包含任何額外的說明、Markdown 標記或 ```json 包裹。
+
+【強制輸出 JSON 格式範例】：
+{
+  "is_known_player": true,
+  "english_name": "LeBron James",
+  "chinese_name": "勒布朗·詹姆斯",
+  "team": "Los Angeles Lakers",
+  "jersey_number": "23"
+}"""
 
 def parse_player_nickname(nickname: str, api_key: str = None) -> dict:
     key = api_key or os.getenv("GEMINI_API_KEY")
@@ -25,7 +34,7 @@ def parse_player_nickname(nickname: str, api_key: str = None) -> dict:
     try:
         genai.configure(api_key=key)
         model = genai.GenerativeModel(
-            model_name="gemini-1.5-flash",
+            model_name="gemini-2.5-flash",
             system_instruction=SYSTEM_PROMPT
         )
         
