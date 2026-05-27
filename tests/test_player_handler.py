@@ -42,9 +42,11 @@ def test_format_stats():
         "jersey_number": "23"
     }
     stats = {
-        "FGM/FGA": "14/24",
+        "stat_4": "14",
+        "stat_3": "24",
         "FG%": "0.583",
-        "FTM/FTA": "3/4",
+        "stat_7": "3",
+        "stat_6": "4",
         "FT%": "0.750",
         "3PTM": "4",
         "PTS": "35",
