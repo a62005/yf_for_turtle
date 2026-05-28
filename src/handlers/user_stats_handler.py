@@ -135,8 +135,7 @@ class UserStatsHandler(BaseHandler):
                 "spacing": "sm",
                 "contents": [
                     {"type": "text", "text": player_info["manager_name"], "weight": "bold", "size": "xl", "color": "#111111"},
-                    {"type": "text", "text": player_info["official_name"], "size": "sm", "color": "#555555"},
-                    {"type": "text", "text": date_str, "weight": "bold", "size": "md", "color": "#111111"}
+                    {"type": "text", "text": player_info["official_name"], "size": "sm", "color": "#555555"}
                 ]
             },
             "body": {
@@ -144,19 +143,27 @@ class UserStatsHandler(BaseHandler):
                 "layout": "vertical",
                 "spacing": "md",
                 "contents": [
-                    # 1. 當日數據
+                    # 1. 當日日期標頭
+                    {
+                        "type": "text",
+                        "text": date_str,
+                        "weight": "bold",
+                        "size": "md",
+                        "color": "#111111"
+                    },
+                    # 2. 當日數據
                     {
                         "type": "box",
                         "layout": "vertical",
                         "spacing": "xs",
                         "contents": daily_rows
                     },
-                    # 2. 精緻分隔線
+                    # 3. 精緻分隔線
                     {
                         "type": "separator",
                         "color": "#EAEAEA"
                     },
-                    # 3. 當週週數標頭
+                    # 4. 當週週數標頭
                     {
                         "type": "text",
                         "text": f"W{week_str}",
@@ -165,7 +172,7 @@ class UserStatsHandler(BaseHandler):
                         "color": "#111111",
                         "margin": "md"
                     },
-                    # 4. 當週數據
+                    # 5. 當週數據
                     {
                         "type": "box",
                         "layout": "vertical",
