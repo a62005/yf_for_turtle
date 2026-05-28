@@ -27,24 +27,6 @@ class PlayerHandler(BaseHandler):
         config = load_config()
         return bool(config.get("GEMINI_API_KEY"))
 
-    def calculate_target_date(self, current_tw_dt=None, is_offseason=False, end_date=None) -> str:
-        if is_offseason:
-            return end_date or "2026-04-12"
-        
-        if current_tw_dt is None:
-            tw_tz = pytz.timezone("Asia/Taipei")
-            current_tw_dt = datetime.now(tw_tz)
-            
-        tw_date = current_tw_dt.date()
-        tw_hour = current_tw_dt.hour
-        
-        if tw_hour >= 7:
-            target_dt = tw_date - timedelta(days=1)
-        else:
-            target_dt = tw_date - timedelta(days=2)
-            
-        return target_dt.strftime("%Y-%m-%d")
-
     def reply_flex(self, event: MessageEvent, configuration: Configuration, alt_text: str, flex_dict: dict) -> None:
         flex_container = FlexContainer.from_json(json.dumps(flex_dict))
         with ApiClient(configuration) as api_client:
@@ -199,7 +181,8 @@ class PlayerHandler(BaseHandler):
                 return
 
         # 3. Target date calculation
-        target_date = self.calculate_target_date(is_offseason=is_offseason, end_date=meta.get('end_date'))
+        from src.utils.time_utils import get_target_date
+        target_date = get_target_date(is_offseason=is_offseason, end_date=meta.get('end_date'))
         
         # 4. Fetch Stats by date
         fetcher = YahooFantasyFetcher(client_id=config.get("YAHOO_CLIENT_ID"), client_secret=config.get("YAHOO_CLIENT_SECRET"))
