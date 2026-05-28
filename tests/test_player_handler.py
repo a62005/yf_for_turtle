@@ -64,22 +64,24 @@ def test_format_stats():
     }
     formatted = handler.format_player_stats(player_info, stats, "2026-11-12")
     
-    expected = (
-        "LeBron James\n"
-        "Los Angeles Lakers#23\n"
-        "2026-11-12\n"
-        "```\n"
-        "FGM/A :           14/24\n"
-        "FG% :             58.3%\n"
-        "FTM/A :             3/4\n"
-        "FT% :             75.0%\n"
-        "3PM :                 4\n"
-        "PTS :                35\n"
-        "REB :                 9\n"
-        "AST :                12\n"
-        "STL :                 2\n"
-        "BLK :                 1\n"
-        "TO :                  3\n"
-        "```"
-    )
-    assert formatted.strip() == expected.strip()
+    # 斷言回傳必須是字典格式 (Flex Message)
+    assert isinstance(formatted, dict)
+    assert formatted["type"] == "bubble"
+    
+    # 驗證 Header 部分的球員英文名稱與隊伍背號
+    header_box = formatted["header"]["contents"]
+    assert header_box[0]["text"] == "LeBron James"
+    assert header_box[1]["text"] == "Los Angeles Lakers#23"
+    assert header_box[2]["text"] == "2026-11-12"
+    
+    # 驗證 Body 部分的數據格線對齊
+    daily_stats_box = formatted["body"]["contents"][0]["contents"]
+    # FGM/A 列
+    assert daily_stats_box[0]["contents"][0]["text"] == "FGM/A"
+    assert daily_stats_box[0]["contents"][1]["text"] == "14/24"
+    assert daily_stats_box[0]["contents"][1]["align"] == "end"
+    
+    # PTS 列
+    assert daily_stats_box[5]["contents"][0]["text"] == "PTS"
+    assert daily_stats_box[5]["contents"][1]["text"] == "35"
+    assert daily_stats_box[5]["contents"][1]["align"] == "end"

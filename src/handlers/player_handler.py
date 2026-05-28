@@ -4,8 +4,9 @@ import logging
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
 import pytz
+import json
 from linebot.v3.webhooks import MessageEvent
-from linebot.v3.messaging import ApiClient, MessagingApi, ReplyMessageRequest, TextMessage, Configuration
+from linebot.v3.messaging import ApiClient, MessagingApi, ReplyMessageRequest, TextMessage, Configuration, FlexMessage, FlexContainer
 from .base_handler import BaseHandler
 
 from src.config import load_config
@@ -44,7 +45,17 @@ class PlayerHandler(BaseHandler):
             
         return target_dt.strftime("%Y-%m-%d")
 
-    def format_player_stats(self, player_info: dict, stats: dict, date_str: str = None) -> str:
+    def reply_flex(self, event: MessageEvent, configuration: Configuration, alt_text: str, flex_dict: dict) -> None:
+        flex_container = FlexContainer.from_json(json.dumps(flex_dict))
+        with ApiClient(configuration) as api_client:
+            MessagingApi(api_client).reply_message(
+                ReplyMessageRequest(
+                    reply_token=event.reply_token,
+                    messages=[FlexMessage(alt_text=alt_text, contents=flex_container)]
+                )
+            )
+
+    def format_player_stats(self, player_info: dict, stats: dict, date_str: str = None) -> dict:
         def to_percent_str(val):
             try:
                 f_val = float(val)
@@ -75,28 +86,49 @@ class PlayerHandler(BaseHandler):
         blk = stats.get("BLK", "0")
         to = stats.get("TO", "0")
 
-        header = (
-            f"{player_info.get('english_name', 'Unknown')}\n"
-            f"{player_info.get('team', 'Unknown')}#{player_info.get('jersey_number', '0')}\n"
-            f"{date_str or ''}"
-        )
-
-        lines = [
-            f"FGM/A : {fgm_a:>15}",
-            f"FG% : {fg_pct:>17}",
-            f"FTM/A : {ftm_a:>15}",
-            f"FT% : {ft_pct:>17}",
-            f"3PM : {pm3:>17}",
-            f"PTS : {pts:>17}",
-            f"REB : {reb:>17}",
-            f"AST : {ast:>17}",
-            f"STL : {stl:>17}",
-            f"BLK : {blk:>17}",
-            f"TO : {to:>18}"
+        # 構造 9-Cat 數據列 JSON 格式
+        stat_rows = []
+        raw_stats = [
+            ("FGM/A", fgm_a), ("FG%", fg_pct), ("FTM/A", ftm_a), ("FT%", ft_pct),
+            ("3PM", pm3), ("PTS", pts), ("REB", reb), ("AST", ast),
+            ("STL", stl), ("BLK", blk), ("TO", to)
         ]
+        for label, val in raw_stats:
+            stat_rows.append({
+                "type": "box",
+                "layout": "horizontal",
+                "contents": [
+                    {"type": "text", "text": label, "color": "#666666", "size": "sm"},
+                    {"type": "text", "text": val, "align": "end", "weight": "bold", "color": "#111111", "size": "sm"}
+                ]
+            })
 
-        body = "```\n" + "\n".join(lines) + "\n```"
-        return header + "\n" + body
+        # 回傳完整的清爽極簡風 Flex dict
+        return {
+            "type": "bubble",
+            "header": {
+                "type": "box",
+                "layout": "vertical",
+                "spacing": "sm",
+                "contents": [
+                    {"type": "text", "text": player_info.get("english_name", "Unknown"), "weight": "bold", "size": "xl", "color": "#111111"},
+                    {"type": "text", "text": f"{player_info.get('team', 'Unknown')}#{player_info.get('jersey_number', '0')}", "size": "sm", "color": "#555555"},
+                    {"type": "text", "text": date_str or "", "size": "xs", "color": "#888888"}
+                ]
+            },
+            "body": {
+                "type": "box",
+                "layout": "vertical",
+                "contents": [
+                    {
+                        "type": "box",
+                        "layout": "vertical",
+                        "spacing": "xs",
+                        "contents": stat_rows
+                    }
+                ]
+            }
+        }
 
     def execute(self, event: MessageEvent, configuration: Configuration) -> None:
         user_text = event.message.text.strip()
@@ -186,8 +218,8 @@ class PlayerHandler(BaseHandler):
                 self.reply_text(event, configuration, f"{player_info['english_name']} 於 {target_date} 今日無比賽數據。")
                 return
             
-            reply_text = self.format_player_stats(player_info, stats_dict, target_date)
-            self.reply_text(event, configuration, reply_text)
+            flex_dict = self.format_player_stats(player_info, stats_dict, target_date)
+            self.reply_flex(event, configuration, f"球員 {player_info.get('english_name', 'Unknown')} 數據", flex_dict)
         except Exception as e:
             logging.error(f"Yahoo fetch stats failed: {e}")
             self.reply_text(event, configuration, f"獲取球員統計數據失敗: {str(e)}")
