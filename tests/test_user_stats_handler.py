@@ -16,8 +16,10 @@ def test_user_stats_handler_can_handle(mocker):
     assert handler.can_handle("#玩家 韋哥") is True
     assert handler.can_handle("#玩家 Jerry") is True
     assert handler.can_handle("#玩家 詹姆斯") is False  # 沒登錄 -> 略過
-    assert handler.can_handle("#玩家") is False
+    assert handler.can_handle("#玩家") is True
+    assert handler.can_handle("#玩家  ") is True
     assert handler.can_handle("#球員 韋哥") is False
+
 
 def test_format_user_stats():
     handler = UserStatsHandler()
@@ -117,4 +119,22 @@ def test_format_user_stats_with_composite_keys():
     assert weekly_box[0]["contents"][1]["text"] == "35/70"
     assert weekly_box[2]["contents"][0]["text"] == "FTM/A"
     assert weekly_box[2]["contents"][1]["text"] == "21/28"
+
+
+def test_execute_user_stats_no_nickname(mocker):
+    handler = UserStatsHandler()
+    
+    # Mock message event text
+    mock_event = MagicMock()
+    mock_event.message.text = "#玩家"
+    
+    mock_config = MagicMock()
+    
+    # Spy / Mock BaseHandler's reply_player_list method
+    mock_reply_player_list = mocker.patch.object(handler, "reply_player_list")
+    
+    handler.execute(mock_event, mock_config)
+    
+    mock_reply_player_list.assert_called_once_with(mock_event, mock_config, is_matchup=False)
+
 
