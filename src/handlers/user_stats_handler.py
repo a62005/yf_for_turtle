@@ -76,14 +76,26 @@ class UserStatsHandler(BaseHandler):
                 return "-"
 
         def build_stat_rows(stats):
-            fgm = stats.get("stat_4", "0")
-            fga = stats.get("stat_3", "0")
-            fgm_a = f"{fgm}/{fga}" if fga != "0" else "0/0"
+            # Prioritize composite FGM/FGA value
+            fgm_a = stats.get("FGM/FGA")
+            if not fgm_a:
+                fgm = stats.get("stat_4")
+                fga = stats.get("stat_3")
+                if fgm is not None and fga is not None:
+                    fgm_a = f"{fgm}/{fga}" if fga != "0" else "0/0"
+                else:
+                    fgm_a = "0/0"
             fg_pct = to_percent_str(stats.get("FG%", "0.0"))
 
-            ftm = stats.get("stat_7", "0")
-            fta = stats.get("stat_6", "0")
-            ftm_a = f"{ftm}/{fta}" if fta != "0" else "0/0"
+            # Prioritize composite FTM/FTA value
+            ftm_a = stats.get("FTM/FTA")
+            if not ftm_a:
+                ftm = stats.get("stat_7")
+                fta = stats.get("stat_6")
+                if ftm is not None and fta is not None:
+                    ftm_a = f"{ftm}/{fta}" if fta != "0" else "0/0"
+                else:
+                    ftm_a = "0/0"
             ft_pct = to_percent_str(stats.get("FT%", "0.0"))
 
             pm3 = stats.get("3PTM", "0")

@@ -68,3 +68,45 @@ def test_format_user_stats():
     assert weekly_box[0]["contents"][1]["text"] == "80/150"
     assert weekly_box[5]["contents"][0]["text"] == "PTS"
     assert weekly_box[5]["contents"][1]["text"] == "210"
+
+
+def test_format_user_stats_with_composite_keys():
+    handler = UserStatsHandler()
+    player_info = {
+        "manager_name": "肥儒",
+        "official_name": "Feiru's Superteam"
+    }
+    
+    # 模擬真實的 composite keys {"FGM/FGA": "5/10", "FTM/FTA": "3/4"} 傳入
+    daily_stats = {
+        "FGM/FGA": "5/10", "FG%": "0.500", "FTM/FTA": "3/4", "FT%": "0.750",
+        "3PTM": "2", "PTS": "15", "REB": "5", "AST": "6", "ST": "1", "BLK": "0", "TO": "2"
+    }
+    weekly_stats = {
+        "FGM/FGA": "35/70", "FG%": "0.500", "FTM/FTA": "21/28", "FT%": "0.750",
+        "3PTM": "14", "PTS": "105", "REB": "35", "AST": "42", "ST": "7", "BLK": "2", "TO": "14"
+    }
+    
+    formatted = handler.format_user_stats(player_info, daily_stats, weekly_stats, "2026-05-28", "24")
+    
+    assert isinstance(formatted, dict)
+    body_contents = formatted["body"]["contents"]
+    
+    # 驗證當日數據
+    daily_box = body_contents[0]["contents"]
+    assert daily_box[0]["contents"][0]["text"] == "FGM/A"
+    assert daily_box[0]["contents"][1]["text"] == "5/10"
+    assert daily_box[1]["contents"][0]["text"] == "FG%"
+    assert daily_box[1]["contents"][1]["text"] == "50.0%"
+    assert daily_box[2]["contents"][0]["text"] == "FTM/A"
+    assert daily_box[2]["contents"][1]["text"] == "3/4"
+    assert daily_box[3]["contents"][0]["text"] == "FT%"
+    assert daily_box[3]["contents"][1]["text"] == "75.0%"
+    
+    # 驗證當週數據
+    weekly_box = body_contents[3]["contents"]
+    assert weekly_box[0]["contents"][0]["text"] == "FGM/A"
+    assert weekly_box[0]["contents"][1]["text"] == "35/70"
+    assert weekly_box[2]["contents"][0]["text"] == "FTM/A"
+    assert weekly_box[2]["contents"][1]["text"] == "21/28"
+
