@@ -376,17 +376,20 @@ class MatchupHandler(BaseHandler):
             flex_dict = self.format_matchup_stats(player_info, comp_res, str(week))
 
             # 12. 透過 LINE 回覆 Flex Message
-            flex_container = FlexContainer.from_json(json.dumps(flex_dict))
             alt_text = f"WEEK {week} MATCHUP - {player_info['my_nickname']} vs {player_info['opp_nickname']}"
-            with ApiClient(configuration) as api_client:
-                MessagingApi(api_client).reply_message(
-                    ReplyMessageRequest(
-                        reply_token=event.reply_token,
-                        messages=[FlexMessage(alt_text=alt_text, contents=flex_container)]
-                    )
-                )
+            self.reply_flex(event, configuration, alt_text, flex_dict)
         except Exception as e:
             logging.error(f"Failed to execute MatchupHandler: {e}", exc_info=True)
             # Quiet exit
             return
+
+    def reply_flex(self, event: MessageEvent, configuration: Configuration, alt_text: str, flex_dict: dict) -> None:
+        flex_container = FlexContainer.from_json(json.dumps(flex_dict))
+        with ApiClient(configuration) as api_client:
+            MessagingApi(api_client).reply_message(
+                ReplyMessageRequest(
+                    reply_token=event.reply_token,
+                    messages=[FlexMessage(alt_text=alt_text, contents=flex_container)]
+                )
+            )
 

@@ -225,9 +225,8 @@ def mock_config():
 @patch("src.handlers.matchup_handler.load_config", return_value={"LEAGUE_ID": "123456", "TEAM_MAPPING_FILE": "team_mapping.json"})
 @patch("src.handlers.matchup_handler.get_pacific_datetime")
 @patch("src.handlers.matchup_handler.YahooFantasyFetcher")
-@patch("src.handlers.matchup_handler.ApiClient")
-@patch("src.handlers.matchup_handler.MessagingApi")
-def test_matchup_handler_execute_flow(mock_messaging_api, mock_api_client, mock_fetcher_cls, mock_get_pacific, mock_load_config, mock_event, mock_config):
+@patch("src.handlers.matchup_handler.MatchupHandler.reply_flex")
+def test_matchup_handler_execute_flow(mock_reply_flex, mock_fetcher_cls, mock_get_pacific, mock_load_config, mock_event, mock_config):
     # 1. 設置模擬時間在賽季中 (2025-11-15 12:00:00)
     pacific_tz = pytz.timezone("US/Pacific")
     mock_now = pacific_tz.localize(datetime(2025, 11, 15, 12, 0, 0))
@@ -286,22 +285,21 @@ def test_matchup_handler_execute_flow(mock_messaging_api, mock_api_client, mock_
     # 2025-11-15 差 26 天. 26 // 7 = 3 -> 3+1 = 4.
     mock_fetcher.fetch_matchups.assert_called_once_with("123456", 4)
 
-    # 驗證 LINE reply 有被呼叫，且回傳的 FlexMessage 內容是正確的
-    mock_messaging_api.return_value.reply_message.assert_called_once()
-    reply_req = mock_messaging_api.return_value.reply_message.call_args[0][0]
-    assert reply_req.reply_token == "dummy_reply_token"
-    
-    # 驗證 Flex 內容
-    flex_msg = reply_req.messages[0]
-    assert flex_msg.alt_text == "WEEK 4 MATCHUP - 韋哥 vs Jerry"
+    # 驗證 reply_flex 有被呼叫，且回傳的 Flex 參數是正確的
+    mock_reply_flex.assert_called_once()
+    call_args = mock_reply_flex.call_args[0]
+    # call_args[0]: event, call_args[1]: configuration, call_args[2]: alt_text, call_args[3]: flex_dict
+    assert call_args[0] == mock_event
+    assert call_args[1] == mock_config
+    assert call_args[2] == "WEEK 4 MATCHUP - 韋哥 vs Jerry"
+    assert isinstance(call_args[3], dict)
 
 
 @patch("src.handlers.matchup_handler.load_config", return_value={"LEAGUE_ID": "123456", "TEAM_MAPPING_FILE": "team_mapping.json"})
 @patch("src.handlers.matchup_handler.get_pacific_datetime")
 @patch("src.handlers.matchup_handler.YahooFantasyFetcher")
-@patch("src.handlers.matchup_handler.ApiClient")
-@patch("src.handlers.matchup_handler.MessagingApi")
-def test_matchup_handler_execute_offseason(mock_messaging_api, mock_api_client, mock_fetcher_cls, mock_get_pacific, mock_load_config, mock_event, mock_config):
+@patch("src.handlers.matchup_handler.MatchupHandler.reply_flex")
+def test_matchup_handler_execute_offseason(mock_reply_flex, mock_fetcher_cls, mock_get_pacific, mock_load_config, mock_event, mock_config):
     # 1. 設置模擬時間在 offseason (2026-05-01 12:00:00)
     pacific_tz = pytz.timezone("US/Pacific")
     mock_now = pacific_tz.localize(datetime(2026, 5, 1, 12, 0, 0))
@@ -353,17 +351,16 @@ def test_matchup_handler_execute_offseason(mock_messaging_api, mock_api_client, 
     # 5. 驗證: 應該使用 end_week 24 查詢 fetch_matchups
     mock_fetcher.fetch_matchups.assert_called_once_with("123456", 24)
 
-    # 驗證 LINE reply 有被呼叫，且為 WEEK 24
-    mock_messaging_api.return_value.reply_message.assert_called_once()
-    reply_req = mock_messaging_api.return_value.reply_message.call_args[0][0]
-    assert reply_req.messages[0].alt_text == "WEEK 24 MATCHUP - 韋哥 vs Jerry"
+    # 驗證 reply_flex 有被呼叫，且為 WEEK 24
+    mock_reply_flex.assert_called_once()
+    call_args = mock_reply_flex.call_args[0]
+    assert call_args[2] == "WEEK 24 MATCHUP - 韋哥 vs Jerry"
 
 
 @patch("src.handlers.matchup_handler.load_config")
 @patch("src.handlers.matchup_handler.YahooFantasyFetcher")
-@patch("src.handlers.matchup_handler.ApiClient")
-@patch("src.handlers.matchup_handler.MessagingApi")
-def test_matchup_handler_execute_error_handling(mock_messaging_api, mock_api_client, mock_fetcher_cls, mock_load_config, mock_event, mock_config):
+@patch("src.handlers.matchup_handler.MatchupHandler.reply_flex")
+def test_matchup_handler_execute_error_handling(mock_reply_flex, mock_fetcher_cls, mock_load_config, mock_event, mock_config):
     # 測試 1: config 缺少 LEAGUE_ID
     mock_load_config.return_value = {} # empty config
     
@@ -377,8 +374,8 @@ def test_matchup_handler_execute_error_handling(mock_messaging_api, mock_api_cli
     except Exception as e:
         pytest.fail(f"Execute threw exception when config was empty: {e}")
 
-    # LINE reply 應該不會被呼叫 (quiet exit)
-    mock_messaging_api.return_value.reply_message.assert_not_called()
+    # reply_flex 應該不會被呼叫 (quiet exit)
+    mock_reply_flex.assert_not_called()
 
     # 測試 2: API 發生異常
     mock_load_config.return_value = {"LEAGUE_ID": "123456"}
@@ -389,6 +386,9 @@ def test_matchup_handler_execute_error_handling(mock_messaging_api, mock_api_cli
         handler.execute(mock_event, mock_config)
     except Exception as e:
         pytest.fail(f"Execute threw exception when Yahoo fetcher raised error: {e}")
+
+    # reply_flex 應該不會被呼叫 (quiet exit)
+    mock_reply_flex.assert_not_called()
 
 
 
