@@ -5,7 +5,7 @@ import logging
 from datetime import datetime, timedelta
 import pytz
 from linebot.v3.webhooks import MessageEvent
-from linebot.v3.messaging import ApiClient, MessagingApi, ReplyMessageRequest, TextMessage, Configuration
+from linebot.v3.messaging import ApiClient, MessagingApi, ReplyMessageRequest, TextMessage, Configuration, FlexMessage, FlexContainer
 from .base_handler import BaseHandler
 
 from src.config import load_config
@@ -55,7 +55,17 @@ class UserStatsHandler(BaseHandler):
             
         return target_dt.strftime("%Y-%m-%d")
 
-    def format_user_stats(self, player_info: dict, daily_stats: dict, weekly_stats: dict, date_str: str, week_str: str) -> str:
+    def reply_flex(self, event: MessageEvent, configuration: Configuration, alt_text: str, flex_dict: dict) -> None:
+        flex_container = FlexContainer.from_json(json.dumps(flex_dict))
+        with ApiClient(configuration) as api_client:
+            MessagingApi(api_client).reply_message(
+                ReplyMessageRequest(
+                    reply_token=event.reply_token,
+                    messages=[FlexMessage(alt_text=alt_text, contents=flex_container)]
+                )
+            )
+
+    def format_user_stats(self, player_info: dict, daily_stats: dict, weekly_stats: dict, date_str: str, week_str: str) -> dict:
         def to_percent_str(val):
             try:
                 f_val = float(val)
@@ -65,14 +75,12 @@ class UserStatsHandler(BaseHandler):
             except (ValueError, TypeError):
                 return "-"
 
-        def build_lines(stats):
-            # FGM is stat_4, FGA is stat_3
+        def build_stat_rows(stats):
             fgm = stats.get("stat_4", "0")
             fga = stats.get("stat_3", "0")
             fgm_a = f"{fgm}/{fga}" if fga != "0" else "0/0"
             fg_pct = to_percent_str(stats.get("FG%", "0.0"))
 
-            # FTM is stat_7, FTA is stat_6
             ftm = stats.get("stat_7", "0")
             fta = stats.get("stat_6", "0")
             ftm_a = f"{ftm}/{fta}" if fta != "0" else "0/0"
@@ -86,35 +94,75 @@ class UserStatsHandler(BaseHandler):
             blk = stats.get("BLK", "0")
             to = stats.get("TO", "0")
 
-            return [
-                f"FGM/A : {fgm_a:>15}",
-                f"FG% : {fg_pct:>17}",
-                f"FTM/A : {ftm_a:>15}",
-                f"FT% : {ft_pct:>17}",
-                f"3PM : {pm3:>17}",
-                f"PTS : {pts:>17}",
-                f"REB : {reb:>17}",
-                f"AST : {ast:>17}",
-                f"STL : {stl:>17}",
-                f"BLK : {blk:>17}",
-                f"TO : {to:>18}"
+            raw_stats = [
+                ("FGM/A", fgm_a), ("FG%", fg_pct), ("FTM/A", ftm_a), ("FT%", ft_pct),
+                ("3PM", pm3), ("PTS", pts), ("REB", reb), ("AST", ast),
+                ("STL", stl), ("BLK", blk), ("TO", to)
             ]
+            rows = []
+            for label, val in raw_stats:
+                rows.append({
+                    "type": "box",
+                    "layout": "horizontal",
+                    "contents": [
+                        {"type": "text", "text": label, "color": "#666666", "size": "sm"},
+                        {"type": "text", "text": val, "align": "end", "weight": "bold", "color": "#111111", "size": "sm"}
+                    ]
+                })
+            return rows
 
-        # 1. 組裝當日區塊
-        header_daily = (
-            f"{player_info['manager_name']}\n"
-            f"{player_info['official_name']}\n"
-            f"{date_str}"
-        )
-        daily_lines = build_lines(daily_stats)
-        daily_block = "```\n" + "\n".join(daily_lines) + "\n```"
+        daily_rows = build_stat_rows(daily_stats)
+        weekly_rows = build_stat_rows(weekly_stats)
 
-        # 2. 組裝當週區塊
-        header_weekly = f"W{week_str}"
-        weekly_lines = build_lines(weekly_stats)
-        weekly_block = "```\n" + "\n".join(weekly_lines) + "\n```"
-
-        return f"{header_daily}\n{daily_block}\n{header_weekly}\n{weekly_block}"
+        # 組裝白底極簡雙層卡片字典
+        return {
+            "type": "bubble",
+            "header": {
+                "type": "box",
+                "layout": "vertical",
+                "spacing": "sm",
+                "contents": [
+                    {"type": "text", "text": player_info["manager_name"], "weight": "bold", "size": "xl", "color": "#111111"},
+                    {"type": "text", "text": player_info["official_name"], "size": "sm", "color": "#555555"},
+                    {"type": "text", "text": date_str, "size": "xs", "color": "#888888"}
+                ]
+            },
+            "body": {
+                "type": "box",
+                "layout": "vertical",
+                "spacing": "md",
+                "contents": [
+                    # 1. 當日數據
+                    {
+                        "type": "box",
+                        "layout": "vertical",
+                        "spacing": "xs",
+                        "contents": daily_rows
+                    },
+                    # 2. 精緻分隔線
+                    {
+                        "type": "separator",
+                        "color": "#EAEAEA"
+                    },
+                    # 3. 當週週數標頭
+                    {
+                        "type": "text",
+                        "text": f"W{week_str}",
+                        "weight": "bold",
+                        "size": "md",
+                        "color": "#111111",
+                        "margin": "md"
+                    },
+                    # 4. 當週數據
+                    {
+                        "type": "box",
+                        "layout": "vertical",
+                        "spacing": "xs",
+                        "contents": weekly_rows
+                    }
+                ]
+            }
+        }
 
     def execute(self, event: MessageEvent, configuration: Configuration) -> None:
         user_text = event.message.text.strip()
@@ -173,14 +221,14 @@ class UserStatsHandler(BaseHandler):
                 "official_name": official_name
             }
             
-            reply_text = self.format_user_stats(
+            flex_dict = self.format_user_stats(
                 player_info, 
                 res_daily["stats"], 
                 res_weekly["stats"], 
                 target_date, 
                 str(target_week)
             )
-            self.reply_text(event, configuration, reply_text)
+            self.reply_flex(event, configuration, f"玩家 {nickname} 數據統計", flex_dict)
         except Exception as e:
             # 依規範安全且安靜地退出，不打擾群組
             logging.error(f"Failed to fetch team real-time stats for manager {nickname}: {e}")
