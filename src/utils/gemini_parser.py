@@ -25,8 +25,9 @@ SYSTEM_PROMPT = """你是一個精準的 NBA 籃球專家，專門負責將使�
   "jersey_number": "23"
 }"""
 
-def parse_player_nickname(nickname: str, api_key: str = None) -> dict:
+def parse_player_nickname(nickname: str, api_key: str = None, model_name: str = None) -> dict:
     key = api_key or os.getenv("GEMINI_API_KEY")
+    model_to_use = model_name or os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
     if not key:
         logging.error("Gemini API key is not configured.")
         return {"is_known_player": False, "english_name": None, "chinese_name": None, "team": None, "jersey_number": None, "confidence": 0.0, "reason": "API Key 尚未設定"}
@@ -34,7 +35,7 @@ def parse_player_nickname(nickname: str, api_key: str = None) -> dict:
     try:
         genai.configure(api_key=key)
         model = genai.GenerativeModel(
-            model_name="gemini-2.5-flash",
+            model_name=model_to_use,
             system_instruction=SYSTEM_PROMPT
         )
         

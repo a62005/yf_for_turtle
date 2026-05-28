@@ -24,5 +24,7 @@ def load_config() -> dict:
         "NGROK_AUTHTOKEN": os.getenv("NGROK_AUTHTOKEN"),
         "LINE_CHANNEL_SECRET": os.getenv("LINE_CHANNEL_SECRET"),
         "LINE_CHANNEL_ACCESS_TOKEN": os.getenv("LINE_CHANNEL_ACCESS_TOKEN"),
-        "SERVER_URL": os.getenv("SERVER_URL")
+        "SERVER_URL": os.getenv("SERVER_URL"),
+        "GEMINI_API_KEY": os.getenv("GEMINI_API_KEY"),
+        "GEMINI_MODEL": os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
     }

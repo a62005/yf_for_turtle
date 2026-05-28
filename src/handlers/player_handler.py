@@ -21,7 +21,10 @@ class PlayerHandler(BaseHandler):
         self.pattern = re.compile(r"^#球員\s+(.+)$")
 
     def can_handle(self, user_text: str) -> bool:
-        return self.pattern.match(user_text) is not None
+        if not self.pattern.match(user_text):
+            return False
+        config = load_config()
+        return bool(config.get("GEMINI_API_KEY"))
 
     def calculate_target_date(self, current_tw_dt=None, is_offseason=False, end_date=None) -> str:
         if is_offseason:
@@ -91,7 +94,8 @@ class PlayerHandler(BaseHandler):
             f"TO : {to:>18}"
         ]
 
-        return header + "\n" + "\n".join(lines)
+        body = "```\n" + "\n".join(lines) + "\n```"
+        return header + "\n" + body
 
     def execute(self, event: MessageEvent, configuration: Configuration) -> None:
         user_text = event.message.text.strip()
@@ -111,7 +115,11 @@ class PlayerHandler(BaseHandler):
         
         # 2. Cache Miss: LLM parse + Yahoo Search
         if not player_info:
-            llm_res = parse_player_nickname(nickname, api_key=config.get("GEMINI_API_KEY"))
+            llm_res = parse_player_nickname(
+                nickname, 
+                api_key=config.get("GEMINI_API_KEY"),
+                model_name=config.get("GEMINI_MODEL")
+            )
             if not llm_res.get("is_known_player"):
                 self.reply_text(event, configuration, f"找不到現役球員「{nickname}」，請嘗試輸入更清晰的名字或別稱。")
                 return
