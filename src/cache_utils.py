@@ -3,9 +3,11 @@ import json
 from datetime import datetime
 from filelock import FileLock
 
-CACHE_FILE = os.path.join("data", "empty_records.json")
+# 使用相對於本檔案所在 src 目錄的絕對路徑，確保不同工作目錄 (CWD) 啟動時仍能精確存取根目錄的快取
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+CACHE_FILE = os.path.join(BASE_DIR, "data", "empty_records.json")
 LOCK_FILE = CACHE_FILE + ".lock"
-METADATA_FILE = os.path.join("data", "league_metadata.json")
+METADATA_FILE = os.path.join(BASE_DIR, "data", "league_metadata.json")
 METADATA_LOCK = METADATA_FILE + ".lock"
 
 def _load_cache(file_path=CACHE_FILE):
