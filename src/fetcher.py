@@ -374,4 +374,68 @@ class YahooFantasyFetcher:
         xml_data = self.ctx.make_request(url)
         return self._parse_team_stats_xml(xml_data)
 
+    def fetch_matchups(self, league_id: str, week: int) -> list:
+        """Fetch matchups with detailed team stats for a specific week from the scoreboard."""
+        league_id = self._normalize_league_id(league_id)
+        url = f"league/{league_id}/scoreboard;week={week}"
+        
+        matchups_data = []
+        try:
+            data = self.ctx.make_request(url)
+            root = ET.fromstring(data)
+            
+            for matchup in self._find_all_nodes(root, './/ns:matchup'):
+                teams = []
+                for team in self._find_all_nodes(matchup, './/ns:team'):
+                    team_id_node = self._find_node(team, 'ns:team_id')
+                    if team_id_node is None:
+                        continue
+                    team_id = team_id_node.text
+                    
+                    # Name node
+                    name_node = self._find_node(team, 'ns:name')
+                    official_name = name_node.text if name_node is not None else "Unknown Team"
+                    team_name = self.get_team_name(team_id, official_name)
+                    
+                    # Parse stats
+                    stats_dict = {}
+                    stat_nodes = self._find_all_nodes(team, './/ns:team_stats/ns:stats/ns:stat')
+                    for node in stat_nodes:
+                        s_id_node = self._find_node(node, 'ns:stat_id')
+                        s_val_node = self._find_node(node, 'ns:value')
+                        if s_id_node is not None and s_id_node.text:
+                            s_id = s_id_node.text
+                            s_val = s_val_node.text if s_val_node is not None else "0"
+                            label = translate_stat_id(s_id)
+                            stats_dict[label] = s_val if s_val is not None else "0"
+                    
+                    # 拼接出手數與分母輔助項
+                    if "FGM/FGA" not in stats_dict:
+                        fgm = stats_dict.get("stat_4")
+                        fga = stats_dict.get("stat_3")
+                        if fgm is not None and fga is not None:
+                            stats_dict["FGM/FGA"] = f"{fgm}/{fga}" if fga != "0" else "0/0"
+                    if "FTM/FTA" not in stats_dict:
+                        ftm = stats_dict.get("stat_7")
+                        fta = stats_dict.get("stat_6")
+                        if ftm is not None and fta is not None:
+                            stats_dict["FTM/FTA"] = f"{ftm}/{fta}" if fta != "0" else "0/0"
+                    
+                    teams.append({
+                        "team_id": team_id,
+                        "name": team_name,
+                        "official_name": official_name,
+                        "stats": stats_dict
+                    })
+                
+                if len(teams) == 2:
+                    matchups_data.append({
+                        "team1": teams[0],
+                        "team2": teams[1]
+                    })
+        except Exception as e:
+            logging.error(f"Error parsing matchups: {e}")
+        return matchups_data
+
+
 
