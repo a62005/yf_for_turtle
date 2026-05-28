@@ -48,3 +48,72 @@ def test_matchup_compare_logic():
     # FGM/A: 輔助行，不用標註較優方，無 status
     assert "status" not in comp_res["details"]["FGM/A"]
     assert comp_res["details"]["FGM/A"]["my_val"] == "180/350"
+
+def test_matchup_compare_logic_edge_cases():
+    handler = MatchupHandler()
+    
+    # 測試含有無效字串 (如 "N/A"、"abc") 或缺失鍵時的安全降級
+    # 以及累計指標 "0" 顯示為 "0" (而非 "-")，而百分比 "0.0" 仍顯示為 "-"
+    my_stats = {
+        "FG%": "0.0", "FGM/FGA": "0/0", "FT%": "abc", "FTM/FTA": "0/0",
+        "3PTM": "0", "PTS": "N/A", "REB": "10", "AST": None, "STL": "0.0", "BLK": "5", "TO": "0"
+    }
+    opp_stats = {
+        "FG%": "0.450", "FGM/FGA": "90/200", "FT%": "0.800", "FTM/FTA": "8/10",
+        "3PTM": "5", "PTS": "100", "REB": "abc", "AST": "2", "STL": "1", "BLK": None, "TO": "0"
+    }
+    
+    comp_res = handler.compare_stats(my_stats, opp_stats)
+    
+    # 1. 驗證累計數值為 "0" 或 "0.0" 時，to_val_str 應保持 "0"
+    # STL: my_stats 是 "0.0" -> my_val 應為 "0"，opp_stats 是 "1" -> opp_val 應為 "1"
+    # 由於 0.0 < 1，STL 判定為 opp_win
+    assert comp_res["details"]["STL"]["my_val"] == "0"
+    assert comp_res["details"]["STL"]["opp_val"] == "1"
+    assert comp_res["details"]["STL"]["status"] == "opp_win"
+    
+    # 3PTM: my_stats 是 "0" -> my_val 應為 "0"，opp_val 應為 "5"，opp_win
+    assert comp_res["details"]["3PTM"]["my_val"] == "0"
+    assert comp_res["details"]["3PTM"]["status"] == "opp_win"
+
+    # TO: my_val = "0", opp_val = "0", my_num = 0.0, opp_num = 0.0 -> tie
+    assert comp_res["details"]["TO"]["my_val"] == "0"
+    assert comp_res["details"]["TO"]["opp_val"] == "0"
+    assert comp_res["details"]["TO"]["status"] == "tie"
+    
+    # 2. 驗證百分比 "0.0" 依然為 "-"
+    assert comp_res["details"]["FG%"]["my_val"] == "-"
+    assert comp_res["details"]["FG%"]["opp_val"] == "45.0%"
+    assert comp_res["details"]["FG%"]["status"] == "opp_win"
+
+    # 3. 驗證無效字串 ("abc", "N/A") 或 None 轉換為 "-" 且安全降級為數值 0.0
+    # FT%: my_stats 是 "abc" 轉換成 my_val_str = "-" 且 my_num = 0.0
+    # opp_stats 是 "0.800" 轉換成 80.0%，判定為 opp_win
+    assert comp_res["details"]["FT%"]["my_val"] == "-"
+    assert comp_res["details"]["FT%"]["opp_val"] == "80.0%"
+    assert comp_res["details"]["FT%"]["status"] == "opp_win"
+
+    # PTS: my_stats 是 "N/A" 轉換成 my_val_str = "-" 且 my_num = 0.0
+    # opp_stats 是 "100" 轉換成 "100"，判定為 opp_win
+    assert comp_res["details"]["PTS"]["my_val"] == "-"
+    assert comp_res["details"]["PTS"]["opp_val"] == "100"
+    assert comp_res["details"]["PTS"]["status"] == "opp_win"
+
+    # REB: my_stats 是 "10"，opp_stats 是 "abc" -> opp_val_str = "-" 且 opp_num = 0.0
+    # 10 > 0.0，判定為 my_win
+    assert comp_res["details"]["REB"]["my_val"] == "10"
+    assert comp_res["details"]["REB"]["opp_val"] == "-"
+    assert comp_res["details"]["REB"]["status"] == "my_win"
+
+    # AST: my_stats 是 None -> my_val_str = "-" 且 my_num = 0.0
+    # opp_stats 是 "2" -> opp_val_str = "2"，判定為 opp_win
+    assert comp_res["details"]["AST"]["my_val"] == "-"
+    assert comp_res["details"]["AST"]["opp_val"] == "2"
+    assert comp_res["details"]["AST"]["status"] == "opp_win"
+
+    # BLK: my_stats 是 "5"，opp_stats 是 None -> opp_val_str = "-" 且 opp_num = 0.0
+    # 5 > 0.0，判定為 my_win
+    assert comp_res["details"]["BLK"]["my_val"] == "5"
+    assert comp_res["details"]["BLK"]["opp_val"] == "-"
+    assert comp_res["details"]["BLK"]["status"] == "my_win"
+

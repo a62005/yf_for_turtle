@@ -42,9 +42,33 @@ class MatchupHandler(BaseHandler):
             return "-"
 
     def to_val_str(self, val) -> str:
-        if val is None or str(val) == "0" or str(val) == "0.0":
+        if val is None:
             return "-"
-        return str(val)
+        val_str = str(val).strip()
+        if val_str == "":
+            return "-"
+            
+        # Check if it's a valid fraction format like FGM/FGA or FTM/FTA
+        if "/" in val_str:
+            parts = val_str.split("/")
+            if len(parts) == 2:
+                try:
+                    float(parts[0].strip())
+                    float(parts[1].strip())
+                    return val_str
+                except ValueError:
+                    return "-"
+        
+        # Check if it's a valid float/integer
+        try:
+            f_val = float(val_str)
+            if f_val == 0.0:
+                return "0"
+            if f_val.is_integer():
+                return str(int(f_val))
+            return val_str
+        except ValueError:
+            return "-"
 
     def compare_stats(self, my_stats: dict, opp_stats: dict) -> dict:
         """比對 9-Cat 數據並統計比分"""
@@ -101,16 +125,7 @@ class MatchupHandler(BaseHandler):
                     status = "opp_win"
                     losses += 1
             else:  # TO (越小越好)
-                if my_num == 0.0 and opp_num == 0.0:
-                    status = "tie"
-                    ties += 1
-                elif my_num == 0.0:
-                    status = "my_win"
-                    wins += 1
-                elif opp_num == 0.0:
-                    status = "opp_win"
-                    losses += 1
-                elif my_num < opp_num:
+                if my_num < opp_num:
                     status = "my_win"
                     wins += 1
                 else:
