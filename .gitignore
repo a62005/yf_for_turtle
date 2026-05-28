@@ -24,3 +24,7 @@ oauth2.json
 # Credentials
 credentials/
 .yahoofantasy
+
+# AI Assistant CLI temporary directories
+.antigravitycli/
+.superpowers/
