@@ -41,9 +41,10 @@ YAHOO_CLIENT_SECRET=您的Yahoo_Client_Secret
 LINE_CHANNEL_SECRET=您的LINE_Channel_Secret
 LINE_CHANNEL_ACCESS_TOKEN=您的LINE_Channel_Access_Token
 
-# 大語言模型與 API 金鑰 (用於球員別稱解析)
-GEMINI_API_KEY=您的Gemini_API_Key
-GEMINI_MODEL=gemini-3.5-flash
+# [選填] 大語言模型與 API 金鑰 (用於球員別稱解析)
+# ※ 非必要項目，若不設置則僅停用「#球員」指令，但「#玩家」與「#戰績」等核心功能依然正常運作！
+# GEMINI_API_KEY=您的Gemini_API_Key
+# GEMINI_MODEL=gemini-3.5-flash
 
 # NGROK 自動 Webhook 對接 (選填，用於本地開發調試)
 NGROK_AUTHTOKEN=您的Ngrok_Auth_Token
