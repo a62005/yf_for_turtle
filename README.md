@@ -7,7 +7,7 @@
 ## 🌟 LINE 機器人核心功能 (Core Features)
 
 1. **實時玩家數據查詢**：
-   * **指令**：`#玩家 [暱稱]` (例如：`#玩家 肥儒`)
+   * **指令**：`#玩家 [暱稱]` (例如：`#玩家 玩家A`)
    * **功能**：自動拉取該玩家（Manager）當前目標日期與當週的 9-Cat 數據，支援 FGM/A 與 FTM/A 實時數據解析，並回傳極致對稱的白底極簡風 Flex Message。
 2. **球員實時數據查詢**：
    * **指令**：`#球員 [英文名/中文名/別稱]` (例如：`#球員 喇叭`)
@@ -58,9 +58,6 @@ NGROK_AUTHTOKEN=您的Ngrok_Auth_Token
 # Yahoo Fantasy 聯賽 ID (由網址獲取，例如 18457)
 LEAGUE_ID=您的聯賽ID
 
-# 賽季開始日期 (格式 YYYY-MM-DD，用於計算週數)
-SEASON_START_DATE=2025-10-21
-
 # 玩家暱稱對應檔案路徑
 TEAM_MAPPING_FILE=team_mapping.json
 ```
@@ -69,12 +66,12 @@ TEAM_MAPPING_FILE=team_mapping.json
 建立或編輯專案根目錄下的 `team_mapping.json`，將 Yahoo 聯賽中的 **隊伍 ID** 與 **玩家的中文暱稱** 進行精準映射。這可以讓 LINE 群組中的使用者直接透過自己的暱稱查詢實時戰績：
 ```json
 {
-  "1": "韋哥",
-  "2": "Jerry",
-  "3": "小謝",
-  "4": "肥儒",
-  "5": "陳威",
-  "6": "Jason"
+  "1": "玩家A",
+  "2": "玩家B",
+  "3": "玩家C",
+  "4": "玩家D",
+  "5": "玩家E",
+  "6": "玩家F"
 }
 ```
 
