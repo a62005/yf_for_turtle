@@ -68,14 +68,18 @@ def test_format_stats():
     assert isinstance(formatted, dict)
     assert formatted["type"] == "bubble"
     
-    # 驗證 Header 部分的球員英文名稱與隊伍背號
-    header_box = formatted["header"]["contents"]
-    assert header_box[0]["text"] == "LeBron James"
-    assert header_box[1]["text"] == "Los Angeles Lakers#23"
-    assert header_box[2]["text"] == "2026-11-12"
+    # 驗證 Body 部分的結構與球員資訊
+    body_contents = formatted["body"]["contents"]
     
-    # 驗證 Body 部分的數據格線對齊
-    daily_stats_box = formatted["body"]["contents"][0]["contents"]
+    # 1. 球員資訊標頭
+    assert body_contents[0]["contents"][0]["text"] == "LeBron James"
+    assert body_contents[0]["contents"][1]["text"] == "Los Angeles Lakers#23"
+    
+    # 2. 當日日期標頭
+    assert body_contents[1]["text"] == "2026-11-12"
+    
+    # 3. 驗證 Body 部分的數據格線對齊
+    daily_stats_box = body_contents[2]["contents"]
     # FGM/A 列
     assert daily_stats_box[0]["contents"][0]["text"] == "FGM/A"
     assert daily_stats_box[0]["contents"][1]["text"] == "14/24"

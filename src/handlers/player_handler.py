@@ -106,20 +106,31 @@ class PlayerHandler(BaseHandler):
         # 回傳完整的清爽極簡風 Flex dict
         return {
             "type": "bubble",
-            "header": {
-                "type": "box",
-                "layout": "vertical",
-                "spacing": "sm",
-                "contents": [
-                    {"type": "text", "text": player_info.get("english_name", "Unknown"), "weight": "bold", "size": "xl", "color": "#111111"},
-                    {"type": "text", "text": f"{player_info.get('team', 'Unknown')}#{player_info.get('jersey_number', '0')}", "size": "sm", "color": "#555555"},
-                    {"type": "text", "text": date_str or "", "size": "xs", "color": "#888888"}
-                ]
-            },
             "body": {
                 "type": "box",
                 "layout": "vertical",
+                "spacing": "md",
                 "contents": [
+                    # 1. 球員資訊標頭
+                    {
+                        "type": "box",
+                        "layout": "vertical",
+                        "spacing": "xs",
+                        "contents": [
+                            {"type": "text", "text": player_info.get("english_name", "Unknown"), "weight": "bold", "size": "xl", "color": "#111111"},
+                            {"type": "text", "text": f"{player_info.get('team', 'Unknown')}#{player_info.get('jersey_number', '0')}", "size": "sm", "color": "#555555"}
+                        ]
+                    },
+                    # 2. 當日日期標頭
+                    {
+                        "type": "text",
+                        "text": date_str or "",
+                        "weight": "bold",
+                        "size": "md",
+                        "color": "#111111",
+                        "margin": "md"
+                    },
+                    # 3. 數據列
                     {
                         "type": "box",
                         "layout": "vertical",
