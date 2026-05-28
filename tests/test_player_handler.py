@@ -62,12 +62,12 @@ def test_format_stats():
         "BLK": "1",
         "TO": "3"
     }
-    formatted = handler.format_player_stats(player_info, stats)
+    formatted = handler.format_player_stats(player_info, stats, "2026-11-12")
     
     expected = (
-        "LeBron James (勒布朗·詹姆斯)\n"
+        "LeBron James\n"
         "Los Angeles Lakers#23\n"
-        "-----------------------\n"
+        "2026-11-12\n"
         "```\n"
         "FGM/A :           14/24\n"
         "FG% :             58.3%\n"

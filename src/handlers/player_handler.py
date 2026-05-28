@@ -44,7 +44,7 @@ class PlayerHandler(BaseHandler):
             
         return target_dt.strftime("%Y-%m-%d")
 
-    def format_player_stats(self, player_info: dict, stats: dict) -> str:
+    def format_player_stats(self, player_info: dict, stats: dict, date_str: str = None) -> str:
         # Helper to safely format percentages
         def to_percent_str(val):
             try:
@@ -74,10 +74,9 @@ class PlayerHandler(BaseHandler):
         to = stats.get("TO", "0")
 
         header = (
-            f"{player_info.get('english_name', 'Unknown')}"
-            f" ({player_info.get('chinese_name', '未知')})\n"
+            f"{player_info.get('english_name', 'Unknown')}\n"
             f"{player_info.get('team', 'Unknown')}#{player_info.get('jersey_number', '0')}\n"
-            f"-----------------------"
+            f"{date_str or ''}"
         )
 
         lines = [
@@ -185,7 +184,7 @@ class PlayerHandler(BaseHandler):
                 self.reply_text(event, configuration, f"{player_info['english_name']} 於 {target_date} 今日無比賽數據。")
                 return
             
-            reply_text = self.format_player_stats(player_info, stats_dict)
+            reply_text = self.format_player_stats(player_info, stats_dict, target_date)
             self.reply_text(event, configuration, reply_text)
         except Exception as e:
             logging.error(f"Yahoo fetch stats failed: {e}")
