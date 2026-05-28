@@ -184,15 +184,15 @@ def test_format_matchup_stats():
     assert team_name_box["contents"][2]["size"] == "xxs"
     assert team_name_box["contents"][2]["color"] == "#999999"
     
-    # 驗證 Header 第三層：比分對決 (5:4，我方領先大黑 24px/bold/#111111，落後小灰 16px/regular/#aaaaaa)
+    # 驗證 Header 第三層：比分對決 (5:4，我方領先大黑 20px/bold/#111111，落後小灰 18px/regular/#aaaaaa)
     score_box = body[3]
     assert score_box["contents"][0]["text"] == "5"
-    assert score_box["contents"][0]["size"] == "xl" # 24px對應 xl
+    assert score_box["contents"][0]["size"] == "20px"
     assert score_box["contents"][0]["weight"] == "bold"
     assert score_box["contents"][0]["color"] == "#111111"
     
     assert score_box["contents"][2]["text"] == "4"
-    assert score_box["contents"][2]["size"] == "md" # 16px對應 md
+    assert score_box["contents"][2]["size"] == "18px"
     assert score_box["contents"][2]["weight"] == "regular"
     assert score_box["contents"][2]["color"] == "#aaaaaa"
     
@@ -200,14 +200,14 @@ def test_format_matchup_stats():
     fg_row = body[5]["contents"][1] # index 5 is the box containing rows, index 1 is FG% row
     assert fg_row["contents"][0]["text"] == "51.4%"
     assert fg_row["contents"][0]["weight"] == "bold"
-    assert fg_row["contents"][0]["size"] == "md"
+    assert fg_row["contents"][0]["size"] == "16px"
     assert fg_row["contents"][0]["color"] == "#111111"
     
     assert fg_row["contents"][1]["text"] == "FG%"
     
     assert fg_row["contents"][2]["text"] == "48.5%"
     assert fg_row["contents"][2]["weight"] == "regular"
-    assert fg_row["contents"][2]["size"] == "xs"
+    assert fg_row["contents"][2]["size"] == "14px"
     assert fg_row["contents"][2]["color"] == "#aaaaaa"
 
 

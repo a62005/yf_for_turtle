@@ -154,14 +154,14 @@ class MatchupHandler(BaseHandler):
 
         # 1. 決定 Header 第三層比分的視覺樣式 (領先大黑，落後小灰)
         if wins > losses:
-            my_score_style = {"size": "xl", "weight": "bold", "color": "#111111"}
-            opp_score_style = {"size": "md", "weight": "regular", "color": "#aaaaaa"}
+            my_score_style = {"size": "20px", "weight": "bold", "color": "#111111"}
+            opp_score_style = {"size": "18px", "weight": "regular", "color": "#aaaaaa"}
         elif wins < losses:
-            my_score_style = {"size": "md", "weight": "regular", "color": "#aaaaaa"}
-            opp_score_style = {"size": "xl", "weight": "bold", "color": "#111111"}
+            my_score_style = {"size": "18px", "weight": "regular", "color": "#aaaaaa"}
+            opp_score_style = {"size": "20px", "weight": "bold", "color": "#111111"}
         else:
-            my_score_style = {"size": "xl", "weight": "bold", "color": "#111111"}
-            opp_score_style = {"size": "xl", "weight": "bold", "color": "#111111"}
+            my_score_style = {"size": "20px", "weight": "bold", "color": "#111111"}
+            opp_score_style = {"size": "20px", "weight": "bold", "color": "#111111"}
 
         # 2. 建立 11 行指標數據的輔助渲染函式
         def build_row(label, is_aux=False):
@@ -181,17 +181,17 @@ class MatchupHandler(BaseHandler):
                     ]
                 }
             
-            # 正式 9-Cat：領先黑色較大 (15px bold #111111)，落後灰色較小 (12px regular #aaaaaa)
+            # 正式 9-Cat：領先大黑 (16px bold #111111)，落後小灰 (14px regular #aaaaaa)
             status = data.get("status")
             if status == "my_win":
-                my_style = {"weight": "bold", "size": "md", "color": "#111111"}
-                opp_style = {"weight": "regular", "size": "xs", "color": "#aaaaaa"}
+                my_style = {"weight": "bold", "size": "16px", "color": "#111111"}
+                opp_style = {"weight": "regular", "size": "14px", "color": "#aaaaaa"}
             elif status == "opp_win":
-                my_style = {"weight": "regular", "size": "xs", "color": "#aaaaaa"}
-                opp_style = {"weight": "bold", "size": "md", "color": "#111111"}
+                my_style = {"weight": "regular", "size": "14px", "color": "#aaaaaa"}
+                opp_style = {"weight": "bold", "size": "16px", "color": "#111111"}
             else: # 平手
-                my_style = {"weight": "regular", "size": "sm", "color": "#555555"}
-                opp_style = {"weight": "regular", "size": "sm", "color": "#555555"}
+                my_style = {"weight": "regular", "size": "14px", "color": "#555555"}
+                opp_style = {"weight": "regular", "size": "14px", "color": "#555555"}
 
             # 將 ST 翻譯為 LINE 顯示的簡寫 STL
             display_label = "STL" if label == "ST" else label
