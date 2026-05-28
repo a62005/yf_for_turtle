@@ -6,3 +6,4 @@ pytz
 Jinja2
 playwright
 google-generativeai
+psutil
