@@ -136,7 +136,7 @@ class UserStatsHandler(BaseHandler):
                 "contents": [
                     {"type": "text", "text": player_info["manager_name"], "weight": "bold", "size": "xl", "color": "#111111"},
                     {"type": "text", "text": player_info["official_name"], "size": "sm", "color": "#555555"},
-                    {"type": "text", "text": date_str, "size": "xs", "color": "#888888"}
+                    {"type": "text", "text": date_str, "weight": "bold", "size": "md", "color": "#111111"}
                 ]
             },
             "body": {
