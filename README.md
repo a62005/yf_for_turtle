@@ -88,15 +88,7 @@ TEAM_MAPPING_FILE=team_mapping.json
 python bot.py
 ```
 
----
 
-## 🧪 測試驗證 (Testing)
-
-我們擁有高水準的單元測試套件。在進行任何代碼提交前，請執行以下命令以驗證系統穩定性：
-```bash
-# 設置 PYTHONPATH 並執行全套單元測試
-$env:PYTHONPATH="." ; .venv\Scripts\pytest
-```
 
 ---
 
