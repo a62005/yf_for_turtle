@@ -16,10 +16,6 @@ from src.cache_utils import load_league_metadata, is_empty_data, save_league_met
 from src.utils.time_utils import get_pacific_date, get_fantasy_week
 from src.fetcher import YahooFantasyFetcher
 
-def get_tw_hour():
-    tw_tz = pytz.timezone("Asia/Taipei")
-    return datetime.now(tw_tz).hour
-
 class StatsHandler(BaseHandler):
     def __init__(self):
         self.combined_pattern = re.compile(r"^#戰績$")
@@ -168,10 +164,18 @@ class StatsHandler(BaseHandler):
             return
 
         is_current = cmd_type == "combined"
-        if is_current and not is_offseason and get_tw_hour() < 14:
-            with ApiClient(configuration) as api_client:
-                MessagingApi(api_client).reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="請於 14:00 後再進行查詢。")]))
-            return
+        if is_current:
+            from src.utils.time_utils import is_stats_query_allowed
+            allowed, err_msg = is_stats_query_allowed(is_offseason=is_offseason)
+            if not allowed:
+                with ApiClient(configuration) as api_client:
+                    MessagingApi(api_client).reply_message(
+                        ReplyMessageRequest(
+                            reply_token=event.reply_token, 
+                            messages=[TextMessage(text=err_msg)]
+                        )
+                    )
+                return
             
         lock_file = os.path.join(project_root, "data", f"{cache_key}_fetch.lock")
         os.makedirs(os.path.dirname(lock_file), exist_ok=True)

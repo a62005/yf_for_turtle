@@ -56,8 +56,8 @@ def test_stats_handler_execute_sanity(mock_os_close, mock_os_open, mock_makedirs
     
     config = MagicMock(spec=Configuration)
     
-    # Patch get_tw_hour to simulate a time after 14:00 so the "請於 14:00 後再進行查詢。" block is bypassed
-    with patch("src.handlers.stats_handler.get_tw_hour", return_value=15):
+    # Patch is_stats_query_allowed to return allowed=True so the time-limit block is bypassed
+    with patch("src.utils.time_utils.is_stats_query_allowed", return_value=(True, "")):
         handler.execute(event, config)
     
     # Check if MessagingApi was called (at least once for "數據更新中")

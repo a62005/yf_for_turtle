@@ -117,12 +117,12 @@ def test_execute_empty_data_cache(mock_exists, mock_is_empty, mock_messaging_api
 @patch("src.handlers.stats_handler.load_config", return_value={"DEFAULT_SEASON_START": "2025-10-21"})
 @patch("src.handlers.stats_handler.load_league_metadata")
 @patch("src.handlers.stats_handler.get_pacific_date", return_value="2025-11-15")
-@patch("src.handlers.stats_handler.get_tw_hour", return_value=10) # Before 14:00
+@patch("src.utils.time_utils.is_stats_query_allowed", return_value=(False, "請於 14:00 後再進行查詢。"))
 @patch("src.handlers.stats_handler.ApiClient")
 @patch("src.handlers.stats_handler.MessagingApi")
 @patch("src.handlers.stats_handler.is_empty_data", return_value=False)
 @patch("os.path.exists", return_value=False)
-def test_execute_before_1400(mock_exists, mock_is_empty, mock_messaging_api, mock_api_client, mock_tw_hour, mock_get_pacific, mock_load_meta, mock_load_config, mock_event, mock_config):
+def test_execute_before_1400(mock_exists, mock_is_empty, mock_messaging_api, mock_api_client, mock_allowed, mock_get_pacific, mock_load_meta, mock_load_config, mock_event, mock_config):
     mock_load_meta.return_value = {"start_date": "2025-10-21", "end_date": "2026-04-05"}
     handler = StatsHandler()
     mock_event.message.text = "#戰績"
@@ -152,13 +152,13 @@ def test_execute_offseason_redirection(mock_exists, mock_messaging_api, mock_api
 @patch("src.handlers.stats_handler.load_config", return_value={"DEFAULT_SEASON_START": "2025-10-21"})
 @patch("src.handlers.stats_handler.load_league_metadata")
 @patch("src.handlers.stats_handler.get_pacific_date", return_value="2025-11-15")
-@patch("src.handlers.stats_handler.get_tw_hour", return_value=15)
+@patch("src.utils.time_utils.is_stats_query_allowed", return_value=(True, ""))
 @patch("src.handlers.stats_handler.ApiClient")
 @patch("src.handlers.stats_handler.MessagingApi")
 @patch("src.handlers.stats_handler.is_empty_data", return_value=False)
 @patch("os.path.exists", return_value=False)
 @patch("os.open", side_effect=FileExistsError) # Simulate lock file exists
-def test_execute_lock_file_exists(mock_open, mock_exists, mock_is_empty, mock_messaging_api, mock_api_client, mock_tw_hour, mock_get_pacific, mock_load_meta, mock_load_config, mock_event, mock_config):
+def test_execute_lock_file_exists(mock_open, mock_exists, mock_is_empty, mock_messaging_api, mock_api_client, mock_allowed, mock_get_pacific, mock_load_meta, mock_load_config, mock_event, mock_config):
     mock_load_meta.return_value = {"start_date": "2025-10-21"}
     handler = StatsHandler()
     mock_event.message.text = "#戰績"
