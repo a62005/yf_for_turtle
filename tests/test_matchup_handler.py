@@ -17,16 +17,16 @@ def test_matchup_compare_logic():
     # 測試 TO 越小越好，其餘越大越好，零值轉 "-"
     my_stats = {
         "FG%": "0.514", "FGM/FGA": "180/350", "FT%": "0.0", "FTM/FTA": "0/0",
-        "3PTM": "35", "PTS": "450", "REB": "110", "AST": "95", "STL": "25", "BLK": "12", "TO": "32"
+        "3PTM": "35", "PTS": "450", "REB": "110", "AST": "95", "ST": "25", "BLK": "12", "TO": "32"
     }
     opp_stats = {
         "FG%": "0.485", "FGM/FGA": "165/340", "FT%": "0.750", "FTM/FTA": "15/20",
-        "3PTM": "42", "PTS": "410", "REB": "125", "AST": "80", "STL": "20", "BLK": "18", "TO": "38"
+        "3PTM": "42", "PTS": "410", "REB": "125", "AST": "80", "ST": "20", "BLK": "18", "TO": "38"
     }
     
     comp_res = handler.compare_stats(my_stats, opp_stats)
     
-    # 驗證 9-Cat 勝負 (韋哥贏：FG%, PTS, AST, STL, TO；落後：FT%, 3PTM, REB, BLK -> 比分 5:4)
+    # 驗證 9-Cat 勝負 (韋哥贏：FG%, PTS, AST, ST, TO；落後：FT%, 3PTM, REB, BLK -> 比分 5:4)
     assert comp_res["wins"] == 5
     assert comp_res["losses"] == 4
     assert comp_res["ties"] == 0
@@ -56,21 +56,21 @@ def test_matchup_compare_logic_edge_cases():
     # 以及累計指標 "0" 顯示為 "0" (而非 "-")，而百分比 "0.0" 仍顯示為 "-"
     my_stats = {
         "FG%": "0.0", "FGM/FGA": "0/0", "FT%": "abc", "FTM/FTA": "0/0",
-        "3PTM": "0", "PTS": "N/A", "REB": "10", "AST": None, "STL": "0.0", "BLK": "5", "TO": "0"
+        "3PTM": "0", "PTS": "N/A", "REB": "10", "AST": None, "ST": "0.0", "BLK": "5", "TO": "0"
     }
     opp_stats = {
         "FG%": "0.450", "FGM/FGA": "90/200", "FT%": "0.800", "FTM/FTA": "8/10",
-        "3PTM": "5", "PTS": "100", "REB": "abc", "AST": "2", "STL": "1", "BLK": None, "TO": "0"
+        "3PTM": "5", "PTS": "100", "REB": "abc", "AST": "2", "ST": "1", "BLK": None, "TO": "0"
     }
     
     comp_res = handler.compare_stats(my_stats, opp_stats)
     
     # 1. 驗證累計數值為 "0" 或 "0.0" 時，to_val_str 應保持 "0"
-    # STL: my_stats 是 "0.0" -> my_val 應為 "0"，opp_stats 是 "1" -> opp_val 應為 "1"
-    # 由於 0.0 < 1，STL 判定為 opp_win
-    assert comp_res["details"]["STL"]["my_val"] == "0"
-    assert comp_res["details"]["STL"]["opp_val"] == "1"
-    assert comp_res["details"]["STL"]["status"] == "opp_win"
+    # ST: my_stats 是 "0.0" -> my_val 應為 "0"，opp_stats 是 "1" -> opp_val 應為 "1"
+    # 由於 0.0 < 1，ST 判定為 opp_win
+    assert comp_res["details"]["ST"]["my_val"] == "0"
+    assert comp_res["details"]["ST"]["opp_val"] == "1"
+    assert comp_res["details"]["ST"]["status"] == "opp_win"
     
     # 3PTM: my_stats 是 "0" -> my_val 應為 "0"，opp_val 應為 "5"，opp_win
     assert comp_res["details"]["3PTM"]["my_val"] == "0"
@@ -155,21 +155,40 @@ def test_format_matchup_stats():
     # 驗證 Header 第一層：中文暱稱 (韋哥 VS Jerry)
     header_box = body[1]
     assert header_box["contents"][0]["text"] == "韋哥"
+    assert header_box["contents"][0]["weight"] == "bold"
+    assert header_box["contents"][0]["size"] == "xl"
+    assert header_box["contents"][0]["color"] == "#111111"
+    
     assert header_box["contents"][1]["text"] == "VS"
+    assert header_box["contents"][1]["weight"] == "bold"
+    assert header_box["contents"][1]["size"] == "sm"
+    assert header_box["contents"][1]["color"] == "#aaaaaa"
+    
     assert header_box["contents"][2]["text"] == "Jerry"
+    assert header_box["contents"][2]["weight"] == "bold"
+    assert header_box["contents"][2]["size"] == "xl"
+    assert header_box["contents"][2]["color"] == "#111111"
     
     # 驗證 Header 第二層：官方隊名
     team_name_box = body[2]
     assert team_name_box["contents"][0]["text"] == "Vigo's Superteam"
+    assert team_name_box["contents"][0]["size"] == "xxs"
+    assert team_name_box["contents"][0]["color"] == "#999999"
+    
     assert team_name_box["contents"][2]["text"] == "Jerry's Awesome"
+    assert team_name_box["contents"][2]["size"] == "xxs"
+    assert team_name_box["contents"][2]["color"] == "#999999"
     
     # 驗證 Header 第三層：比分對決 (5:4，我方領先大黑 24px/bold/#111111，落後小灰 16px/regular/#aaaaaa)
     score_box = body[3]
     assert score_box["contents"][0]["text"] == "5"
     assert score_box["contents"][0]["size"] == "xl" # 24px對應 xl
+    assert score_box["contents"][0]["weight"] == "bold"
     assert score_box["contents"][0]["color"] == "#111111"
+    
     assert score_box["contents"][2]["text"] == "4"
     assert score_box["contents"][2]["size"] == "md" # 16px對應 md
+    assert score_box["contents"][2]["weight"] == "regular"
     assert score_box["contents"][2]["color"] == "#aaaaaa"
     
     # 驗證 Body 11 行指標 (如 FG%，我方贏 -> 我方大黑，對手小灰)

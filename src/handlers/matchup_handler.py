@@ -74,7 +74,7 @@ class MatchupHandler(BaseHandler):
         """比對 9-Cat 數據並統計比分"""
         cats_to_compare = [
             ("FG%", True), ("FT%", True), ("3PTM", True), ("PTS", True), 
-            ("REB", True), ("AST", True), ("STL", True), ("BLK", True), ("TO", False)
+            ("REB", True), ("AST", True), ("ST", True), ("BLK", True), ("TO", False)
         ]
         
         wins, losses, ties = 0, 0, 0
