@@ -18,6 +18,7 @@ from src.utils.token_utils import is_token_processed
 from src.handlers.dispatcher import CommandDispatcher
 from src.handlers.stats_handler import StatsHandler
 from src.handlers.player_handler import PlayerHandler
+from src.handlers.user_stats_handler import UserStatsHandler
 
 def cleanup_port(port):
     for proc in psutil.process_iter(['pid', 'name']):
@@ -65,6 +66,8 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 dispatcher = CommandDispatcher()
 dispatcher.register(StatsHandler())
 dispatcher.register(PlayerHandler())
+dispatcher.register(UserStatsHandler())
+
 
 @app.route("/callback", methods=['POST'])
 def callback():
