@@ -129,41 +129,43 @@ class UserStatsHandler(BaseHandler):
         # 組裝白底極簡雙層卡片字典
         return {
             "type": "bubble",
-            "header": {
-                "type": "box",
-                "layout": "vertical",
-                "spacing": "sm",
-                "contents": [
-                    {"type": "text", "text": player_info["manager_name"], "weight": "bold", "size": "xl", "color": "#111111"},
-                    {"type": "text", "text": player_info["official_name"], "size": "sm", "color": "#555555"}
-                ]
-            },
             "body": {
                 "type": "box",
                 "layout": "vertical",
                 "spacing": "md",
                 "contents": [
-                    # 1. 當日日期標頭
+                    # 1. 玩家資訊標頭
+                    {
+                        "type": "box",
+                        "layout": "vertical",
+                        "spacing": "xs",
+                        "contents": [
+                            {"type": "text", "text": player_info["manager_name"], "weight": "bold", "size": "xl", "color": "#111111"},
+                            {"type": "text", "text": player_info["official_name"], "size": "sm", "color": "#555555"}
+                        ]
+                    },
+                    # 2. 當日日期標頭
                     {
                         "type": "text",
                         "text": date_str,
                         "weight": "bold",
                         "size": "md",
-                        "color": "#111111"
+                        "color": "#111111",
+                        "margin": "md"
                     },
-                    # 2. 當日數據
+                    # 3. 當日數據
                     {
                         "type": "box",
                         "layout": "vertical",
                         "spacing": "xs",
                         "contents": daily_rows
                     },
-                    # 3. 精緻分隔線
+                    # 4. 精緻分隔線
                     {
                         "type": "separator",
                         "color": "#EAEAEA"
                     },
-                    # 4. 當週週數標頭
+                    # 5. 當週週數標頭
                     {
                         "type": "text",
                         "text": f"W{week_str}",
@@ -172,7 +174,7 @@ class UserStatsHandler(BaseHandler):
                         "color": "#111111",
                         "margin": "md"
                     },
-                    # 5. 當週數據
+                    # 6. 當週數據
                     {
                         "type": "box",
                         "layout": "vertical",
