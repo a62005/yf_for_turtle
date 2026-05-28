@@ -1,5 +1,10 @@
 import pytest
+from unittest.mock import MagicMock, patch
 from src.handlers.matchup_handler import MatchupHandler
+from linebot.v3.webhooks import MessageEvent
+from linebot.v3.messaging import Configuration
+from datetime import datetime
+import pytz
 
 def test_matchup_handler_can_handle(mocker):
     mocker.patch("src.handlers.matchup_handler.load_config", return_value={"TEAM_MAPPING_FILE": "team_mapping.json"})
@@ -204,5 +209,186 @@ def test_format_matchup_stats():
     assert fg_row["contents"][2]["weight"] == "regular"
     assert fg_row["contents"][2]["size"] == "xs"
     assert fg_row["contents"][2]["color"] == "#aaaaaa"
+
+
+@pytest.fixture
+def mock_event():
+    event = MagicMock(spec=MessageEvent)
+    event.message = MagicMock()
+    event.reply_token = "dummy_reply_token"
+    return event
+
+@pytest.fixture
+def mock_config():
+    return MagicMock(spec=Configuration)
+
+@patch("src.handlers.matchup_handler.load_config", return_value={"LEAGUE_ID": "123456", "TEAM_MAPPING_FILE": "team_mapping.json"})
+@patch("src.handlers.matchup_handler.get_pacific_datetime")
+@patch("src.handlers.matchup_handler.YahooFantasyFetcher")
+@patch("src.handlers.matchup_handler.ApiClient")
+@patch("src.handlers.matchup_handler.MessagingApi")
+def test_matchup_handler_execute_flow(mock_messaging_api, mock_api_client, mock_fetcher_cls, mock_get_pacific, mock_load_config, mock_event, mock_config):
+    # 1. 設置模擬時間在賽季中 (2025-11-15 12:00:00)
+    pacific_tz = pytz.timezone("US/Pacific")
+    mock_now = pacific_tz.localize(datetime(2025, 11, 15, 12, 0, 0))
+    mock_get_pacific.return_value = mock_now
+
+    # 2. 設置模擬聯盟 Meta
+    mock_fetcher = mock_fetcher_cls.return_value
+    mock_fetcher.fetch_league_metadata.return_value = {
+        "league_id": "nba.l.123456",
+        "name": "My NBA League",
+        "season": "2025",
+        "start_date": "2025-10-20",
+        "end_date": "2026-04-12",
+        "end_week": 24
+    }
+
+    # 3. 設置模擬對戰列表
+    mock_fetcher.fetch_matchups.return_value = [
+        {
+            "team1": {
+                "team_id": "1",
+                "name": "韋哥",
+                "official_name": "Vigo's Superteam",
+                "stats": {
+                    "FG%": "0.514", "FGM/FGA": "180/350", "FT%": "0.750", "FTM/FTA": "15/20",
+                    "3PTM": "35", "PTS": "450", "REB": "110", "AST": "95", "ST": "25", "BLK": "12", "TO": "32"
+                }
+            },
+            "team2": {
+                "team_id": "2",
+                "name": "Jerry",
+                "official_name": "Jerry's Awesome",
+                "stats": {
+                    "FG%": "0.485", "FGM/FGA": "165/340", "FT%": "0.750", "FTM/FTA": "15/20",
+                    "3PTM": "42", "PTS": "410", "REB": "125", "AST": "80", "ST": "20", "BLK": "18", "TO": "38"
+                }
+            }
+        }
+    ]
+
+    handler = MatchupHandler()
+    # Mock 暱稱對應
+    handler._load_team_mapping = MagicMock(return_value={"1": "韋哥", "2": "Jerry"})
+
+    mock_event.message.text = "#對戰 韋哥"
+
+    # 4. 執行
+    handler.execute(mock_event, mock_config)
+
+    # 5. 驗證
+    # 驗證 fetch_league_metadata 被呼叫
+    mock_fetcher.fetch_league_metadata.assert_called_once_with("123456")
+    
+    # 驗證計算出的週數 (2025-10-20 到 2025-11-15 -> 第 4 週)
+    # 2025-10-20 (星期一) -> Monday of start week.
+    # 2025-11-15 差 26 天. 26 // 7 = 3 -> 3+1 = 4.
+    mock_fetcher.fetch_matchups.assert_called_once_with("123456", 4)
+
+    # 驗證 LINE reply 有被呼叫，且回傳的 FlexMessage 內容是正確的
+    mock_messaging_api.return_value.reply_message.assert_called_once()
+    reply_req = mock_messaging_api.return_value.reply_message.call_args[0][0]
+    assert reply_req.reply_token == "dummy_reply_token"
+    
+    # 驗證 Flex 內容
+    flex_msg = reply_req.messages[0]
+    assert flex_msg.alt_text == "WEEK 4 MATCHUP - 韋哥 vs Jerry"
+
+
+@patch("src.handlers.matchup_handler.load_config", return_value={"LEAGUE_ID": "123456", "TEAM_MAPPING_FILE": "team_mapping.json"})
+@patch("src.handlers.matchup_handler.get_pacific_datetime")
+@patch("src.handlers.matchup_handler.YahooFantasyFetcher")
+@patch("src.handlers.matchup_handler.ApiClient")
+@patch("src.handlers.matchup_handler.MessagingApi")
+def test_matchup_handler_execute_offseason(mock_messaging_api, mock_api_client, mock_fetcher_cls, mock_get_pacific, mock_load_config, mock_event, mock_config):
+    # 1. 設置模擬時間在 offseason (2026-05-01 12:00:00)
+    pacific_tz = pytz.timezone("US/Pacific")
+    mock_now = pacific_tz.localize(datetime(2026, 5, 1, 12, 0, 0))
+    mock_get_pacific.return_value = mock_now
+
+    # 2. 設置模擬聯盟 Meta
+    mock_fetcher = mock_fetcher_cls.return_value
+    mock_fetcher.fetch_league_metadata.return_value = {
+        "league_id": "nba.l.123456",
+        "name": "My NBA League",
+        "season": "2025",
+        "start_date": "2025-10-20",
+        "end_date": "2026-04-12",
+        "end_week": 24
+    }
+
+    # 3. 設置模擬對戰列表 (offseason fallback to end_week = 24)
+    mock_fetcher.fetch_matchups.return_value = [
+        {
+            "team1": {
+                "team_id": "1",
+                "name": "韋哥",
+                "official_name": "Vigo's Superteam",
+                "stats": {
+                    "FG%": "0.514", "FGM/FGA": "180/350", "FT%": "0.750", "FTM/FTA": "15/20",
+                    "3PTM": "35", "PTS": "450", "REB": "110", "AST": "95", "ST": "25", "BLK": "12", "TO": "32"
+                }
+            },
+            "team2": {
+                "team_id": "2",
+                "name": "Jerry",
+                "official_name": "Jerry's Awesome",
+                "stats": {
+                    "FG%": "0.485", "FGM/FGA": "165/340", "FT%": "0.750", "FTM/FTA": "15/20",
+                    "3PTM": "42", "PTS": "410", "REB": "125", "AST": "80", "ST": "20", "BLK": "18", "TO": "38"
+                }
+            }
+        }
+    ]
+
+    handler = MatchupHandler()
+    handler._load_team_mapping = MagicMock(return_value={"1": "韋哥", "2": "Jerry"})
+
+    mock_event.message.text = "#對戰 韋哥"
+
+    # 4. 執行
+    handler.execute(mock_event, mock_config)
+
+    # 5. 驗證: 應該使用 end_week 24 查詢 fetch_matchups
+    mock_fetcher.fetch_matchups.assert_called_once_with("123456", 24)
+
+    # 驗證 LINE reply 有被呼叫，且為 WEEK 24
+    mock_messaging_api.return_value.reply_message.assert_called_once()
+    reply_req = mock_messaging_api.return_value.reply_message.call_args[0][0]
+    assert reply_req.messages[0].alt_text == "WEEK 24 MATCHUP - 韋哥 vs Jerry"
+
+
+@patch("src.handlers.matchup_handler.load_config")
+@patch("src.handlers.matchup_handler.YahooFantasyFetcher")
+@patch("src.handlers.matchup_handler.ApiClient")
+@patch("src.handlers.matchup_handler.MessagingApi")
+def test_matchup_handler_execute_error_handling(mock_messaging_api, mock_api_client, mock_fetcher_cls, mock_load_config, mock_event, mock_config):
+    # 測試 1: config 缺少 LEAGUE_ID
+    mock_load_config.return_value = {} # empty config
+    
+    handler = MatchupHandler()
+    handler._load_team_mapping = MagicMock(return_value={"1": "韋哥"})
+    mock_event.message.text = "#對戰 韋哥"
+
+    # 執行不應該拋出任何例外
+    try:
+        handler.execute(mock_event, mock_config)
+    except Exception as e:
+        pytest.fail(f"Execute threw exception when config was empty: {e}")
+
+    # LINE reply 應該不會被呼叫 (quiet exit)
+    mock_messaging_api.return_value.reply_message.assert_not_called()
+
+    # 測試 2: API 發生異常
+    mock_load_config.return_value = {"LEAGUE_ID": "123456"}
+    mock_fetcher_cls.return_value.fetch_league_metadata.side_effect = Exception("Network connection lost")
+
+    # 執行不應該拋出例外 (quiet exit)
+    try:
+        handler.execute(mock_event, mock_config)
+    except Exception as e:
+        pytest.fail(f"Execute threw exception when Yahoo fetcher raised error: {e}")
+
 
 

@@ -8,6 +8,7 @@ from .base_handler import BaseHandler
 from src.config import load_config
 from src.cache_utils import load_league_metadata
 from src.fetcher import YahooFantasyFetcher
+from src.utils.time_utils import get_pacific_datetime, get_fantasy_week
 
 class MatchupHandler(BaseHandler):
     def __init__(self):
@@ -285,5 +286,107 @@ class MatchupHandler(BaseHandler):
         }
 
     def execute(self, event: MessageEvent, configuration: Configuration) -> None:
-        pass
+        try:
+            # 1. 取得指令內文並用 regex 解析 nickname
+            user_text = event.message.text.strip()
+            match = self.pattern.match(user_text)
+            if not match:
+                return
+            nickname = match.group(1).strip()
+
+            # 2. 讀取設定檔，取得 LEAGUE_ID
+            config = load_config()
+            league_id = config.get("LEAGUE_ID")
+            if not league_id:
+                logging.error("LEAGUE_ID is not configured in environment variables.")
+                return
+
+            # 3. 取得 team_mapping
+            team_mapping = self._load_team_mapping()
+
+            # 4. 初始化 YahooFetcher
+            fetcher = YahooFantasyFetcher(team_mapping=team_mapping)
+
+            # 5. 實時抓取聯盟 Meta 資訊
+            metadata = fetcher.fetch_league_metadata(league_id)
+            start_date = metadata.get("start_date")
+            end_date = metadata.get("end_date")
+            end_week = metadata.get("end_week") or 24
+
+            if not start_date or not end_date:
+                logging.error("Failed to fetch league start_date or end_date.")
+                return
+
+            # 6. 計算當前週數（採用美西時區進行時間比對，且有 offseason guard）
+            current_dt = get_pacific_datetime()
+            current_date_str = current_dt.strftime("%Y-%m-%d")
+
+            if current_date_str > end_date:
+                # offseason guard
+                week = end_week
+            else:
+                week = get_fantasy_week(start_date, current_dt)
+                if week > end_week:
+                    week = end_week
+
+            # 7. 抓取當週對戰列表 (fetch_matchups)
+            matchups = fetcher.fetch_matchups(league_id, week)
+            if not matchups:
+                logging.error(f"No matchups found for week {week}.")
+                return
+
+            # 8. 搜尋目標暱稱對應的對戰 (role anchoring)
+            target_matchup = None
+            my_is_team1 = True
+            for m in matchups:
+                t1_name = m.get("team1", {}).get("name")
+                t2_name = m.get("team2", {}).get("name")
+                if t1_name == nickname:
+                    target_matchup = m
+                    my_is_team1 = True
+                    break
+                elif t2_name == nickname:
+                    target_matchup = m
+                    my_is_team1 = False
+                    break
+
+            if not target_matchup:
+                logging.error(f"No matchup found for nickname: {nickname}")
+                return
+
+            # 9. 依據 Role Anchoring 區分我方與敵方
+            if my_is_team1:
+                my_team = target_matchup["team1"]
+                opp_team = target_matchup["team2"]
+            else:
+                my_team = target_matchup["team2"]
+                opp_team = target_matchup["team1"]
+
+            player_info = {
+                "my_nickname": my_team["name"],
+                "my_official": my_team["official_name"],
+                "opp_nickname": opp_team["name"],
+                "opp_official": opp_team["official_name"]
+            }
+
+            # 10. 比對數據
+            comp_res = self.compare_stats(my_team["stats"], opp_team["stats"])
+
+            # 11. 產生 Flex Container 卡片
+            flex_dict = self.format_matchup_stats(player_info, comp_res, str(week))
+
+            # 12. 透過 LINE 回覆 Flex Message
+            flex_container = FlexContainer.from_json(json.dumps(flex_dict))
+            alt_text = f"WEEK {week} MATCHUP - {player_info['my_nickname']} vs {player_info['opp_nickname']}"
+            with ApiClient(configuration) as api_client:
+                MessagingApi(api_client).reply_message(
+                    ReplyMessageRequest(
+                        reply_token=event.reply_token,
+                        messages=[FlexMessage(alt_text=alt_text, contents=flex_container)]
+                    )
+                )
+        except Exception as e:
+            logging.error(f"Failed to execute MatchupHandler: {e}", exc_info=True)
+            # Quiet exit
+            return
 
