@@ -14,7 +14,8 @@ def test_matchup_handler_can_handle(mocker):
     assert handler.can_handle("#對戰 韋哥") is True
     assert handler.can_handle("#對戰 Jerry") is True
     assert handler.can_handle("#對戰 詹姆斯") is False # 沒登錄 -> 略過
-    assert handler.can_handle("#對戰") is False
+    assert handler.can_handle("#對戰") is True
+    assert handler.can_handle("#對戰 ") is True
 
 def test_matchup_compare_logic():
     handler = MatchupHandler()
@@ -389,6 +390,21 @@ def test_matchup_handler_execute_error_handling(mock_reply_flex, mock_fetcher_cl
 
     # reply_flex 應該不會被呼叫 (quiet exit)
     mock_reply_flex.assert_not_called()
+
+
+def test_execute_matchup_no_nickname(mocker):
+    handler = MatchupHandler()
+    
+    mock_event = MagicMock()
+    mock_event.message.text = "#對戰"
+    
+    mock_config = MagicMock()
+    mock_reply_player_list = mocker.patch.object(handler, "reply_player_list")
+    
+    handler.execute(mock_event, mock_config)
+    
+    mock_reply_player_list.assert_called_once_with(mock_event, mock_config, is_matchup=True)
+
 
 
 

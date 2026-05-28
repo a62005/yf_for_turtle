@@ -12,24 +12,22 @@ from src.utils.time_utils import get_pacific_datetime, get_fantasy_week
 
 class MatchupHandler(BaseHandler):
     def __init__(self):
-        self.pattern = re.compile(r"^#對戰\s+(.+)$")
-
-    def _load_team_mapping(self) -> dict:
-        config = load_config()
-        mapping_file = config.get("TEAM_MAPPING_FILE", "team_mapping.json")
-        if os.path.exists(mapping_file):
-            try:
-                with open(mapping_file, "r", encoding="utf-8") as f:
-                    return json.load(f)
-            except Exception as e:
-                logging.error(f"Failed to load team mapping: {e}")
-        return {}
+        self.pattern = re.compile(r"^#對戰(?:\s+(.+))?$")
 
     def can_handle(self, user_text: str) -> bool:
+        user_text = user_text.strip()
         match = self.pattern.match(user_text)
         if not match:
             return False
-        nickname = match.group(1).strip()
+            
+        nickname_raw = match.group(1)
+        if not nickname_raw:
+            return True
+            
+        nickname = nickname_raw.strip()
+        if not nickname:
+            return True
+            
         mapping = self._load_team_mapping()
         return nickname in mapping.values()
 
@@ -292,7 +290,13 @@ class MatchupHandler(BaseHandler):
             match = self.pattern.match(user_text)
             if not match:
                 return
-            nickname = match.group(1).strip()
+            
+            nickname_raw = match.group(1)
+            nickname = nickname_raw.strip() if nickname_raw else ""
+            
+            if not nickname:
+                self.reply_player_list(event, configuration, is_matchup=True)
+                return
 
             # 2. 讀取設定檔，取得 LEAGUE_ID
             config = load_config()
@@ -383,13 +387,5 @@ class MatchupHandler(BaseHandler):
             # Quiet exit
             return
 
-    def reply_flex(self, event: MessageEvent, configuration: Configuration, alt_text: str, flex_dict: dict) -> None:
-        flex_container = FlexContainer.from_json(json.dumps(flex_dict))
-        with ApiClient(configuration) as api_client:
-            MessagingApi(api_client).reply_message(
-                ReplyMessageRequest(
-                    reply_token=event.reply_token,
-                    messages=[FlexMessage(alt_text=alt_text, contents=flex_container)]
-                )
-            )
+
 
