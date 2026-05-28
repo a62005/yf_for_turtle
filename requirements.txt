@@ -7,3 +7,6 @@ Jinja2
 playwright
 google-generativeai
 psutil
+Flask
+line-bot-sdk
+pyngrok
