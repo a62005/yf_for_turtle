@@ -73,7 +73,7 @@ dispatcher.register(UserStatsHandler())
 def callback():
     signature = request.headers['X-Line-Signature']
     body = request.get_data(as_text=True)
-    logging.info(f"Request body: {body}")
+    logging.debug(f"Request body: {body}")
 
     try:
         handler.handle(body, signature)
@@ -92,9 +92,9 @@ def handle_message(event):
         return
 
     user_text = event.message.text.strip()
-    logging.info(f"[LINE] 收到指令: {user_text}")
     
     if user_text.startswith("#"):
+        logging.info(f"[LINE] 收到指令: {user_text}")
         dispatcher.handle(event, configuration)
 
 if __name__ == "__main__":
