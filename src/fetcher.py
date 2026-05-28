@@ -341,3 +341,37 @@ class YahooFantasyFetcher:
             logging.error(f"Error parsing scoreboard games: {e}")
         return game_counts
 
+    def _parse_team_stats_xml(self, xml_data: str) -> dict:
+        """解析 Yahoo Team stats XML 並翻譯為 9-Cat 格式"""
+        root = ET.fromstring(xml_data)
+        
+        # 尋找 team 節點與名稱
+        team_node = root.find('.//ns:team', YAHOO_NS)
+        if team_node is None:
+            team_node = root # Fallback
+            
+        name_node = team_node.find('ns:name', YAHOO_NS)
+        team_name = name_node.text if name_node is not None else "Unknown Team"
+        
+        stats_dict = {}
+        stat_nodes = team_node.findall('.//ns:team_stats/ns:stats/ns:stat', YAHOO_NS)
+        for node in stat_nodes:
+            s_id = node.find('ns:stat_id', YAHOO_NS).text
+            s_val = node.find('ns:value', YAHOO_NS).text
+            
+            # 使用我們原有的翻譯邏輯
+            label = translate_stat_id(s_id)
+            stats_dict[label] = s_val if s_val is not None else "0"
+            
+        return {
+            "team_name": team_name,
+            "stats": stats_dict
+        }
+
+    def fetch_single_team_stats_by_url(self, team_key: str, stat_type: str, type_val: str) -> dict:
+        """實時且無快取地抓取單一隊伍在指定日期/週數的 9-Cat 數據"""
+        url = f"team/{team_key}/stats;type={stat_type};{stat_type}={type_val}"
+        xml_data = self.ctx.make_request(url)
+        return self._parse_team_stats_xml(xml_data)
+
+
