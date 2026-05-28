@@ -38,23 +38,6 @@ class UserStatsHandler(BaseHandler):
         # 精準比對是否包含此暱稱
         return nickname in mapping.values()
 
-    def calculate_target_date(self, is_offseason=False, end_date=None) -> str:
-        if is_offseason:
-            return end_date or "2026-04-12"
-            
-        tw_tz = pytz.timezone("Asia/Taipei")
-        current_tw_dt = datetime.now(tw_tz)
-        tw_date = current_tw_dt.date()
-        tw_hour = current_tw_dt.hour
-        
-        # 台北時間 07:00 跨日美西時間邏輯
-        if tw_hour >= 7:
-            target_dt = tw_date - timedelta(days=1)
-        else:
-            target_dt = tw_date - timedelta(days=2)
-            
-        return target_dt.strftime("%Y-%m-%d")
-
     def reply_flex(self, event: MessageEvent, configuration: Configuration, alt_text: str, flex_dict: dict) -> None:
         flex_container = FlexContainer.from_json(json.dumps(flex_dict))
         with ApiClient(configuration) as api_client:
@@ -213,7 +196,8 @@ class UserStatsHandler(BaseHandler):
         today_pacific = datetime.now(pytz.timezone("US/Pacific")).strftime("%Y-%m-%d")
         is_offseason = meta.get('end_date') and today_pacific > meta['end_date']
         
-        target_date = self.calculate_target_date(is_offseason=is_offseason, end_date=meta.get('end_date'))
+        from src.utils.time_utils import get_target_date
+        target_date = get_target_date(is_offseason=is_offseason, end_date=meta.get('end_date'))
         
         date_to_week = meta.get("date_to_week", {})
         target_week = date_to_week.get(target_date) or get_fantasy_week(config["SEASON_START_DATE"])
