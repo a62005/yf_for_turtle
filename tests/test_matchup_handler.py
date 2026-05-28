@@ -117,3 +117,73 @@ def test_matchup_compare_logic_edge_cases():
     assert comp_res["details"]["BLK"]["opp_val"] == "-"
     assert comp_res["details"]["BLK"]["status"] == "my_win"
 
+
+def test_format_matchup_stats():
+    handler = MatchupHandler()
+    
+    player_info = {
+        "my_nickname": "韋哥",
+        "my_official": "Vigo's Superteam",
+        "opp_nickname": "Jerry",
+        "opp_official": "Jerry's Awesome"
+    }
+    
+    comp_res = {
+        "wins": 5, "losses": 4, "ties": 0,
+        "details": {
+            "FGM/A": {"my_val": "180/350", "opp_val": "165/340"},
+            "FTM/A": {"my_val": "-", "opp_val": "15/20"},
+            "FG%": {"status": "my_win", "my_val": "51.4%", "opp_val": "48.5%"},
+            "FT%": {"status": "opp_win", "my_val": "-", "opp_val": "75.0%"},
+            "3PTM": {"status": "opp_win", "my_val": "35", "opp_val": "42"},
+            "PTS": {"status": "my_win", "my_val": "450", "opp_val": "410"},
+            "REB": {"status": "opp_win", "my_val": "110", "opp_val": "125"},
+            "AST": {"status": "my_win", "my_val": "95", "opp_val": "80"},
+            "ST": {"status": "my_win", "my_val": "25", "opp_val": "20"},
+            "BLK": {"status": "opp_win", "my_val": "12", "opp_val": "18"},
+            "TO": {"status": "my_win", "my_val": "32", "opp_val": "38"}
+        }
+    }
+    
+    bubble = handler.format_matchup_stats(player_info, comp_res, "24")
+    
+    assert isinstance(bubble, dict)
+    assert bubble["type"] == "bubble"
+    
+    body = bubble["body"]["contents"]
+    
+    # 驗證 Header 第一層：中文暱稱 (韋哥 VS Jerry)
+    header_box = body[1]
+    assert header_box["contents"][0]["text"] == "韋哥"
+    assert header_box["contents"][1]["text"] == "VS"
+    assert header_box["contents"][2]["text"] == "Jerry"
+    
+    # 驗證 Header 第二層：官方隊名
+    team_name_box = body[2]
+    assert team_name_box["contents"][0]["text"] == "Vigo's Superteam"
+    assert team_name_box["contents"][2]["text"] == "Jerry's Awesome"
+    
+    # 驗證 Header 第三層：比分對決 (5:4，我方領先大黑 24px/bold/#111111，落後小灰 16px/regular/#aaaaaa)
+    score_box = body[3]
+    assert score_box["contents"][0]["text"] == "5"
+    assert score_box["contents"][0]["size"] == "xl" # 24px對應 xl
+    assert score_box["contents"][0]["color"] == "#111111"
+    assert score_box["contents"][2]["text"] == "4"
+    assert score_box["contents"][2]["size"] == "md" # 16px對應 md
+    assert score_box["contents"][2]["color"] == "#aaaaaa"
+    
+    # 驗證 Body 11 行指標 (如 FG%，我方贏 -> 我方大黑，對手小灰)
+    fg_row = body[5]["contents"][1] # index 5 is the box containing rows, index 1 is FG% row
+    assert fg_row["contents"][0]["text"] == "51.4%"
+    assert fg_row["contents"][0]["weight"] == "bold"
+    assert fg_row["contents"][0]["size"] == "md"
+    assert fg_row["contents"][0]["color"] == "#111111"
+    
+    assert fg_row["contents"][1]["text"] == "FG%"
+    
+    assert fg_row["contents"][2]["text"] == "48.5%"
+    assert fg_row["contents"][2]["weight"] == "regular"
+    assert fg_row["contents"][2]["size"] == "xs"
+    assert fg_row["contents"][2]["color"] == "#aaaaaa"
+
+
