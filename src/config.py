@@ -26,5 +26,8 @@ def load_config() -> dict:
         "LINE_CHANNEL_ACCESS_TOKEN": os.getenv("LINE_CHANNEL_ACCESS_TOKEN"),
         "SERVER_URL": os.getenv("SERVER_URL"),
         "GEMINI_API_KEY": os.getenv("GEMINI_API_KEY"),
-        "GEMINI_MODEL": os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
+        "GEMINI_MODEL": os.getenv("GEMINI_MODEL", "gemini-3.5-flash"),
+        "NEXT_SEASON_START_DATE": os.getenv("NEXT_SEASON_START_DATE"),
+        "DRAFT_DATE": os.getenv("DRAFT_DATE"),
+        "PRIZE_IMAGE_PATH": os.getenv("PRIZE_IMAGE_PATH")
     }
