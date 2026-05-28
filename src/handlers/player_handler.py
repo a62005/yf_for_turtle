@@ -45,12 +45,14 @@ class PlayerHandler(BaseHandler):
         return target_dt.strftime("%Y-%m-%d")
 
     def format_player_stats(self, player_info: dict, stats: dict, date_str: str = None) -> str:
-        # Helper to safely format percentages
         def to_percent_str(val):
             try:
-                return f"{float(val) * 100:.1f}%"
+                f_val = float(val)
+                if f_val == 0.0:
+                    return "-"
+                return f"{f_val * 100:.1f}%"
             except (ValueError, TypeError):
-                return "0.0%"
+                return "-"
 
         # FGM is stat_4, FGA is stat_3
         fgm = stats.get("stat_4", "0")

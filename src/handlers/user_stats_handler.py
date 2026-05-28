@@ -56,12 +56,14 @@ class UserStatsHandler(BaseHandler):
         return target_dt.strftime("%Y-%m-%d")
 
     def format_user_stats(self, player_info: dict, daily_stats: dict, weekly_stats: dict, date_str: str, week_str: str) -> str:
-        # Helper to safely format percentages
         def to_percent_str(val):
             try:
-                return f"{float(val) * 100:.1f}%"
+                f_val = float(val)
+                if f_val == 0.0:
+                    return "-"
+                return f"{f_val * 100:.1f}%"
             except (ValueError, TypeError):
-                return "0.0%"
+                return "-"
 
         def build_lines(stats):
             # FGM is stat_4, FGA is stat_3
