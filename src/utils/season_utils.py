@@ -26,15 +26,13 @@ def sync_season_metadata(fetcher: YahooFantasyFetcher, league_id: str):
     date_to_week = old_meta.get("date_to_week", {})
     
     # Check if we need to update week dates
-    needs_update = False
-    for w in range(1, meta["end_week"] + 1):
-        if str(w) not in week_dates:
-            needs_update = True
-            break
-            
-    # Also if the league_id changed (new season)
-    if old_meta.get("league_id") != meta["league_id"]:
-        needs_update = True
+    # 正常來說只有第一次啟動（本地無舊快取）或跨季（league_id 改變）才需要抓取/重建週次對應表
+    is_first_start = not old_meta or not old_meta.get("league_id")
+    is_new_season = old_meta.get("league_id") != meta["league_id"]
+    
+    needs_update = is_first_start or is_new_season
+    
+    if is_new_season:
         week_dates = {}
         date_to_week = {}
         
