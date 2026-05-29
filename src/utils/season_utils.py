@@ -26,13 +26,15 @@ def sync_season_metadata(fetcher: YahooFantasyFetcher, league_id: str):
     date_to_week = old_meta.get("date_to_week", {})
     
     # Check if we need to update week dates
-    # 正常來說只有第一次啟動（本地無舊快取）或跨季（league_id 改變）才需要抓取/重建週次對應表
-    is_first_start = not old_meta or not old_meta.get("league_id")
-    is_new_season = old_meta.get("league_id") != meta["league_id"]
-    
-    needs_update = is_first_start or is_new_season
-    
-    if is_new_season:
+    needs_update = False
+    for w in range(1, meta["end_week"] + 1):
+        if str(w) not in week_dates:
+            needs_update = True
+            break
+            
+    # Also if the league_id changed (new season)
+    if old_meta.get("league_id") != meta["league_id"]:
+        needs_update = True
         week_dates = {}
         date_to_week = {}
         
@@ -46,10 +48,20 @@ def sync_season_metadata(fetcher: YahooFantasyFetcher, league_id: str):
                 else:
                     logging.warning(f"[SYSTEM] 無法取得第 {w} 週的結束日期")
                     
-        # Rebuild date_to_week mapping
+        # Rebuild date_to_week mapping & Estimate missing week dates
         current_start = meta["start_date"]
         for w in range(1, meta["end_week"] + 1):
             end_date = week_dates.get(str(w))
+            
+            # 如果結束日期缺失，自動依上週日期估算補全，確保快取完整且下一次啟動不再重複執行與產生 LOG
+            if not end_date:
+                if current_start:
+                    start_dt = datetime.strptime(current_start, "%Y-%m-%d")
+                    end_dt_est = start_dt + timedelta(days=6)
+                    end_date = end_dt_est.strftime("%Y-%m-%d")
+                    week_dates[str(w)] = end_date
+                    logging.info(f"[SYSTEM] 第 {w} 週的結束日期缺失，自動估算補全為 {end_date}")
+            
             if current_start and end_date:
                 dates = generate_dates(current_start, end_date)
                 for d in dates:
