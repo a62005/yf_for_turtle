@@ -29,5 +29,6 @@ def load_config() -> dict:
         "GEMINI_MODEL": os.getenv("GEMINI_MODEL", "gemini-3.5-flash"),
         "NEXT_SEASON_START_DATE": os.getenv("NEXT_SEASON_START_DATE"),
         "DRAFT_DATE": os.getenv("DRAFT_DATE"),
-        "PRIZE_IMAGE_PATH": os.getenv("PRIZE_IMAGE_PATH")
+        "PRIZE_IMAGE_PATH": os.getenv("PRIZE_IMAGE_PATH"),
+        "MAX_EVENT_DELAY_SECONDS": os.getenv("MAX_EVENT_DELAY_SECONDS", "10.0")
     }

@@ -95,6 +95,24 @@ def handle_message(event):
     if is_token_processed(event.reply_token):
         return
 
+    # Webhook 超時防護，防止處理過期或 LINE 重試發送的延遲訊息打擾用戶
+    import time
+    now_ms = int(time.time() * 1000)
+    event_time_ms = getattr(event, "timestamp", None)
+    if event_time_ms:
+        delay_sec = (now_ms - event_time_ms) / 1000.0
+        config = load_config()
+        try:
+            max_delay = float(config.get("MAX_EVENT_DELAY_SECONDS", 10.0))
+        except ValueError:
+            max_delay = 10.0
+            
+        if delay_sec > max_delay:
+            logging.warning(
+                f"[LINE] 指令 '{event.message.text.strip()}' 延遲過大 ({delay_sec:.2f} 秒 > {max_delay} 秒)，自動略過處理以避免打擾用戶。"
+            )
+            return
+
     user_text = event.message.text.strip()
     
     if user_text.startswith("#"):
