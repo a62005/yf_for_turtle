@@ -20,6 +20,7 @@ from src.handlers.stats_handler import StatsHandler
 from src.handlers.player_handler import PlayerHandler
 from src.handlers.user_stats_handler import UserStatsHandler
 from src.handlers.matchup_handler import MatchupHandler
+from src.handlers.misc_handler import MiscHandler
 
 def cleanup_port(port):
     for proc in psutil.process_iter(['pid', 'name']):
@@ -69,6 +70,7 @@ dispatcher.register(StatsHandler())
 dispatcher.register(PlayerHandler())
 dispatcher.register(UserStatsHandler())
 dispatcher.register(MatchupHandler())
+dispatcher.register(MiscHandler())
 
 
 @app.route("/callback", methods=['POST'])

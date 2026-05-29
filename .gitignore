@@ -15,6 +15,7 @@ __pycache__/
 
 # Data and Secrets
 data/
+!data/images/bonus.png
 oauth2.json
 *.sqlite3
 
