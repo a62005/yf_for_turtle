@@ -159,14 +159,42 @@ def test_execute_prize(mock_messaging_api, mock_api_client, mock_load_config, mo
 @patch("src.handlers.misc_handler.load_config")
 @patch("src.handlers.misc_handler.ApiClient")
 @patch("src.handlers.misc_handler.MessagingApi")
-def test_execute_help(mock_messaging_api, mock_api_client, mock_load_config, mock_get_pacific, mock_load_meta, mock_event, mock_config):
+def test_execute_help_success(mock_messaging_api, mock_api_client, mock_load_config, mock_get_pacific, mock_load_meta, mock_event, mock_config):
     handler = MiscHandler()
     mock_event.message.text = "#幫助"
     
     mock_load_meta.return_value = {"end_date": "2026-04-12"}
     mock_get_pacific.return_value = "2026-05-29"
     
-    with patch("logging.info") as mock_logging:
+    # Mock builtins.open to return custom help content successfully
+    import builtins
+    mock_open_helper = MagicMock()
+    mock_open_helper.return_value.__enter__.return_value.read.return_value = "Custom Help Document"
+    
+    with patch("builtins.open", mock_open_helper):
         handler.execute(mock_event, mock_config)
-        mock_logging.assert_called()
-        mock_api_client.assert_not_called()
+        
+        reply_req = mock_messaging_api.return_value.reply_message.call_args[0][0]
+        assert reply_req.reply_token == "dummy_reply_token"
+        assert reply_req.messages[0].text == "Custom Help Document"
+
+
+@patch("src.handlers.misc_handler.load_league_metadata")
+@patch("src.handlers.misc_handler.get_pacific_date")
+@patch("src.handlers.misc_handler.load_config")
+@patch("src.handlers.misc_handler.ApiClient")
+@patch("src.handlers.misc_handler.MessagingApi")
+def test_execute_help_fallback(mock_messaging_api, mock_api_client, mock_load_config, mock_get_pacific, mock_load_meta, mock_event, mock_config):
+    handler = MiscHandler()
+    mock_event.message.text = "#help"
+    
+    mock_load_meta.return_value = {"end_date": "2026-04-12"}
+    mock_get_pacific.return_value = "2026-05-29"
+    
+    # Mock builtins.open to raise FileNotFoundError to simulate missing file
+    with patch("builtins.open", side_effect=FileNotFoundError("help.txt not found")):
+        handler.execute(mock_event, mock_config)
+        
+        reply_req = mock_messaging_api.return_value.reply_message.call_args[0][0]
+        assert reply_req.reply_token == "dummy_reply_token"
+        assert "歡迎使用聯賽數據助手" in reply_req.messages[0].text
