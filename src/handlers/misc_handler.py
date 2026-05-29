@@ -136,7 +136,32 @@ class MiscHandler(BaseHandler):
             )
 
     def _handle_help(self, event: MessageEvent, configuration: Configuration) -> None:
-        logging.info("Help command triggered, but temporarily doing nothing as per specification.")
+        default_help = (
+            "👋 您好！歡迎使用聯賽數據助手。\n\n"
+            "【常用指令】\n"
+            "● #戰績 ：查詢當日聯賽綜合戰績\n"
+            "● #對戰 肥儒 ：查詢指定玩家當週即時 9-Cat 對決\n"
+            "● #玩家 肥儒 ：查詢指定玩家今日累積數據與排名\n"
+            "● #球員 老詹 ：查詢指定球員今日即時比賽表現\n\n"
+            "※ 提示：輸入「#幫助」可獲取完整的指令複製清單。"
+        )
+        
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        help_file_path = os.path.join(project_root, "data", "help.txt")
+        
+        reply_content = default_help
+        try:
+            if os.path.exists(help_file_path):
+                with open(help_file_path, "r", encoding="utf-8") as f:
+                    content = f.read().strip()
+                    if content:
+                        reply_content = content
+            else:
+                logging.warning(f"Help file not found at {help_file_path}, using fallback.")
+        except Exception as e:
+            logging.error(f"Failed to read help file at {help_file_path}: {e}, using fallback.")
+            
+        self.reply_text(event, configuration, reply_content)
 
     def reply_text(self, event: MessageEvent, configuration: Configuration, text: str) -> None:
         with ApiClient(configuration) as api_client:
