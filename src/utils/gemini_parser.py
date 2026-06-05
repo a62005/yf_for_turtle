@@ -7,12 +7,9 @@ SYSTEM_PROMPT = """你是一個精準的 NBA 籃球專家，專門負責將使�
 
 請遵循以下嚴格規則：
 1. 僅識別真實存在的 NBA 「現役球員 (Active Players)」。如果球員已退休，請將 is_known_player 設為 false。
-2. 對於常見的中文或英文綽號，你必須精準對應，例如：
-   - "喇叭", "LBJ", "老漢", "詹皇" -> LeBron James
-   - "咖哩", "萌神", "廚師" -> Stephen Curry
-   - "死神", "KD" -> Kevin Durant
-   - "字母哥" -> Giannis Antetokounmpo
-   - "77", "胖虎" -> Luka Doncic
+2. 根據大中華地區（包括台灣、中國大陸、香港等不同地區常見的中文譯名、英文簡寫與球員綽號）進行搜尋，不強制精準對應，允許合理的模糊對應與意譯。例如：
+   - 台灣與大陸譯名或綽號：如 "姆斯"、"詹皇"、"LBJ" -> LeBron James；"柯瑞"、"咖哩"、"萌神" -> Stephen Curry；"杜蘭特"、"KD"、"死神" -> Kevin Durant
+   - 其他常見綽號與譯名：如 "字母哥" -> Giannis Antetokounmpo；"東契奇"、"77" -> Luka Doncic；"胖虎" -> Zion Williamson
 3. 如果輸入是完全無意義、非籃球球員、或非現役球員的字詞（例如 "喬丹", "科比", "哈囉", "測試"），你必須將 is_known_player 設為 false，並拒絕胡亂臆測。
 4. 必須以指定的 JSON 格式回傳，不要包含任何額外的說明、Markdown 標記或 ```json 包裹。
 
@@ -24,6 +21,39 @@ SYSTEM_PROMPT = """你是一個精準的 NBA 籃球專家，專門負責將使�
   "team": "Los Angeles Lakers",
   "jersey_number": "23"
 }"""
+
+def _search_duckduckgo(query: str) -> list:
+    import urllib.request
+    import urllib.parse
+    import re
+
+    url = "https://html.duckduckgo.com/html/?q=" + urllib.parse.quote(query)
+    req = urllib.request.Request(
+        url, 
+        headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=5) as response:
+            html = response.read().decode('utf-8')
+            parts = html.split('<h2 class="result__title">')
+            results = []
+            for part in parts[1:]:
+                a_match = re.search(r'<a\s+[^>]*class="[^"]*result__a[^"]*"\s+[^>]*href="([^"]+)"[^>]*>(.*?)</a>', part, re.DOTALL)
+                if not a_match:
+                    continue
+                href = a_match.group(1)
+                if "y.js" in href:
+                    continue
+                title = re.sub(r'<[^>]+>', '', a_match.group(2)).strip()
+                
+                snippet_match = re.search(r'<a\s+[^>]*class="[^"]*result__snippet[^"]*"\s*[^>]*>(.*?)</a>', part, re.DOTALL)
+                snippet = re.sub(r'<[^>]+>', '', snippet_match.group(1)).strip() if snippet_match else ""
+                
+                results.append(f"標題: {title}\n摘要: {snippet}")
+            return results[:5]
+    except Exception as e:
+        logging.error(f"Search failed for query '{query}': {e}")
+        return []
 
 def parse_player_nickname(nickname: str, api_key: str = None, model_name: str = None) -> dict:
     key = api_key or os.getenv("GEMINI_API_KEY")
@@ -45,6 +75,30 @@ def parse_player_nickname(nickname: str, api_key: str = None, model_name: str = 
         )
         
         data = json.loads(response.text.strip())
+        
+        # 若不知道則根據網路搜尋看是誰
+        if not data.get("is_known_player"):
+            logging.info(f"LLM 解析 '{nickname}' 失敗，嘗試進行網路搜尋...")
+            query = f'NBA "{nickname}"'
+            search_results = _search_duckduckgo(query)
+            if search_results:
+                results_text = "\n\n".join(search_results)
+                prompt = f"""你是一個精準的 NBA 籃球專家。我們在網路搜尋了「{query}」，得到以下結果：
+
+{results_text}
+
+請結合上述搜尋結果以及你的知識，解析使用者的輸入「{nickname}」是指哪位現役 NBA 球員。
+如果搜尋結果或你的知識明確指出這是指哪位現役球員，請將 is_known_player 設為 true 並填寫其資訊。
+如果仍然無法確定，或該球員已退休，請將 is_known_player 設為 false。
+必須以指定的 JSON 格式回傳，不要包含任何額外的說明、Markdown 標記或 ```json 包裹。"""
+                
+                response_search = model.generate_content(
+                    prompt,
+                    generation_config={"response_mime_type": "application/json"}
+                )
+                data_search = json.loads(response_search.text.strip())
+                return data_search
+                
         return data
     except Exception as e:
         logging.error(f"Gemini API parse failed: {e}")

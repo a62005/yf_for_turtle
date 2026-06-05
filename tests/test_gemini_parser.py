@@ -17,15 +17,68 @@ def test_parse_player_nickname_success(mocker):
     assert res["jersey_number"] == "23"
 
 def test_parse_player_nickname_unknown(mocker):
+    # 測試第一次與第二次皆解析失敗
     mock_model = MagicMock()
     mock_response = MagicMock()
     mock_response.text = '{"is_known_player": false, "english_name": null, "chinese_name": null, "team": null, "jersey_number": null, "confidence": 0.0, "reason": "test"}'
     mock_model.generate_content.return_value = mock_response
     
     mocker.patch("google.generativeai.GenerativeModel", return_value=mock_model)
+    # mock 搜尋以免測試時發送真實請求
+    mock_search = mocker.patch("src.utils.gemini_parser._search_duckduckgo", return_value=["NBA 測試結果"])
     
     res = parse_player_nickname("哈囉", api_key="dummy_key")
     assert res["is_known_player"] is False
+    assert mock_search.call_count == 1
+    assert mock_model.generate_content.call_count == 2
+
+def test_parse_player_nickname_with_search_success(mocker):
+    # 測試第一次解析失敗，但經過網路搜尋後第二次解析成功
+    mock_model = MagicMock()
+    
+    # 設定 side_effect 來為兩次 generate_content 提供不同 response
+    mock_response1 = MagicMock()
+    mock_response1.text = '{"is_known_player": false}'
+    
+    mock_response2 = MagicMock()
+    mock_response2.text = '{"is_known_player": true, "english_name": "Luka Doncic", "chinese_name": "盧卡·東契奇", "team": "Dallas Mavericks", "jersey_number": "77"}'
+    
+    mock_model.generate_content.side_effect = [mock_response1, mock_response2]
+    
+    mocker.patch("google.generativeai.GenerativeModel", return_value=mock_model)
+    
+    # 模擬搜尋回傳
+    mock_search = mocker.patch(
+        "src.utils.gemini_parser._search_duckduckgo", 
+        return_value=["標題: Luka Doncic wears 77\n摘要: Luka Doncic wears number 77 for Dallas Mavericks"]
+    )
+    
+    res = parse_player_nickname("77", api_key="dummy_key")
+    
+    assert res["is_known_player"] is True
+    assert res["english_name"] == "Luka Doncic"
+    assert res["jersey_number"] == "77"
+    mock_search.assert_called_once_with('NBA "77"')
+    assert mock_model.generate_content.call_count == 2
+
+def test_parse_player_nickname_search_empty_fallback(mocker):
+    # 測試第一次解析失敗，且搜尋結果為空時，不進行第二次解析，直接 fallback 回傳第一次的結果
+    mock_model = MagicMock()
+    mock_response = MagicMock()
+    mock_response.text = '{"is_known_player": false, "reason": "first_fail"}'
+    mock_model.generate_content.return_value = mock_response
+    
+    mocker.patch("google.generativeai.GenerativeModel", return_value=mock_model)
+    
+    # 模擬搜尋結果為空
+    mock_search = mocker.patch("src.utils.gemini_parser._search_duckduckgo", return_value=[])
+    
+    res = parse_player_nickname("哈囉", api_key="dummy_key")
+    
+    assert res["is_known_player"] is False
+    assert res["reason"] == "first_fail"
+    mock_search.assert_called_once_with('NBA "哈囉"')
+    assert mock_model.generate_content.call_count == 1
 
 def test_parse_player_nickname_custom_model(mocker):
     mock_model = MagicMock()
