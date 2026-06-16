@@ -17,6 +17,13 @@ def test_analyze_football_matchup_success(mocker):
     
     assert "這是一段專業的足球對戰分析" in result
     mock_configure.assert_called_once_with(api_key="dummy_key")
+    
+    # 驗證 SYSTEM_PROMPT 包含爆冷分析規定與投注下注推薦規定
+    assert "爆冷機率" in SYSTEM_PROMPT
+    assert "爆冷推薦" in SYSTEM_PROMPT
+    assert "讓分" in SYSTEM_PROMPT
+    assert "正確比分" in SYSTEM_PROMPT
+
     mock_genai.assert_called_once_with(
         model_name="gemini-3.5-flash",
         system_instruction=SYSTEM_PROMPT
