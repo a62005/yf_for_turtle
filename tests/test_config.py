@@ -13,3 +13,8 @@ def test_load_config_success(monkeypatch):
     monkeypatch.setenv("LEAGUE_ID", "nba.l.12345")
     config = load_config()
     assert config["LEAGUE_ID"] == "nba.l.12345"
+    assert config["ENABLE_FOOTBALL_ANALYSIS"] is False
+
+    monkeypatch.setenv("ENABLE_FOOTBALL_ANALYSIS", "true")
+    config = load_config()
+    assert config["ENABLE_FOOTBALL_ANALYSIS"] is True
