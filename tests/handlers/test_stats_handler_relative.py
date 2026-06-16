@@ -62,7 +62,8 @@ def test_execute_last_week(mock_fetcher, mock_messaging_api, mock_api_client, mo
 @patch("src.handlers.stats_handler.ApiClient")
 @patch("src.handlers.stats_handler.MessagingApi")
 @patch("src.handlers.stats_handler.YahooFantasyFetcher")
-def test_get_week_end_date_fallback(mock_fetcher, mock_messaging_api, mock_api_client, mock_get_pacific, mock_load_meta, mock_load_config, mock_event, mock_config):
+@patch("src.handlers.stats_handler.save_league_metadata")
+def test_get_week_end_date_fallback(mock_save_meta, mock_fetcher, mock_messaging_api, mock_api_client, mock_get_pacific, mock_load_meta, mock_load_config, mock_event, mock_config):
     # Metadata missing week_dates completely
     mock_load_meta.return_value = {"start_date": "2025-10-21", "end_week": 23}
     
