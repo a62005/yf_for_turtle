@@ -31,6 +31,16 @@ def test_football_handler_can_handle_enabled(monkeypatch):
     assert handler.can_handle("#足球 巴西 對戰 德國") is True
     assert handler.can_handle("#足球 巴西  德國") is True
 
+def test_football_handler_can_handle_invalid_teams(monkeypatch):
+    monkeypatch.setattr("src.handlers.football_handler.load_config", lambda: {
+        "ENABLE_FOOTBALL_ANALYSIS": True
+    })
+    handler = FootballHandler()
+    assert handler.can_handle("#足球 金州勇士 富邦勇士") is False
+    assert handler.can_handle("#足球 德國 紐約尼克") is False
+    assert handler.can_handle("#足球 巴西 德國") is True
+
+
 def test_football_handler_can_handle_no_io_on_mismatch(mocker):
     # 測試不匹配的案例不會觸發 load_config 讀取磁碟
     mock_load = mocker.patch("src.handlers.football_handler.load_config")
