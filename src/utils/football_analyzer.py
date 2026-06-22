@@ -22,30 +22,55 @@ def analyze_football_matchup(
     model_name: Optional[str] = None
 ) -> str:
     """
-    透過 Gemini 3.5 Flash 對指定的對戰組合進行專業的足球分析。
+    透過 Gemini 或是 Agnes AI 對指定的對戰組合進行專業的足球分析。
     
     :param team_a: 第一支球隊名稱
     :param team_b: 第二支球隊名稱
-    :param api_key: Gemini API Key，若未提供則從環境變數 GEMINI_API_KEY 取得
-    :param model_name: 模型名稱，若未提供則從環境變數 GEMINI_MODEL 取得，預設為 'gemini-3.5-flash'
+    :param api_key: LLM API Key，若未提供則從環境變數 LLM_API_KEY 取得
+    :param model_name: 模型名稱，若未提供則從環境變數 LLM_MODEL 取得，預設為 'gemini-3.5-flash'
     :return: 分析結果字串。如果發生錯誤或缺少設定，會回傳友好的錯誤提示訊息。
     """
-    key = api_key or os.getenv("GEMINI_API_KEY")
-    model_to_use = model_name or os.getenv("GEMINI_MODEL", DEFAULT_MODEL)
+    key = api_key or os.getenv("LLM_API_KEY") or os.getenv("GEMINI_API_KEY")
+    model_to_use = model_name or os.getenv("LLM_MODEL") or os.getenv("GEMINI_MODEL", DEFAULT_MODEL)
     
     if not key:
-        return "Gemini API key 尚未設定，無法進行對戰分析。"
+        return "LLM API key 尚未設定，無法進行對戰分析。"
         
+    is_agnes = "agnes" in model_to_use.lower()
+    
     try:
-        genai.configure(api_key=key)
-        model = genai.GenerativeModel(
-            model_name=model_to_use,
-            system_instruction=SYSTEM_PROMPT
-        )
-        
-        user_prompt = f"請為以下兩支球隊進行對戰分析：{team_a} vs {team_b}"
-        response = model.generate_content(user_prompt)
-        return response.text.strip()
+        if is_agnes:
+            import requests
+            model_to_send = model_to_use
+            if model_to_send.lower() == "agnes":
+                model_to_send = "agnes-2.0-flash"
+            api_url = "https://apihub.agnes-ai.com/v1/chat/completions"
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {key}"
+            }
+            payload = {
+                "model": model_to_send,
+                "messages": [
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": f"請為以下兩支球隊進行對戰分析：{team_a} vs {team_b}"}
+                ],
+                "temperature": 0.2
+            }
+            response = requests.post(api_url, json=payload, headers=headers, timeout=15)
+            response.raise_for_status()
+            res_json = response.json()
+            return res_json["choices"][0]["message"]["content"].strip()
+        else:
+            genai.configure(api_key=key)
+            model = genai.GenerativeModel(
+                model_name=model_to_use,
+                system_instruction=SYSTEM_PROMPT
+            )
+            
+            user_prompt = f"請為以下兩支球隊進行對戰分析：{team_a} vs {team_b}"
+            response = model.generate_content(user_prompt)
+            return response.text.strip()
     except Exception as e:
-        logging.error(f"Gemini API football analysis failed: {e}")
+        logging.error(f"LLM API football analysis failed: {e}")
         return "系統繁忙，目前無法取得對戰分析，請稍後再試。"

@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 from src.utils.football_analyzer import analyze_football_matchup, SYSTEM_PROMPT
 
 def test_analyze_football_matchup_success(mocker):
@@ -84,5 +84,30 @@ def test_analyze_football_matchup_exception(mocker):
 def test_analyze_football_matchup_missing_api_key(monkeypatch):
     # 測試當沒有 API Key 時，回傳友好的錯誤提示字串
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("LLM_API_KEY", raising=False)
     result = analyze_football_matchup("巴西", "德國")
-    assert result == "Gemini API key 尚未設定，無法進行對戰分析。"
+    assert result == "LLM API key 尚未設定，無法進行對戰分析。"
+
+@patch('requests.post')
+def test_analyze_football_matchup_agnes_success(mock_post):
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {
+        "choices": [
+            {
+                "message": {
+                    "content": "Agnes AI 對戰分析結果：巴西 vs 德國"
+                }
+            }
+        ]
+    }
+    mock_post.return_value = mock_response
+
+    result = analyze_football_matchup("巴西", "德國", api_key="agnes_key", model_name="agnes-2.0-flash")
+    
+    assert result == "Agnes AI 對戰分析結果：巴西 vs 德國"
+    mock_post.assert_called_once()
+    args, kwargs = mock_post.call_args
+    assert args[0] == "https://apihub.agnes-ai.com/v1/chat/completions"
+    assert kwargs["json"]["model"] == "agnes-2.0-flash"
+    assert kwargs["headers"]["Authorization"] == "Bearer agnes_key"

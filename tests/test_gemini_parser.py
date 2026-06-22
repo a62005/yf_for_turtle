@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 from src.utils.gemini_parser import parse_player_nickname
 
 def test_parse_player_nickname_success(mocker):
@@ -102,3 +102,32 @@ def test_parse_player_nickname_custom_model(mocker):
         model_name="env-custom-model",
         system_instruction=mocker.ANY
     )
+
+@patch('requests.post')
+def test_parse_player_nickname_agnes_success(mock_post, mocker):
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {
+        "choices": [
+            {
+                "message": {
+                    "content": '{"is_known_player": true, "english_name": "Stephen Curry", "chinese_name": "史蒂芬·柯瑞", "team": "Golden State Warriors", "jersey_number": "30"}'
+                }
+            }
+        ]
+    }
+    mock_post.return_value = mock_response
+
+    # mock 搜尋以免測試時發送真實請求
+    mock_search = mocker.patch("src.utils.gemini_parser._search_duckduckgo")
+
+    res = parse_player_nickname("咖哩", api_key="agnes_key", model_name="agnes-2.0-flash")
+    
+    assert res["is_known_player"] is True
+    assert res["english_name"] == "Stephen Curry"
+    mock_search.assert_not_called()
+    mock_post.assert_called_once()
+    args, kwargs = mock_post.call_args
+    assert args[0] == "https://apihub.agnes-ai.com/v1/chat/completions"
+    assert kwargs["json"]["model"] == "agnes-2.0-flash"
+    assert kwargs["headers"]["Authorization"] == "Bearer agnes_key"
