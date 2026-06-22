@@ -6,15 +6,18 @@ import google.generativeai as genai
 
 class LLMAgent:
     def __init__(self):
-        # 讀取 LLM_MODEL 或 GEMINI_MODEL 設定，預設為 gemini-2.5-flash
+        # 優先使用通用環境變數 LLM_MODEL，其次相容 GEMINI_MODEL，預設使用 gemini-2.5-flash
         self.model_name = os.getenv("LLM_MODEL") or os.getenv("GEMINI_MODEL") or "gemini-2.5-flash"
         logging.info(f"[LLM] 初始化模型: {self.model_name}")
+        
+        # 優先使用通用環境變數 LLM_API_KEY，其次相容 GEMINI_API_KEY
+        self.api_key = os.getenv("LLM_API_KEY") or os.getenv("GEMINI_API_KEY")
         
         self.system_prompt = """你是一個擁有多功能、博學且親切的 AI 助手。
 你的主要任務是分析用戶的輸入：
 
 1. 如果用戶的意圖是想要查詢我們的 Yahoo Fantasy NBA 聯賽數據、NBA 球員或對戰狀況，請對照下方的「#標準指令清單」，將其轉換成對應的 `#標準指令`（is_command 設為 true）。
-2. 如果用戶的輸入與這些指令無關（例如：詢問一般知識、歷史、科技、生活常識、其他運動或單純閒聊），請以一個博學的 AI 助手的身份，直接給出完整、正確的解答（is_command 設為 false，並將回答內容填入 reply_text）。
+2. 如果用戶的輸入與 these 指令無關（例如：詢問一般知識、歷史、科技、生活常識、其他運動或單純閒聊），請以一個博學的 AI 助手的身份，直接給出完整、正確的解答（is_command 設為 false，並將回答內容填入 reply_text）。
 
 現有的「#標準指令清單」如下：
 {commands_desc}
@@ -29,7 +32,7 @@ class LLMAgent:
 例如：「幫我查查昨晚柯瑞的表現」應轉換為 `#球員昨晚 Stephen Curry`。
 
 【輸出規範】：
-你必須且只能回傳一個 JSON 物件，格式地址：
+你必須且只能回傳一個 JSON 物件，格式如下：
 - is_command: (boolean) 是否匹配到上述指令意圖。
 - command_text: (string | null) 若匹配到指令，輸出轉換後格式完全正確的「#標準指令」；否則為 null。
 - reply_text: (string | null) 若沒有匹配到任何指令意圖，請在此填入直接且完整的回答內容；若有匹配到指令，則為 null。"""
@@ -37,10 +40,9 @@ class LLMAgent:
         # 判斷是否使用 Agnes AI 模型
         self.is_agnes = "agnes" in self.model_name.lower()
         if not self.is_agnes:
-            api_key = os.getenv("GEMINI_API_KEY")
-            if not api_key:
-                logging.warning("[LLM] 警告：未設定 GEMINI_API_KEY，LLM 功能將無法正常運作。")
-            genai.configure(api_key=api_key)
+            if not self.api_key:
+                logging.warning("[LLM] 警告：未設定 LLM_API_KEY 或 GEMINI_API_KEY，LLM 功能將無法正常運作。")
+            genai.configure(api_key=self.api_key)
             self.model = genai.GenerativeModel(
                 model_name=self.model_name,
                 generation_config={
@@ -58,10 +60,10 @@ class LLMAgent:
                 model_to_use = "agnes-2.0-flash"
                 
             api_url = "https://apihub.agnes-ai.com/v1/chat/completions"
-            api_key = os.getenv("AGNES_API_KEY") or os.getenv("GEMINI_API_KEY") or "sk-dummy"
+            api_key_to_use = self.api_key or "sk-dummy"
             headers = {
                 "Content-Type": "application/json",
-                "Authorization": f"Bearer {api_key}"
+                "Authorization": f"Bearer {api_key_to_use}"
             }
             
             payload = {
@@ -97,7 +99,7 @@ class LLMAgent:
                 }
         else:
             # 走原本的 Google 官方 SDK 機制
-            if not os.getenv("GEMINI_API_KEY"):
+            if not self.api_key:
                 return {
                     "is_command": False, 
                     "command_text": None, 

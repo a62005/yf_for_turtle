@@ -11,7 +11,7 @@ def test_llm_agent_gemini_command_intent(mock_model_cls):
     mock_model.generate_content.return_value = mock_response
     mock_model_cls.return_value = mock_model
 
-    with patch.dict('os.environ', {'GEMINI_API_KEY': 'fake_key', 'LLM_MODEL': 'gemini-2.5-flash'}):
+    with patch.dict('os.environ', {'LLM_API_KEY': 'fake_key', 'LLM_MODEL': 'gemini-2.5-flash'}):
         agent = LLMAgent()
         result = agent.analyze_intent("幫我查小謝這週對戰", "指令清單")
         assert result["is_command"] is True
@@ -25,7 +25,7 @@ def test_llm_agent_gemini_chat_intent(mock_model_cls):
     mock_model.generate_content.return_value = mock_response
     mock_model_cls.return_value = mock_model
 
-    with patch.dict('os.environ', {'GEMINI_API_KEY': 'fake_key', 'LLM_MODEL': 'gemini-2.5-flash'}):
+    with patch.dict('os.environ', {'LLM_API_KEY': 'fake_key', 'LLM_MODEL': 'gemini-2.5-flash'}):
         agent = LLMAgent()
         result = agent.analyze_intent("你好", "指令清單")
         assert result["is_command"] is False
@@ -47,7 +47,7 @@ def test_llm_agent_agnes_chat_intent(mock_post):
     }
     mock_post.return_value = mock_response
 
-    with patch.dict('os.environ', {'LLM_MODEL': 'agnes-2.0-flash', 'AGNES_API_KEY': 'agnes_key'}):
+    with patch.dict('os.environ', {'LLM_MODEL': 'agnes-2.0-flash', 'LLM_API_KEY': 'agnes_key'}):
         agent = LLMAgent()
         result = agent.analyze_intent("你好", "指令清單")
         
