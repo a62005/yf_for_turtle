@@ -14,6 +14,13 @@ class MatchupHandler(BaseHandler):
     def __init__(self):
         self.pattern = re.compile(r"^#對戰(?:\s+(.+))?$")
 
+    @property
+    def instruction_desc(self) -> str:
+        return """
+- #對戰：顯示對戰比分查詢的玩家選單。
+- #對戰 <玩家名稱>：查詢特定玩家的本週對戰比分。
+        """
+
     def can_handle(self, user_text: str) -> bool:
         user_text = user_text.strip()
         match = self.pattern.match(user_text)

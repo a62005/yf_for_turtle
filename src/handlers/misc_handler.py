@@ -23,6 +23,12 @@ class MiscHandler(BaseHandler):
     def __init__(self):
         self.pattern = re.compile(r"^#(?:開季|選秀|獎金|幫助|[hH][eE][lL][pP])$")
 
+    @property
+    def instruction_desc(self) -> str:
+        return """
+- #運勢：測試運勢或運氣。
+        """
+
     def can_handle(self, user_text: str) -> bool:
         user_text = user_text.strip()
         return bool(self.pattern.match(user_text))

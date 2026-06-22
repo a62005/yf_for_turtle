@@ -21,6 +21,13 @@ class PlayerHandler(BaseHandler):
     def __init__(self):
         self.pattern = re.compile(r"^#球員\s+(.+)$")
 
+    @property
+    def instruction_desc(self) -> str:
+        return """
+- #球員 <球員英文姓名>：查詢特定 NBA 球員的數據與分析（例如：#球員 Stephen Curry）。
+- #球員昨晚 <球員英文姓名>：查詢特定 NBA 球員昨晚的表現（例如：#球員昨晚 Stephen Curry）。
+        """
+
     def can_handle(self, user_text: str) -> bool:
         if not self.pattern.match(user_text):
             return False

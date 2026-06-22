@@ -24,6 +24,16 @@ class StatsHandler(BaseHandler):
         self.specific_week_pattern = re.compile(r"^#戰績W(\d+)$", re.IGNORECASE)
         self.specific_date_pattern = re.compile(r"^#戰績(\d{8})$")
 
+    @property
+    def instruction_desc(self) -> str:
+        return """
+- #戰績：查詢當天的聯賽整體戰績。
+- #戰績昨天：查詢昨天的聯賽整體戰績。
+- #戰績上週：查詢上週的聯賽整體戰績。
+- #戰績W<週數>：查詢特定週數的戰績（例如：#戰績W5）。
+- #戰績<年月日>：查詢特定日期的戰績（例如：#戰績20251120）。
+        """
+
     def parse_command(self, user_text: str) -> tuple[str | None, str | int | None]:
         if self.combined_pattern.match(user_text):
             return "combined", None
