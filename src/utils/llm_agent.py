@@ -2,6 +2,7 @@ import os
 import json
 import logging
 import requests
+import google.generativeai as genai
 
 class LLMAgent:
     def __init__(self):
@@ -28,69 +29,89 @@ class LLMAgent:
 例如：「幫我查查昨晚柯瑞的表現」應轉換為 `#球員昨晚 Stephen Curry`。
 
 【輸出規範】：
-你必須且只能回傳一個 JSON 物件，格式如下：
+你必須且只能回傳一個 JSON 物件，格式地址：
 - is_command: (boolean) 是否匹配到上述指令意圖。
 - command_text: (string | null) 若匹配到指令，輸出轉換後格式完全正確的「#標準指令」；否則為 null。
 - reply_text: (string | null) 若沒有匹配到任何指令意圖，請在此填入直接且完整的回答內容；若有匹配到指令，則為 null。"""
 
+        # 判斷是否使用 Agnes AI 模型
+        self.is_agnes = "agnes" in self.model_name.lower()
+        if not self.is_agnes:
+            api_key = os.getenv("GEMINI_API_KEY")
+            if not api_key:
+                logging.warning("[LLM] 警告：未設定 GEMINI_API_KEY，LLM 功能將無法正常運作。")
+            genai.configure(api_key=api_key)
+            self.model = genai.GenerativeModel(
+                model_name=self.model_name,
+                generation_config={
+                    "response_mime_type": "application/json",
+                    "temperature": 0.2
+                }
+            )
+
     def analyze_intent(self, text: str, commands_desc: str) -> dict:
         formatted_system = self.system_prompt.replace("{commands_desc}", commands_desc)
         
-        model_to_use = self.model_name
-        is_agnes = "agnes" in model_to_use.lower()
-        
-        # 依模型類型進行動態分流與金鑰配置
-        if is_agnes:
+        if self.is_agnes:
+            model_to_use = self.model_name
+            if model_to_use.lower() == "agnes":
+                model_to_use = "agnes-2.0-flash"
+                
             api_url = "https://apihub.agnes-ai.com/v1/chat/completions"
             api_key = os.getenv("AGNES_API_KEY") or os.getenv("GEMINI_API_KEY") or "sk-dummy"
             headers = {
                 "Content-Type": "application/json",
                 "Authorization": f"Bearer {api_key}"
             }
-            # 如果只寫了 agnes，預設對應 agnes-2.0-flash
-            if model_to_use.lower() == "agnes":
-                model_to_use = "agnes-2.0-flash"
+            
+            payload = {
+                "model": model_to_use,
+                "messages": [
+                    {"role": "system", "content": formatted_system},
+                    {"role": "user", "content": text}
+                ],
+                "response_format": {"type": "json_object"},
+                "temperature": 0.2
+            }
+            
+            try:
+                response = requests.post(api_url, json=payload, headers=headers, timeout=15)
+                response.raise_for_status()
+                res_json = response.json()
+                content = res_json["choices"][0]["message"]["content"]
+                data = json.loads(content.strip())
+                return data
+            except requests.exceptions.RequestException as e:
+                logging.error(f"[LLM] 呼叫 Agnes AI 服務失敗: {e}")
+                return {
+                    "is_command": False, 
+                    "command_text": None, 
+                    "reply_text": "我的大腦暫時離線了，請確認 Agnes AI 服務是否正常！"
+                }
+            except (KeyError, json.JSONDecodeError) as e:
+                logging.error(f"[LLM] 回傳的 JSON 結構解析失敗: {e}")
+                return {
+                    "is_command": False, 
+                    "command_text": None, 
+                    "reply_text": "我剛剛有點神智不清，可以請您再問一次嗎？"
+                }
         else:
-            api_url = "http://localhost:20128/v1/chat/completions"
-            headers = {
-                "Content-Type": "application/json",
-                "Authorization": "Bearer sk-dummy"
-            }
-            # 自動為 unprefixed gemini/gemma 模型添加 provider 前綴，防止 omniroute 丟出 400 Ambiguous Model 錯誤
-            if "/" not in model_to_use and (model_to_use.startswith("gemini-") or model_to_use.startswith("gemma-")):
-                model_to_use = f"gemini/{model_to_use}"
-
-        payload = {
-            "model": model_to_use,
-            "messages": [
-                {"role": "system", "content": formatted_system},
-                {"role": "user", "content": text}
-            ],
-            "response_format": {"type": "json_object"},
-            "temperature": 0.2
-        }
-
-        try:
-            response = requests.post(api_url, json=payload, headers=headers, timeout=15)
-            response.raise_for_status()
-            
-            res_json = response.json()
-            content = res_json["choices"][0]["message"]["content"]
-            data = json.loads(content.strip())
-            return data
-            
-        except requests.exceptions.RequestException as e:
-            target_name = "Agnes AI" if is_agnes else "本地 omniroute"
-            logging.error(f"[LLM] 呼叫 {target_name} 服務失敗: {e}")
-            return {
-                "is_command": False, 
-                "command_text": None, 
-                "reply_text": f"我的大腦暫時離線了，請確認 {'Agnes AI 服務是否正常' if is_agnes else '本地 AI 服務是否已啟動'}！"
-            }
-        except (KeyError, json.JSONDecodeError) as e:
-            logging.error(f"[LLM] 回傳的 JSON 結構解析失敗: {e}")
-            return {
-                "is_command": False, 
-                "command_text": None, 
-                "reply_text": "我剛剛有點神智不清，可以請您再問一次嗎？"
-            }
+            # 走原本的 Google 官方 SDK 機制
+            if not os.getenv("GEMINI_API_KEY"):
+                return {
+                    "is_command": False, 
+                    "command_text": None, 
+                    "reply_text": "系統目前未配置 AI 金鑰，無法為您服務。"
+                }
+            prompt = f"{formatted_system}\n\n用戶輸入：{text}"
+            try:
+                response = self.model.generate_content(prompt)
+                data = json.loads(response.text.strip())
+                return data
+            except Exception as e:
+                logging.error(f"[LLM] 意圖解析出錯: {e}")
+                return {
+                    "is_command": False, 
+                    "command_text": None, 
+                    "reply_text": "我的大腦暫時離線了，請稍後再試！"
+                }
