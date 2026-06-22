@@ -11,5 +11,11 @@ def test_load_config_missing_league_id(monkeypatch):
 def test_load_config_success(monkeypatch):
     monkeypatch.setattr("src.config.load_dotenv", lambda *args, **kwargs: None)
     monkeypatch.setenv("LEAGUE_ID", "nba.l.12345")
+    monkeypatch.delenv("ENABLE_FOOTBALL_ANALYSIS", raising=False)
     config = load_config()
     assert config["LEAGUE_ID"] == "nba.l.12345"
+    assert config["ENABLE_FOOTBALL_ANALYSIS"] is False
+
+    monkeypatch.setenv("ENABLE_FOOTBALL_ANALYSIS", "true")
+    config = load_config()
+    assert config["ENABLE_FOOTBALL_ANALYSIS"] is True

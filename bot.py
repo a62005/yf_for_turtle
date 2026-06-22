@@ -1,6 +1,7 @@
 import os
 import sys
 import psutil
+import time
 import logging
 import subprocess
 from flask import Flask, request, abort, send_from_directory
@@ -22,6 +23,7 @@ from src.handlers.user_stats_handler import UserStatsHandler
 from src.handlers.matchup_handler import MatchupHandler
 from src.handlers.misc_handler import MiscHandler
 from src.handlers.intent_router import IntentRouter
+from src.handlers.football_handler import FootballHandler
 
 def cleanup_port(port):
     for proc in psutil.process_iter(['pid', 'name']):
@@ -72,6 +74,7 @@ dispatcher.register(PlayerHandler())
 dispatcher.register(UserStatsHandler())
 dispatcher.register(MatchupHandler())
 dispatcher.register(MiscHandler())
+dispatcher.register(FootballHandler())
 
 # Initialize IntentRouter
 intent_router = IntentRouter(dispatcher)
@@ -100,7 +103,6 @@ def handle_message(event):
         return
 
     # Webhook 超時防護，防止處理過期或 LINE 重試發送的延遲訊息打擾用戶
-    import time
     now_ms = int(time.time() * 1000)
     event_time_ms = getattr(event, "timestamp", None)
     if event_time_ms:
