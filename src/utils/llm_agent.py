@@ -9,17 +9,24 @@ class LLMAgent:
         if not api_key:
             logging.warning("[LLM] 警告：未設定 GEMINI_API_KEY，LLM 功能將無法正常運作。")
         genai.configure(api_key=api_key)
+        
+        # 優先使用環境變數設定的 model，否則預設使用 gemini-2.5-flash
+        model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+        logging.info(f"[LLM] 初始化模型: {model_name}")
         self.model = genai.GenerativeModel(
-            model_name="gemini-1.5-flash",
+            model_name=model_name,
             generation_config={
                 "response_mime_type": "application/json",
                 "temperature": 0.2
             }
         )
-        self.system_prompt = """你是一個專門處理 Yahoo Fantasy NBA 聯賽 LINE Bot 意圖路由的 AI 助手。
-你的任務是將用戶的自然語言請求分析並歸類。
+        self.system_prompt = """你是一個擁有多功能、博學且親切的 AI 助手。
+你的主要任務是分析用戶的輸入：
 
-現有的「#標準指令」清單如下：
+1. 如果用戶的意圖是想要查詢我們的 Yahoo Fantasy NBA 聯賽數據、NBA 球員或對戰狀況，請對照下方的「#標準指令清單」，將其轉換成對應的 `#標準指令`（is_command 設為 true）。
+2. 如果用戶的輸入與這些指令無關（例如：詢問一般知識、歷史、科技、生活常識、其他運動或單純閒聊），請以一個博學的 AI 助手的身份，直接給出完整、正確的解答（is_command 設為 false，並將回答內容填入 reply_text）。
+
+現有的「#標準指令清單」如下：
 {commands_desc}
 
 【聯賽玩家名稱對照表】：
@@ -35,7 +42,7 @@ class LLMAgent:
 你必須且只能回傳一個 JSON 物件，格式如下：
 - is_command: (boolean) 是否匹配到上述指令意圖。
 - command_text: (string | null) 若匹配到指令，輸出轉換後格式完全正確的「#標準指令」；否則為 null。
-- reply_text: (string | null) 若沒有匹配到任何指令意圖，請在此填入直接回覆給用戶的對話內容（中文，親切且帶點幽默的籃球助手語氣）；若有匹配到指令，則為 null。"""
+- reply_text: (string | null) 若沒有匹配到任何指令意圖，請在此填入直接且完整的回答內容；若有匹配到指令，則為 null。"""
 
     def analyze_intent(self, text: str, commands_desc: str) -> dict:
         if not os.getenv("GEMINI_API_KEY"):
