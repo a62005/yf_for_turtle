@@ -36,6 +36,43 @@ def cleanup_port(port):
         except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.TimeoutExpired):
             pass
 
+def is_port_open(host: str, port: int) -> bool:
+    """Check if a specific port is listening on the host."""
+    import socket
+    try:
+        with socket.create_connection((host, port), timeout=1.0):
+            return True
+    except OSError:
+        return False
+
+def start_omniroute_if_needed(cmd: str, port: int = 20128):
+    """Start omniroute service in background if port is not listening."""
+    if is_port_open("localhost", port):
+        logging.info(f"[SYSTEM] omniroute 服務已在 Port {port} 運行，直接使用現有服務。")
+        return
+    
+    logging.info(f"[SYSTEM] 偵測到 Port {port} 未啟用。正在背景啟動 omniroute 服務 (指令: {cmd})...")
+    try:
+        log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+        os.makedirs(log_dir, exist_ok=True)
+        log_path = os.path.join(log_dir, "omniroute.log")
+        log_file = open(log_path, "a", encoding="utf-8")
+        
+        import subprocess
+        subprocess.Popen(cmd, shell=True, stdout=log_file, stderr=log_file)
+        
+        # 健康檢查 (最多等待 10 秒)
+        import time
+        start_time = time.time()
+        while time.time() - start_time < 10.0:
+            if is_port_open("localhost", port):
+                logging.info(f"[SYSTEM] omniroute 服務啟動成功！")
+                return
+            time.sleep(0.5)
+        logging.warning(f"[SYSTEM] 警告：omniroute 啟動超時，請檢查 {log_path} 紀錄。")
+    except Exception as e:
+        logging.error(f"[SYSTEM] 啟動 omniroute 失敗: {e}")
+
 def setup_ngrok(authtoken: str, port: int) -> str:
     """Start ngrok tunnel and return the public URL."""
     ngrok.set_auth_token(authtoken)
@@ -125,6 +162,16 @@ def handle_message(event):
 if __name__ == "__main__":
     cleanup_port(5001)
     config = load_config()
+
+    # 自動啟動 omniroute 並註冊金鑰
+    omniroute_cmd = "omniroute"
+    start_omniroute_if_needed(omniroute_cmd)
+    try:
+        from src.utils.omniroute_helper import register_gemini_key_to_omniroute
+        register_gemini_key_to_omniroute()
+    except Exception as e:
+        logging.error(f"[SYSTEM] 自動註冊 Gemini 金鑰失敗: {e}")
+
     fetcher = YahooFantasyFetcher(client_id=config.get("YAHOO_CLIENT_ID"), client_secret=config.get("YAHOO_CLIENT_SECRET"))
     try:
         from src.utils.season_utils import sync_season_metadata

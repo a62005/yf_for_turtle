@@ -1,25 +1,14 @@
 import os
 import json
 import logging
-import google.generativeai as genai
+import requests
 
 class LLMAgent:
     def __init__(self):
-        api_key = os.getenv("GEMINI_API_KEY")
-        if not api_key:
-            logging.warning("[LLM] 警告：未設定 GEMINI_API_KEY，LLM 功能將無法正常運作。")
-        genai.configure(api_key=api_key)
+        # 讀取 LLM_MODEL 或 GEMINI_MODEL 設定，預設為 gemini-2.5-flash
+        self.model_name = os.getenv("LLM_MODEL") or os.getenv("GEMINI_MODEL") or "gemini-2.5-flash"
+        logging.info(f"[LLM] 初始化模型: {self.model_name}")
         
-        # 優先使用環境變數設定的 model，否則預設使用 gemini-2.5-flash
-        model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
-        logging.info(f"[LLM] 初始化模型: {model_name}")
-        self.model = genai.GenerativeModel(
-            model_name=model_name,
-            generation_config={
-                "response_mime_type": "application/json",
-                "temperature": 0.2
-            }
-        )
         self.system_prompt = """你是一個擁有多功能、博學且親切的 AI 助手。
 你的主要任務是分析用戶的輸入：
 
@@ -45,23 +34,63 @@ class LLMAgent:
 - reply_text: (string | null) 若沒有匹配到任何指令意圖，請在此填入直接且完整的回答內容；若有匹配到指令，則為 null。"""
 
     def analyze_intent(self, text: str, commands_desc: str) -> dict:
-        if not os.getenv("GEMINI_API_KEY"):
-            return {
-                "is_command": False, 
-                "command_text": None, 
-                "reply_text": "系統目前未配置 AI 金鑰，無法為您服務。"
-            }
-
         formatted_system = self.system_prompt.replace("{commands_desc}", commands_desc)
-        prompt = f"{formatted_system}\n\n用戶輸入：{text}"
+        
+        model_to_use = self.model_name
+        is_agnes = "agnes" in model_to_use.lower()
+        
+        # 依模型類型進行動態分流與金鑰配置
+        if is_agnes:
+            api_url = "https://apihub.agnes-ai.com/v1/chat/completions"
+            api_key = os.getenv("AGNES_API_KEY") or os.getenv("GEMINI_API_KEY") or "sk-dummy"
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {api_key}"
+            }
+            # 如果只寫了 agnes，預設對應 agnes-2.0-flash
+            if model_to_use.lower() == "agnes":
+                model_to_use = "agnes-2.0-flash"
+        else:
+            api_url = "http://localhost:20128/v1/chat/completions"
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": "Bearer sk-dummy"
+            }
+            # 自動為 unprefixed gemini/gemma 模型添加 provider 前綴，防止 omniroute 丟出 400 Ambiguous Model 錯誤
+            if "/" not in model_to_use and (model_to_use.startswith("gemini-") or model_to_use.startswith("gemma-")):
+                model_to_use = f"gemini/{model_to_use}"
+
+        payload = {
+            "model": model_to_use,
+            "messages": [
+                {"role": "system", "content": formatted_system},
+                {"role": "user", "content": text}
+            ],
+            "response_format": {"type": "json_object"},
+            "temperature": 0.2
+        }
+
         try:
-            response = self.model.generate_content(prompt)
-            data = json.loads(response.text.strip())
+            response = requests.post(api_url, json=payload, headers=headers, timeout=15)
+            response.raise_for_status()
+            
+            res_json = response.json()
+            content = res_json["choices"][0]["message"]["content"]
+            data = json.loads(content.strip())
             return data
-        except Exception as e:
-            logging.error(f"[LLM] 意圖解析出錯: {e}")
+            
+        except requests.exceptions.RequestException as e:
+            target_name = "Agnes AI" if is_agnes else "本地 omniroute"
+            logging.error(f"[LLM] 呼叫 {target_name} 服務失敗: {e}")
             return {
                 "is_command": False, 
                 "command_text": None, 
-                "reply_text": "我的大腦暫時離線了，請稍後再試！"
+                "reply_text": f"我的大腦暫時離線了，請確認 {'Agnes AI 服務是否正常' if is_agnes else '本地 AI 服務是否已啟動'}！"
+            }
+        except (KeyError, json.JSONDecodeError) as e:
+            logging.error(f"[LLM] 回傳的 JSON 結構解析失敗: {e}")
+            return {
+                "is_command": False, 
+                "command_text": None, 
+                "reply_text": "我剛剛有點神智不清，可以請您再問一次嗎？"
             }

@@ -14,14 +14,23 @@ def sync_season_metadata(fetcher: YahooFantasyFetcher, league_id: str):
     If not, it fetches all week dates and builds a date_to_week map.
     """
     logging.info("[SYSTEM] 同步賽季中繼資料...")
-    meta = fetcher.fetch_league_metadata(league_id)
+    old_meta = load_league_metadata()
+    
+    try:
+        meta = fetcher.fetch_league_metadata(league_id)
+    except Exception as e:
+        logging.error(f"[SYSTEM] 取得賽季基礎資料時發生異常: {e}")
+        meta = {}
     
     if not meta.get("end_week") or not meta.get("start_date"):
-        logging.warning("[SYSTEM] 無法取得完整的賽季基礎資料")
-        save_league_metadata(meta)
-        return
+        if isinstance(old_meta, dict) and old_meta.get("end_week") and old_meta.get("start_date"):
+            logging.warning("[SYSTEM] 無法取得完整的賽季基礎資料，將沿用現有快取。")
+            return
+        else:
+            logging.warning("[SYSTEM] 無法取得完整的賽季基礎資料且無本地歷史快取")
+            save_league_metadata(meta)
+            return
         
-    old_meta = load_league_metadata()
     week_dates = old_meta.get("week_dates", {})
     date_to_week = old_meta.get("date_to_week", {})
     
