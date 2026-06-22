@@ -25,3 +25,13 @@ class CommandDispatcher:
                 logging.error(f"[Dispatcher] Handler {handler.__class__.__name__} failed: {e}")
                 
         logging.info(f"[Dispatcher] No handler found for command: {user_text}")
+
+    def get_all_instruction_descs(self) -> str:
+        """Collect and concatenate instruction descriptions from all registered handlers."""
+        descs = []
+        for handler in self._handlers:
+            desc = handler.instruction_desc
+            if desc:
+                descs.append(desc.strip())
+        return "\n".join(descs)
+

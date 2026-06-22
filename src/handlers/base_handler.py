@@ -19,6 +19,11 @@ class BaseHandler(ABC):
         """Execute the core logic and handle LINE API replies."""
         pass
 
+    @property
+    def instruction_desc(self) -> str:
+        """Return the user-friendly instruction format supported by this handler."""
+        return ""
+
     def _load_team_mapping(self) -> dict:
         """Load and return the team mapping from json config file."""
         config = load_config()
