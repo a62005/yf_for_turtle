@@ -21,6 +21,7 @@ from src.handlers.player_handler import PlayerHandler
 from src.handlers.user_stats_handler import UserStatsHandler
 from src.handlers.matchup_handler import MatchupHandler
 from src.handlers.misc_handler import MiscHandler
+from src.handlers.intent_router import IntentRouter
 
 def cleanup_port(port):
     for proc in psutil.process_iter(['pid', 'name']):
@@ -72,6 +73,9 @@ dispatcher.register(UserStatsHandler())
 dispatcher.register(MatchupHandler())
 dispatcher.register(MiscHandler())
 
+# Initialize IntentRouter
+intent_router = IntentRouter(dispatcher)
+
 
 @app.route("/callback", methods=['POST'])
 def callback():
@@ -113,11 +117,8 @@ def handle_message(event):
             )
             return
 
-    user_text = event.message.text.strip()
-    
-    if user_text.startswith("#"):
-        logging.info(f"[LINE] 收到指令: {user_text}")
-        dispatcher.handle(event, configuration)
+    # 交由 intent_router 進行意圖路由與過濾
+    intent_router.route(event, configuration)
 
 if __name__ == "__main__":
     cleanup_port(5001)
