@@ -9,6 +9,20 @@ class IntentRouter:
     def __init__(self, dispatcher: CommandDispatcher):
         self.dispatcher = dispatcher
         self.llm_agent = LLMAgent()
+        self._bot_user_id = None
+
+    def _get_bot_user_id(self, configuration: Configuration) -> str | None:
+        """Fetch and cache the bot's own user_id."""
+        if self._bot_user_id is None:
+            try:
+                with ApiClient(configuration) as api_client:
+                    api = MessagingApi(api_client)
+                    info = api.get_bot_info()
+                    self._bot_user_id = info.user_id
+                    logging.info(f"[IntentRouter] 成功取得 Bot User ID: {self._bot_user_id}")
+            except Exception as e:
+                logging.error(f"[IntentRouter] 獲取 Bot 資訊失敗: {e}")
+        return self._bot_user_id
 
     def route(self, event: MessageEvent, configuration: Configuration) -> None:
         user_text = event.message.text.strip() if event.message and hasattr(event.message, 'text') else ""
@@ -24,14 +38,15 @@ class IntentRouter:
         # 2. 判斷是否為單聊
         is_private_chat = event.source.type == "user"
         
-        # 3. 判斷群聊中的 @提及
+        # 3. 判斷群聊中的 @提及 (僅當 @機器人本尊 時觸發，排除 @其他人 與 @ALL)
         is_mentioned = False
         if event.source.type in ["group", "room"]:
-            # 檢查 LINE 官方 mention 物件 (排除 @ALL)
+            # 檢查 LINE 官方 mention 物件
             if hasattr(event.message, "mention") and event.message.mention:
+                bot_user_id = self._get_bot_user_id(configuration)
                 mentionees = event.message.mention.mentionees
                 for m in mentionees:
-                    if m.type == "user": 
+                    if m.type == "user" and getattr(m, "user_id", None) == bot_user_id: 
                         is_mentioned = True
                     elif m.type == "all":
                         pass
