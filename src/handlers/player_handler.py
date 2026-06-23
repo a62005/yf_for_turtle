@@ -12,7 +12,7 @@ from .base_handler import BaseHandler
 from src.config import load_config
 from src.cache_utils import load_league_metadata
 from src.fetcher import YahooFantasyFetcher
-from src.utils.gemini_parser import parse_player_nickname
+from src.utils.player_parser import parse_player_nickname
 from src.utils.player_cache import get_cached_player, set_cached_player
 
 YAHOO_NS = {'ns': 'http://fantasysports.yahooapis.com/fantasy/v2/base.rng'}
@@ -32,7 +32,7 @@ class PlayerHandler(BaseHandler):
         if not self.pattern.match(user_text):
             return False
         config = load_config()
-        return bool(config.get("GEMINI_API_KEY"))
+        return bool(config.get("LLM_API_KEY"))
 
     def reply_flex(self, event: MessageEvent, configuration: Configuration, alt_text: str, flex_dict: dict) -> None:
         flex_container = FlexContainer.from_json(json.dumps(flex_dict))
@@ -150,8 +150,8 @@ class PlayerHandler(BaseHandler):
         if not player_info:
             llm_res = parse_player_nickname(
                 nickname, 
-                api_key=config.get("GEMINI_API_KEY"),
-                model_name=config.get("GEMINI_MODEL")
+                api_key=config.get("LLM_API_KEY"),
+                model_name=config.get("LLM_MODEL")
             )
             if not llm_res.get("is_known_player"):
                 self.reply_text(event, configuration, f"找不到現役球員「{nickname}」，請嘗試輸入更清晰的名字或別稱。")

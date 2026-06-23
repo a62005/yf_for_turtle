@@ -4,14 +4,14 @@ import pytz
 from src.handlers.player_handler import PlayerHandler
 
 def test_player_handler_can_handle(mocker):
-    mocker.patch("src.handlers.player_handler.load_config", return_value={"GEMINI_API_KEY": "dummy_key"})
+    mocker.patch("src.handlers.player_handler.load_config", return_value={"LLM_API_KEY": "dummy_key"})
     handler = PlayerHandler()
     assert handler.can_handle("#球員 喇叭") is True
     assert handler.can_handle("#球員") is False
     assert handler.can_handle("#戰績") is False
 
 def test_player_handler_can_handle_disabled(mocker):
-    mocker.patch("src.handlers.player_handler.load_config", return_value={"GEMINI_API_KEY": None})
+    mocker.patch("src.handlers.player_handler.load_config", return_value={"LLM_API_KEY": None})
     handler = PlayerHandler()
     assert handler.can_handle("#球員 喇叭") is False
 
