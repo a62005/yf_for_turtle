@@ -12,7 +12,7 @@ class LLMAgent:
 
         self.system_prompt = SYSTEM_PROMPT
 
-    def analyze_intent(self, text: str, commands_desc: str, players_list: str = "") -> dict:
+    def analyze_intent(self, text: str, commands_desc: str, players_list: str = "", temporal_context: str = "") -> dict:
         if not self.provider:
             return {
                 "is_command": False, 
@@ -21,7 +21,12 @@ class LLMAgent:
                 "error": True
             }
 
-        formatted_system = self.system_prompt.replace("{commands_desc}", commands_desc).replace("{players_list}", players_list)
+        formatted_system = (
+            self.system_prompt
+            .replace("{commands_desc}", commands_desc)
+            .replace("{players_list}", players_list)
+            .replace("{temporal_context}", temporal_context)
+        )
         try:
             return self.provider.generate_json(text, system_instruction=formatted_system, temperature=0.2)
         except Exception as e:
