@@ -19,7 +19,6 @@ class MockRoster:
 class MockTeam:
     def __init__(self, name, team_id, players):
         self.name = name
-        self.id = team_id
         self.team_id = team_id
         self.team_key = f"nba.l.12345.t.{team_id}"
         self._players = players
@@ -45,7 +44,6 @@ def test_execute_ignored_on_empty_param(mock_config):
     event.message.text = "#傷兵"
     
     with patch.object(handler, "_load_team_mapping", return_value={"1": "韋哥"}):
-        # 測試空值直接返回，不會嘗試連線 API
         with patch("src.handlers.injury_handler.YahooFantasyFetcher") as mock_fetcher:
             handler.execute(event, MagicMock())
             mock_fetcher.assert_not_called()
@@ -67,14 +65,12 @@ def test_execute_success_with_injuries(mock_config):
     event = MagicMock()
     event.message.text = "#傷兵 韋哥"
     
-    # 模擬 韋哥 擁有兩位球員，一傷一健康
     players = [
         MockPlayer("Stephen Curry", status="O", team_abbr="GSW", injury_note="Knee"),
         MockPlayer("Draymond Green", status=None, team_abbr="GSW")
     ]
     mock_team = MockTeam("韋哥隊", "1", players)
     
-    # Mock context 與 League 取得對應隊伍
     mock_ctx = MagicMock()
     mock_league = MockLeague([mock_team])
     
@@ -88,22 +84,31 @@ def test_execute_success_with_injuries(mock_config):
                 with patch.object(handler, "reply_flex") as mock_reply:
                     handler.execute(event, MagicMock())
                     
-                    # 驗證有發出 Flex Message 回覆
                     mock_reply.assert_called_once()
                     args = mock_reply.call_args[0]
                     alt_text = args[2]
                     flex_dict = args[3]
                     
                     assert "韋哥 的傷兵名單" in alt_text
-                    assert flex_dict["header"]["contents"][0]["text"] == "🏥 韋哥 的傷兵名單"
                     
-                    # 只有 Curry 應該出現在名單中
+                    # 1. 驗證白底 Header (置於 body 的首個元件)
+                    assert "header" not in flex_dict
                     body_contents = flex_dict["body"]["contents"]
-                    assert len(body_contents) == 1
-                    assert body_contents[0]["contents"][0]["text"] == "Stephen Curry"
+                    header_box = body_contents[0]
+                    assert header_box["contents"][0]["text"] == "韋哥"
+                    assert header_box["contents"][1]["text"] == "韋哥隊"
                     
-                    # 顏色分級為深紅 (O status)
-                    assert body_contents[0]["contents"][2]["backgroundColor"] == "#922B21"
+                    # 2. 驗證球員數據列 (Curry 應該被縮寫為 S. Curry，並與 - Knee 合併)
+                    player_row = body_contents[1]
+                    name_span_box = player_row["contents"][0]
+                    assert name_span_box["type"] == "text"
+                    assert name_span_box["contents"][0]["text"] == "S. Curry"
+                    assert name_span_box["contents"][1]["text"] == " - Knee"
+                    
+                    # 3. 驗證狀態標籤的背景顏色 (O 為深紅)
+                    status_box = player_row["contents"][1]
+                    assert status_box["backgroundColor"] == "#922B21"
+                    assert status_box["contents"][0]["text"] == "O"
 
 @patch("src.handlers.injury_handler.load_config", return_value={"LEAGUE_ID": "12345"})
 def test_execute_success_all_healthy(mock_config):
@@ -131,6 +136,5 @@ def test_execute_success_all_healthy(mock_config):
                     mock_reply.assert_called_once()
                     flex_dict = mock_reply.call_args[0][3]
                     
-                    # 驗證全隊健康提示文字
                     body_contents = flex_dict["body"]["contents"]
-                    assert "目前全隊球員皆健康！" in body_contents[0]["text"]
+                    assert "目前全隊球員皆健康！" in body_contents[1]["text"]
