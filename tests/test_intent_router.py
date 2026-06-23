@@ -164,3 +164,22 @@ def test_should_process_logic(mock_get_bot_id):
     # 5. 群聊普通閒聊 (無 mention、無 #) -> False
     event_group_chat = create_mock_event("我不行了", chat_type="group")
     assert router.should_process(event_group_chat, config) is False
+
+
+@patch('src.llm.llm_agent.LLMAgent.analyze_intent')
+def test_router_converts_injury_command_and_dispatches(mock_analyze):
+    dispatcher = MagicMock()
+    router = IntentRouter(dispatcher)
+    
+    # 模擬使用者發問：看韋哥傷兵
+    event = create_mock_event("幫我看一下韋哥有誰受傷", chat_type="user")
+    mock_analyze.return_value = {"is_command": True, "command_text": "#傷兵 韋哥", "reply_text": None}
+    
+    config = Configuration()
+    config.access_token = "dummy_access_token"
+    
+    router.route(event, config)
+    mock_analyze.assert_called_once()
+    # 確保成功轉交 dispatcher 處理，且其內容被置換為 "#傷兵 韋哥"
+    dispatcher.handle.assert_called_once_with(event, config)
+    assert event.message.text == "#傷兵 韋哥"
