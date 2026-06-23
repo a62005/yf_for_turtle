@@ -2,7 +2,7 @@ import pytest
 from unittest.mock import MagicMock, patch
 from src.utils.football_analyzer import analyze_football_matchup, SYSTEM_PROMPT
 
-@patch('src.utils.llm.gemini.GeminiProvider.generate')
+@patch('src.llm.gemini.GeminiProvider.generate')
 def test_analyze_football_matchup_success(mock_generate):
     mock_generate.return_value = "這是一段專業的足球對戰分析..."
     
@@ -13,7 +13,7 @@ def test_analyze_football_matchup_success(mock_generate):
         system_instruction=SYSTEM_PROMPT
     )
 
-@patch('src.utils.llm.gemini.GeminiProvider.generate')
+@patch('src.llm.gemini.GeminiProvider.generate')
 def test_analyze_football_matchup_env_fallback(mock_generate):
     mock_generate.return_value = "環境變數 fallback 分析結果"
     

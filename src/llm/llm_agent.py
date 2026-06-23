@@ -1,5 +1,5 @@
 import logging
-from .llm.factory import LLMProviderFactory
+from .factory import LLMProviderFactory
 
 class LLMAgent:
     def __init__(self):

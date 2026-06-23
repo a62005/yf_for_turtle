@@ -3,7 +3,7 @@ import re
 from linebot.v3.webhooks import MessageEvent
 from linebot.v3.messaging import Configuration, ApiClient, MessagingApi, ReplyMessageRequest, TextMessage
 from src.handlers.dispatcher import CommandDispatcher
-from src.utils.llm_agent import LLMAgent
+from src.llm.llm_agent import LLMAgent
 
 class IntentRouter:
     def __init__(self, dispatcher: CommandDispatcher):

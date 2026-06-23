@@ -2,7 +2,7 @@ import pytest
 from unittest.mock import MagicMock, patch
 from src.utils.player_parser import parse_player_nickname
 
-@patch('src.utils.llm.gemini.GeminiProvider.generate_json')
+@patch('src.llm.gemini.GeminiProvider.generate_json')
 def test_parse_player_nickname_success(mock_generate_json):
     mock_generate_json.return_value = {
         "is_known_player": True,
@@ -17,7 +17,7 @@ def test_parse_player_nickname_success(mock_generate_json):
     assert res["english_name"] == "LeBron James"
     assert res["jersey_number"] == "23"
 
-@patch('src.utils.llm.gemini.GeminiProvider.generate_json')
+@patch('src.llm.gemini.GeminiProvider.generate_json')
 def test_parse_player_nickname_unknown(mock_generate_json, mocker):
     mock_generate_json.return_value = {
         "is_known_player": False,

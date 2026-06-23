@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import MagicMock, patch
-from src.utils.llm import LLMProviderFactory, GeminiProvider, AgnesProvider
+from src.llm import LLMProviderFactory, GeminiProvider, AgnesProvider
 
 def test_factory_missing_env():
     with patch.dict('os.environ', {}, clear=True):

@@ -4,7 +4,7 @@ import logging
 import re
 import urllib.parse
 import urllib.request
-from .llm.factory import LLMProviderFactory
+from src.llm.factory import LLMProviderFactory
 
 SYSTEM_PROMPT = """你是一個精準的 NBA 籃球專家，專門負責將使用者的模糊輸入（例如球員綽號、簡稱、中文音譯或背號加上球隊）解析為官方標準的現役球員資訊。
 

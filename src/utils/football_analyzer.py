@@ -1,7 +1,7 @@
 import os
 import logging
 from typing import Optional
-from .llm.factory import LLMProviderFactory
+from src.llm.factory import LLMProviderFactory
 
 DEFAULT_MODEL = "gemini-3.5-flash"
 

@@ -33,7 +33,7 @@ def create_mock_event(text, chat_type="user", mentionees=None):
     return event
 
 @patch('src.handlers.intent_router.IntentRouter._get_bot_user_id', return_value='bot_user_id_123')
-@patch('src.utils.llm_agent.LLMAgent.analyze_intent')
+@patch('src.llm.llm_agent.LLMAgent.analyze_intent')
 def test_router_skips_unmentioned_group_chat(mock_analyze, mock_get_bot_id):
     dispatcher = MagicMock()
     router = IntentRouter(dispatcher)
@@ -46,7 +46,7 @@ def test_router_skips_unmentioned_group_chat(mock_analyze, mock_get_bot_id):
     dispatcher.handle.assert_not_called()
 
 @patch('src.handlers.intent_router.IntentRouter._get_bot_user_id', return_value='bot_user_id_123')
-@patch('src.utils.llm_agent.LLMAgent.analyze_intent')
+@patch('src.llm.llm_agent.LLMAgent.analyze_intent')
 def test_router_handles_mentioned_group_chat(mock_analyze, mock_get_bot_id):
     dispatcher = MagicMock()
     router = IntentRouter(dispatcher)
@@ -64,7 +64,7 @@ def test_router_handles_mentioned_group_chat(mock_analyze, mock_get_bot_id):
         mock_reply.assert_called_once()
 
 @patch('src.handlers.intent_router.IntentRouter._get_bot_user_id', return_value='bot_user_id_123')
-@patch('src.utils.llm_agent.LLMAgent.analyze_intent')
+@patch('src.llm.llm_agent.LLMAgent.analyze_intent')
 def test_router_skips_mentioned_others_group_chat(mock_analyze, mock_get_bot_id):
     dispatcher = MagicMock()
     router = IntentRouter(dispatcher)
@@ -77,7 +77,7 @@ def test_router_skips_mentioned_others_group_chat(mock_analyze, mock_get_bot_id)
     dispatcher.handle.assert_not_called()
 
 @patch('src.handlers.intent_router.IntentRouter._get_bot_user_id', return_value='bot_user_id_123')
-@patch('src.utils.llm_agent.LLMAgent.analyze_intent')
+@patch('src.llm.llm_agent.LLMAgent.analyze_intent')
 def test_router_skips_all_mention_group_chat(mock_analyze, mock_get_bot_id):
     dispatcher = MagicMock()
     router = IntentRouter(dispatcher)
@@ -89,7 +89,7 @@ def test_router_skips_all_mention_group_chat(mock_analyze, mock_get_bot_id):
     mock_analyze.assert_not_called()
     dispatcher.handle.assert_not_called()
 
-@patch('src.utils.llm_agent.LLMAgent.analyze_intent')
+@patch('src.llm.llm_agent.LLMAgent.analyze_intent')
 def test_router_converts_command_and_dispatches(mock_analyze):
     dispatcher = MagicMock()
     router = IntentRouter(dispatcher)

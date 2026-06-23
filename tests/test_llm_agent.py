@@ -1,8 +1,8 @@
 import pytest
 from unittest.mock import MagicMock, patch
-from src.utils.llm_agent import LLMAgent
+from src.llm.llm_agent import LLMAgent
 
-@patch('src.utils.llm.gemini.GeminiProvider.generate_json')
+@patch('src.llm.gemini.GeminiProvider.generate_json')
 def test_llm_agent_gemini_command_intent(mock_generate_json):
     mock_generate_json.return_value = {
         "is_command": True,
@@ -16,7 +16,7 @@ def test_llm_agent_gemini_command_intent(mock_generate_json):
         assert result["is_command"] is True
         assert result["command_text"] == "#對戰 小謝"
 
-@patch('src.utils.llm.gemini.GeminiProvider.generate_json')
+@patch('src.llm.gemini.GeminiProvider.generate_json')
 def test_llm_agent_gemini_chat_intent(mock_generate_json):
     mock_generate_json.return_value = {
         "is_command": False,
