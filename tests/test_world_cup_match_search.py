@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import MagicMock, patch
-from src.utils.football_analyzer import analyze_football_matchup, SYSTEM_PROMPT
+from src.llm.prompts.world_cup_match_search import analyze_football_matchup, SYSTEM_PROMPT
 
 @patch('src.llm.gemini.GeminiProvider.generate')
 def test_analyze_football_matchup_success(mock_generate):

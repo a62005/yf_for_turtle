@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import MagicMock, patch
-from src.utils.player_parser import parse_player_nickname
+from src.llm.prompts.player_fuzzy_search import parse_player_nickname
 
 @patch('src.llm.gemini.GeminiProvider.generate_json')
 def test_parse_player_nickname_success(mock_generate_json):
@@ -26,7 +26,7 @@ def test_parse_player_nickname_unknown(mock_generate_json, mocker):
         "team": None,
         "jersey_number": None
     }
-    mock_search = mocker.patch("src.utils.player_parser._search_duckduckgo", return_value=["NBA 測試結果"])
+    mock_search = mocker.patch("src.llm.prompts.player_fuzzy_search._search_duckduckgo", return_value=["NBA 測試結果"])
     
     res = parse_player_nickname("哈囉", api_key="dummy_key", model_name="gemini-2.5-flash")
     assert res["is_known_player"] is False
@@ -47,7 +47,7 @@ def test_parse_player_nickname_agnes_success(mock_post, mocker):
         ]
     }
     mock_post.return_value = mock_response
-    mock_search = mocker.patch("src.utils.player_parser._search_duckduckgo")
+    mock_search = mocker.patch("src.llm.prompts.player_fuzzy_search._search_duckduckgo")
 
     res = parse_player_nickname("咖哩", api_key="agnes_key", model_name="agnes-2.0-flash")
     

@@ -11,7 +11,7 @@ from linebot.v3.messaging import (
 
 from .base_handler import BaseHandler
 from src.config import load_config
-from src.utils.football_analyzer import analyze_football_matchup
+from src.llm.prompts.world_cup_match_search import analyze_football_matchup
 
 WORLD_CUP_TEAMS = {
     # A組

@@ -12,7 +12,7 @@ from .base_handler import BaseHandler
 from src.config import load_config
 from src.cache_utils import load_league_metadata
 from src.fetcher import YahooFantasyFetcher
-from src.utils.player_parser import parse_player_nickname
+from src.llm.prompts.player_fuzzy_search import parse_player_nickname
 from src.utils.player_cache import get_cached_player, set_cached_player
 
 YAHOO_NS = {'ns': 'http://fantasysports.yahooapis.com/fantasy/v2/base.rng'}
