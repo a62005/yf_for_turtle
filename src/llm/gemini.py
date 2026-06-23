@@ -12,7 +12,9 @@ class GeminiProvider(BaseLLMProvider):
             target_model = "gemini-3.5-flash"
             
         super().__init__(api_key, target_model)
-        self.client = genai.Client(api_key=self.api_key)
+
+    def _get_client(self) -> genai.Client:
+        return genai.Client(api_key=self.api_key)
 
     def generate(self, prompt: str, system_instruction: str = None, temperature: float = 0.2) -> str:
         config = {
@@ -21,7 +23,8 @@ class GeminiProvider(BaseLLMProvider):
         if system_instruction:
             config["system_instruction"] = system_instruction
             
-        response = self.client.models.generate_content(
+        client = self._get_client()
+        response = client.models.generate_content(
             model=self.model_name,
             contents=prompt,
             config=config
@@ -36,7 +39,8 @@ class GeminiProvider(BaseLLMProvider):
         if system_instruction:
             config["system_instruction"] = system_instruction
             
-        response = self.client.models.generate_content(
+        client = self._get_client()
+        response = client.models.generate_content(
             model=self.model_name,
             contents=prompt,
             config=config
