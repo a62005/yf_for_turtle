@@ -5,7 +5,7 @@ pytest-mock
 pytz
 Jinja2
 playwright
-google-generativeai
+google-genai
 psutil
 Flask
 line-bot-sdk

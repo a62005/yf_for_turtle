@@ -1,35 +1,44 @@
 import json
 import logging
-import google.generativeai as genai
+from google import genai
 from .base import BaseLLMProvider
 
 class GeminiProvider(BaseLLMProvider):
     def __init__(self, api_key: str, model_name: str):
-        super().__init__(api_key, model_name)
-        genai.configure(api_key=self.api_key)
-        self.model_cls = genai.GenerativeModel
+        # 自動映射過期或無額度的模型
+        target_model = model_name
+        if model_name in ["gemini-1.5-flash", "gemini-2.0-flash", "gemini-2.0-flash-lite"]:
+            logging.info(f"[LLM] 偵測到可能已過期或免費配額為 0 的模型 {model_name}，自動切換至最新可用模型 gemini-3.5-flash")
+            target_model = "gemini-3.5-flash"
+            
+        super().__init__(api_key, target_model)
+        self.client = genai.Client(api_key=self.api_key)
 
     def generate(self, prompt: str, system_instruction: str = None, temperature: float = 0.2) -> str:
-        model = self.model_cls(
-            model_name=self.model_name,
-            system_instruction=system_instruction
-        )
-        response = model.generate_content(
-            prompt,
-            generation_config={"temperature": temperature}
+        config = {
+            "temperature": temperature,
+        }
+        if system_instruction:
+            config["system_instruction"] = system_instruction
+            
+        response = self.client.models.generate_content(
+            model=self.model_name,
+            contents=prompt,
+            config=config
         )
         return response.text.strip()
 
     def generate_json(self, prompt: str, system_instruction: str = None, temperature: float = 0.2) -> dict:
-        model = self.model_cls(
-            model_name=self.model_name,
-            system_instruction=system_instruction
-        )
-        response = model.generate_content(
-            prompt,
-            generation_config={
-                "response_mime_type": "application/json",
-                "temperature": temperature
-            }
+        config = {
+            "temperature": temperature,
+            "response_mime_type": "application/json"
+        }
+        if system_instruction:
+            config["system_instruction"] = system_instruction
+            
+        response = self.client.models.generate_content(
+            model=self.model_name,
+            contents=prompt,
+            config=config
         )
         return json.loads(response.text.strip())
