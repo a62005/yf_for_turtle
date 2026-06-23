@@ -138,3 +138,23 @@ def test_execute_user_stats_no_nickname(mocker):
     mock_reply_player_list.assert_called_once_with(mock_event, mock_config, is_matchup=False)
 
 
+def test_user_stats_handler_can_handle_with_date(mocker):
+    mocker.patch("src.handlers.user_stats_handler.load_config", return_value={"TEAM_MAPPING_FILE": "team_mapping.json"})
+    mock_mapping = {"1": "韋哥", "2": "Jerry"}
+    mocker.patch("src.handlers.user_stats_handler.UserStatsHandler._load_team_mapping", return_value=mock_mapping)
+    
+    handler = UserStatsHandler()
+    
+    # Dates should be handled correctly
+    assert handler.can_handle("#玩家 韋哥 20260101") is True
+    assert handler.can_handle("#玩家 Jerry 2026-01-01") is True
+    assert handler.can_handle("#玩家 詹姆斯 20260101") is False
+
+def test_parse_nickname_and_date():
+    handler = UserStatsHandler()
+    assert handler._parse_nickname_and_date("韋哥") == ("韋哥", None)
+    assert handler._parse_nickname_and_date("韋哥 20260101") == ("韋哥", "2026-01-01")
+    assert handler._parse_nickname_and_date("Jerry 2026-01-01") == ("Jerry", "2026-01-01")
+    assert handler._parse_nickname_and_date("Jerry   20260101") == ("Jerry", "2026-01-01")
+
+
