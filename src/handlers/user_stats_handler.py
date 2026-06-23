@@ -230,12 +230,14 @@ class UserStatsHandler(BaseHandler):
         
         if not target_week:
             from src.utils.time_utils import get_fantasy_week
+            start_date = meta.get('start_date') or config.get("SEASON_START_DATE")
+            if not start_date:
+                raise ValueError("SEASON_START_DATE is not configured in metadata or environment.")
             try:
                 target_dt = pytz.timezone("US/Pacific").localize(datetime.strptime(target_date, "%Y-%m-%d"))
-                start_date = meta.get('start_date') or config.get("DEFAULT_SEASON_START", "2025-10-21")
                 target_week = get_fantasy_week(start_date, target_dt)
             except Exception:
-                target_week = get_fantasy_week(config.get("SEASON_START_DATE", "2025-10-21"))
+                target_week = get_fantasy_week(start_date)
         
         if meta.get('end_week') and target_week > meta['end_week']:
             target_week = meta['end_week']
