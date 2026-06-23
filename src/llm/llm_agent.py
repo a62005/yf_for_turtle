@@ -38,7 +38,8 @@ class LLMAgent:
             return {
                 "is_command": False, 
                 "command_text": None, 
-                "reply_text": "系統目前未配置 AI 金鑰，無法為您服務。"
+                "reply_text": "系統目前未配置 AI 金鑰，無法為您服務。",
+                "error": True
             }
 
         formatted_system = self.system_prompt.replace("{commands_desc}", commands_desc)
@@ -46,16 +47,18 @@ class LLMAgent:
             return self.provider.generate_json(text, system_instruction=formatted_system, temperature=0.2)
         except Exception as e:
             logging.error(f"[LLM] 意圖解析失敗: {e}")
-            from .llm.agnes import AgnesProvider
+            from .agnes import AgnesProvider
             if isinstance(self.provider, AgnesProvider):
                 return {
                     "is_command": False, 
                     "command_text": None, 
-                    "reply_text": "我的大腦暫時離線了，請確認 Agnes AI 服務是否正常！"
+                    "reply_text": "我的大腦暫時離線了，請確認 Agnes AI 服務是否正常！",
+                    "error": True
                 }
             else:
                 return {
                     "is_command": False, 
                     "command_text": None, 
-                    "reply_text": "我的大腦暫時離線了，請稍後再試！"
+                    "reply_text": "我的大腦暫時離線了，請稍後再試！",
+                    "error": True
                 }

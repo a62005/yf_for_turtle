@@ -105,3 +105,36 @@ def test_router_converts_command_and_dispatches(mock_analyze):
     
     assert event.message.text == "#球員 Stephen Curry"
     dispatcher.handle.assert_called_once_with(event, router.dispatcher._handlers if hasattr(router.dispatcher, '_handlers') else MagicMock())
+
+@patch('src.handlers.intent_router.IntentRouter._get_bot_user_id', return_value='bot_user_id_123')
+@patch('src.llm.llm_agent.LLMAgent.analyze_intent')
+def test_router_mentioned_group_chat_llm_error_no_reply(mock_analyze, mock_get_bot_id):
+    dispatcher = MagicMock()
+    router = IntentRouter(dispatcher)
+    
+    # 群組中 @提及 機器人本身，且 LLM 未啟用/出錯
+    event = create_mock_event("哈囉", chat_type="group", mentionees=[{"type": "user", "user_id": "bot_user_id_123"}])
+    mock_analyze.return_value = {"is_command": False, "command_text": None, "reply_text": "未配置金鑰", "error": True}
+    
+    config = Configuration()
+    config.access_token = "dummy_access_token"
+    with patch('linebot.v3.messaging.MessagingApi.reply_message') as mock_reply:
+        router.route(event, config)
+        mock_analyze.assert_called_once()
+        mock_reply.assert_not_called()  # 應該完全不回覆！
+
+@patch('src.llm.llm_agent.LLMAgent.analyze_intent')
+def test_router_private_chat_llm_error_still_replies(mock_analyze):
+    dispatcher = MagicMock()
+    router = IntentRouter(dispatcher)
+    
+    # 單聊，且 LLM 未啟用/出錯
+    event = create_mock_event("哈囉", chat_type="user")
+    mock_analyze.return_value = {"is_command": False, "command_text": None, "reply_text": "未配置金鑰", "error": True}
+    
+    config = Configuration()
+    config.access_token = "dummy_access_token"
+    with patch('linebot.v3.messaging.MessagingApi.reply_message') as mock_reply:
+        router.route(event, config)
+        mock_analyze.assert_called_once()
+        mock_reply.assert_called_once()  # 單聊依然要回覆錯誤訊息給使用者

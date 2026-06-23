@@ -52,3 +52,22 @@ def test_llm_agent_agnes_chat_intent(mock_post):
         assert result["is_command"] is False
         assert result["reply_text"] == "哈囉！我是 Agnes AI。"
         mock_post.assert_called_once()
+
+def test_llm_agent_missing_api_key():
+    with patch.dict('os.environ', {}, clear=True):
+        agent = LLMAgent()
+        result = agent.analyze_intent("你好", "指令清單")
+        assert result["is_command"] is False
+        assert result.get("error") is True
+        assert "未配置" in result["reply_text"]
+
+@patch('src.llm.gemini.GeminiProvider.generate_json')
+def test_llm_agent_gemini_exception(mock_generate_json):
+    mock_generate_json.side_effect = Exception("API connection refused")
+
+    with patch.dict('os.environ', {'LLM_API_KEY': 'fake_key', 'LLM_MODEL': 'gemini-2.5-flash'}, clear=True):
+        agent = LLMAgent()
+        result = agent.analyze_intent("你好", "指令清單")
+        assert result["is_command"] is False
+        assert result.get("error") is True
+        assert "大腦暫時離線" in result["reply_text"]

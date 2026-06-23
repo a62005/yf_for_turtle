@@ -62,7 +62,7 @@ class IntentRouter:
             logging.info(f"[IntentRouter] 收到{chat_type}，開始 LLM 意圖解析: {user_text}")
             
             clean_text = self._clean_mention_text(user_text)
-            self._handle_llm_flow(event, configuration, clean_text)
+            self._handle_llm_flow(event, configuration, clean_text, is_mentioned)
         else:
             # 群組閒聊直接忽略，不留 Log
             pass
@@ -70,7 +70,7 @@ class IntentRouter:
     def _clean_mention_text(self, text: str) -> str:
         return re.sub(r'(?i)@(?:bot|linebot)\s*', '', text).strip()
 
-    def _handle_llm_flow(self, event: MessageEvent, configuration: Configuration, text: str) -> None:
+    def _handle_llm_flow(self, event: MessageEvent, configuration: Configuration, text: str, is_mentioned: bool = False) -> None:
         commands_desc = self.dispatcher.get_all_instruction_descs()
         result = self.llm_agent.analyze_intent(text, commands_desc)
         
@@ -89,6 +89,10 @@ class IntentRouter:
                 
             self.dispatcher.handle(event, configuration)
         else:
+            if is_mentioned and result.get("error"):
+                logging.info("[IntentRouter] LLM 服務未啟用或異常，且為群組提及，不回覆任何訊息。")
+                return
+
             reply_text = result.get("reply_text") or "我現在無法理解您的意思，請試著換個方式詢問。"
             logging.info(f"[IntentRouter] LLM 生成對話回覆: {reply_text}")
             
