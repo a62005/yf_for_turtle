@@ -24,48 +24,56 @@ class IntentRouter:
                 logging.error(f"[IntentRouter] 獲取 Bot 資訊失敗: {e}")
         return self._bot_user_id
 
-    def route(self, event: MessageEvent, configuration: Configuration) -> None:
+    def should_process(self, event: MessageEvent, configuration: Configuration) -> bool:
+        """Determine if the message event should be processed by the bot."""
         user_text = event.message.text.strip() if event.message and hasattr(event.message, 'text') else ""
         if not user_text:
+            return False
+
+        # 1. 指令優先
+        if user_text.startswith("#"):
+            return True
+
+        # 2. 單聊必定處理
+        if event.source.type == "user":
+            return True
+
+        # 3. 群聊中必須被提及 (@提及)
+        if event.source.type in ["group", "room"]:
+            # 檢查官方 mention 物件
+            if hasattr(event.message, "mention") and event.message.mention:
+                bot_user_id = self._get_bot_user_id(configuration)
+                for m in event.message.mention.mentionees:
+                    if m.type == "user" and getattr(m, "user_id", None) == bot_user_id: 
+                        return True
+            # 備用：手動文字提及
+            lower_text = user_text.lower()
+            if "@bot" in lower_text or "@linebot" in lower_text:
+                return True
+
+        return False
+
+    def route(self, event: MessageEvent, configuration: Configuration) -> None:
+        if not self.should_process(event, configuration):
             return
 
+        user_text = event.message.text.strip()
+        
         # 1. 優先處理標準指令
         if user_text.startswith("#"):
             logging.info(f"[IntentRouter] 收到標準指令: {user_text}")
             self.dispatcher.handle(event, configuration)
             return
 
-        # 2. 判斷是否為單聊
+        # 2. 單聊與群組提及進行 LLM 解析
         is_private_chat = event.source.type == "user"
+        is_mentioned = not is_private_chat  # 走到這代表不是指令，非單聊則必然是提及
         
-        # 3. 判斷群聊中的 @提及 (僅當 @機器人本尊 時觸發，排除 @其他人 與 @ALL)
-        is_mentioned = False
-        if event.source.type in ["group", "room"]:
-            # 檢查 LINE 官方 mention 物件
-            if hasattr(event.message, "mention") and event.message.mention:
-                bot_user_id = self._get_bot_user_id(configuration)
-                mentionees = event.message.mention.mentionees
-                for m in mentionees:
-                    if m.type == "user" and getattr(m, "user_id", None) == bot_user_id: 
-                        is_mentioned = True
-                    elif m.type == "all":
-                        pass
-            
-            # 備用：檢查文字中手動輸入包含 @bot 等字樣
-            lower_text = user_text.lower()
-            if "@bot" in lower_text or "@linebot" in lower_text:
-                is_mentioned = True
-
-        # 4. 路由分流
-        if is_private_chat or is_mentioned:
-            chat_type = "單聊" if is_private_chat else "群組提及"
-            logging.info(f"[IntentRouter] 收到{chat_type}，開始 LLM 意圖解析: {user_text}")
-            
-            clean_text = self._clean_mention_text(user_text)
-            self._handle_llm_flow(event, configuration, clean_text, is_mentioned)
-        else:
-            # 群組閒聊直接忽略，不留 Log
-            pass
+        chat_type = "單聊" if is_private_chat else "群組提及"
+        logging.info(f"[IntentRouter] 收到{chat_type}，開始 LLM 意圖解析: {user_text}")
+        
+        clean_text = self._clean_mention_text(user_text)
+        self._handle_llm_flow(event, configuration, clean_text, is_mentioned)
 
     def _clean_mention_text(self, text: str) -> str:
         return re.sub(r'(?i)@(?:bot|linebot)\s*', '', text).strip()

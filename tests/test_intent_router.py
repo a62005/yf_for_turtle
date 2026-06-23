@@ -138,3 +138,29 @@ def test_router_private_chat_llm_error_still_replies(mock_analyze):
         router.route(event, config)
         mock_analyze.assert_called_once()
         mock_reply.assert_called_once()  # 單聊依然要回覆錯誤訊息給使用者
+
+@patch('src.handlers.intent_router.IntentRouter._get_bot_user_id', return_value='bot_user_id_123')
+def test_should_process_logic(mock_get_bot_id):
+    dispatcher = MagicMock()
+    router = IntentRouter(dispatcher)
+    config = MagicMock()
+    
+    # 1. 標準指令 -> True
+    event_cmd = create_mock_event("#戰績", chat_type="group")
+    assert router.should_process(event_cmd, config) is True
+    
+    # 2. 單聊 -> True
+    event_private = create_mock_event("嗨哈囉", chat_type="user")
+    assert router.should_process(event_private, config) is True
+    
+    # 3. 群聊中 @提及 機器人 -> True
+    event_group_mentioned = create_mock_event("哈囉", chat_type="group", mentionees=[{"type": "user", "user_id": "bot_user_id_123"}])
+    assert router.should_process(event_group_mentioned, config) is True
+    
+    # 4. 群聊中包含 @bot 文字 -> True
+    event_group_text_mention = create_mock_event("哈囉 @bot", chat_type="group")
+    assert router.should_process(event_group_text_mention, config) is True
+    
+    # 5. 群聊普通閒聊 (無 mention、無 #) -> False
+    event_group_chat = create_mock_event("我不行了", chat_type="group")
+    assert router.should_process(event_group_chat, config) is False

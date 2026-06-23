@@ -104,6 +104,10 @@ def handle_message(event):
     if is_token_processed(event.reply_token):
         return
 
+    # 先判斷這則訊息是否需要處理，若非指令、非單聊且群聊無 @提及，則直接略過，不執行延遲檢測
+    if not intent_router.should_process(event, configuration):
+        return
+
     # Webhook 超時防護，防止處理過期或 LINE 重試發送的延遲訊息打擾用戶
     now_ms = int(time.time() * 1000)
     event_time_ms = getattr(event, "timestamp", None)
