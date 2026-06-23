@@ -20,6 +20,7 @@ class MockTeam:
     def __init__(self, name, team_id, players):
         self.name = name
         self.id = team_id
+        self.team_id = team_id
         self.team_key = f"nba.l.12345.t.{team_id}"
         self._players = players
     def roster(self):
@@ -102,7 +103,7 @@ def test_execute_success_with_injuries(mock_config):
                     assert body_contents[0]["contents"][0]["text"] == "Stephen Curry"
                     
                     # 顏色分級為深紅 (O status)
-                    assert body_contents[0]["contents"][2]["contents"][0]["color"] == "#922B21"
+                    assert body_contents[0]["contents"][2]["backgroundColor"] == "#922B21"
 
 @patch("src.handlers.injury_handler.load_config", return_value={"LEAGUE_ID": "12345"})
 def test_execute_success_all_healthy(mock_config):
