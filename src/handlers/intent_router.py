@@ -80,7 +80,9 @@ class IntentRouter:
 
     def _handle_llm_flow(self, event: MessageEvent, configuration: Configuration, text: str, is_mentioned: bool = False) -> None:
         commands_desc = self.dispatcher.get_all_instruction_descs()
-        result = self.llm_agent.analyze_intent(text, commands_desc)
+        mapping = self._load_team_mapping()
+        players_list = ", ".join(mapping.values()) if mapping else ""
+        result = self.llm_agent.analyze_intent(text, commands_desc, players_list)
         
         if result.get("is_command") and result.get("command_text"):
             command_text = result["command_text"]
@@ -111,3 +113,19 @@ class IntentRouter:
                         messages=[TextMessage(text=reply_text)]
                     )
                 )
+
+    def _load_team_mapping(self) -> dict:
+        """Load and return the team mapping from json config file."""
+        import os
+        import json
+        from src.config import load_config
+        config = load_config()
+        mapping_file = config.get("TEAM_MAPPING_FILE", "team_mapping.json")
+        if os.path.exists(mapping_file):
+            try:
+                with open(mapping_file, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception as e:
+                import logging
+                logging.error(f"Failed to load team mapping in IntentRouter: {e}")
+        return {}
