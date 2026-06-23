@@ -21,6 +21,9 @@ logging.basicConfig(
 def main():
     logging.info("[TASK] 開始執行數據更新任務...")
     
+    config = None
+    today_str = get_pacific_date()
+    
     try:
         config = load_config()
         league_id = config["LEAGUE_ID"]
@@ -119,16 +122,85 @@ def main():
             capture_html_to_png(weekly_html, weekly_path_img)
             logging.info(f"[VISUAL] 圖片製作完成並儲存至: {weekly_path_img}")
             
+            # Send LINE message if requested
+            reply_to = os.getenv("LINE_REPLY_TO")
+            if reply_to and config and config.get("LINE_CHANNEL_ACCESS_TOKEN"):
+                try:
+                    from linebot.v3.messaging import Configuration, ApiClient, MessagingApi, PushMessageRequest, ImageMessage
+                    
+                    server_url = config.get("SERVER_URL") or "http://localhost:5000"
+                    https_url = server_url.replace("http://", "https://")
+                    if not https_url.startswith("https://"):
+                        https_url = f"https://{https_url.lstrip('https://')}"
+                        
+                    img_filename = f"{today_str}_combined.png"
+                    img_url = f"{https_url}/images/{img_filename}"
+                    
+                    logging.info(f"[LINE] 正在向 {reply_to} 推送戰績圖片: {img_url}")
+                    
+                    line_config = Configuration(access_token=config["LINE_CHANNEL_ACCESS_TOKEN"])
+                    with ApiClient(line_config) as api_client:
+                        messaging_api = MessagingApi(api_client)
+                        push_req = PushMessageRequest(
+                            to=reply_to,
+                            messages=[
+                                ImageMessage(
+                                    original_content_url=img_url,
+                                    preview_image_url=img_url
+                                )
+                            ]
+                        )
+                        messaging_api.push_message(push_req)
+                    logging.info(f"[LINE] 戰績圖片發送成功！")
+                except Exception as le:
+                    logging.error(f"[LINE] 發送戰績圖片失敗: {le}")
+            
         except Exception as ve:
             logging.error(f"Failed to generate visualization: {ve}")
+            reply_to = os.getenv("LINE_REPLY_TO")
+            if reply_to and config and config.get("LINE_CHANNEL_ACCESS_TOKEN"):
+                try:
+                    from linebot.v3.messaging import Configuration, ApiClient, MessagingApi, PushMessageRequest, TextMessage
+                    line_config = Configuration(access_token=config["LINE_CHANNEL_ACCESS_TOKEN"])
+                    with ApiClient(line_config) as api_client:
+                        messaging_api = MessagingApi(api_client)
+                        push_req = PushMessageRequest(
+                            to=reply_to,
+                            messages=[TextMessage(text="戰績數據更新完成，但圖片生成失敗，請稍後重試。")]
+                        )
+                        messaging_api.push_message(push_req)
+                except Exception as le:
+                    logging.error(f"[LINE] 發送失敗通知失敗: {le}")
 
         logging.info("All fetches completed successfully.")
         
     except Exception as e:
         logging.error(f"An error occurred: {e}")
-        # In a real scenario, we might want to exit with a non-zero code
-        # sys.exit(1)
+        reply_to = os.getenv("LINE_REPLY_TO")
+        token = config.get("LINE_CHANNEL_ACCESS_TOKEN") if config else os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
+        if reply_to and token:
+            try:
+                from linebot.v3.messaging import Configuration, ApiClient, MessagingApi, PushMessageRequest, TextMessage
+                line_config = Configuration(access_token=token)
+                with ApiClient(line_config) as api_client:
+                    messaging_api = MessagingApi(api_client)
+                    push_req = PushMessageRequest(
+                        to=reply_to,
+                        messages=[TextMessage(text="戰績數據更新失敗，請聯絡管理員或稍後重試。")]
+                    )
+                    messaging_api.push_message(push_req)
+            except Exception as le:
+                logging.error(f"[LINE] 發送失敗通知失敗: {le}")
         raise
+    finally:
+        # Clean up lock file if present
+        lock_path = os.getenv("FETCH_LOCK_PATH")
+        if lock_path and os.path.exists(lock_path):
+            try:
+                os.remove(lock_path)
+                logging.info(f"[LOCK] 成功刪除鎖定檔案: {lock_path}")
+            except Exception as le:
+                logging.error(f"[LOCK] 刪除鎖定檔案失敗: {le}")
 
 if __name__ == "__main__":
     main()

@@ -208,5 +208,13 @@ class StatsHandler(BaseHandler):
         # Force combined mode in env if needed by main.py
         env["MODE"] = "combined" 
         
-        logging.info(f"[TASK] 啟動背景更新任務 (main.py)，模式: combined")
+        to_source_id = None
+        event_source = getattr(event, "source", None)
+        if event_source:
+            to_source_id = getattr(event_source, "group_id", None) or getattr(event_source, "room_id", None) or getattr(event_source, "user_id", None)
+            
+        if to_source_id:
+            env["LINE_REPLY_TO"] = to_source_id
+        
+        logging.info(f"[TASK] 啟動背景更新任務 (main.py)，模式: combined，目標 ID: {to_source_id}")
         subprocess.Popen([sys.executable, os.path.join(project_root, "main.py")], env=env)
