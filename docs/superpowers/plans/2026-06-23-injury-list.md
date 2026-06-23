@@ -2,66 +2,30 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 為 Yahoo Fantasy NBA Line Bot 新增 `#傷兵 <玩家名稱>` 指令，以獲取該玩家隊伍中所有受傷球員，並以專屬顏色標籤區分嚴重度的 Flex Message 回覆，未配對到玩家時靜默忽略。
+**Goal:** 更新 Yahoo Fantasy NBA Line Bot 的 `#傷兵 <玩家名稱>` 功能。去除深色 Header 背景與 icon，改為預設白底風格；將守備位置與 NBA 球隊欄位移除；並將球員姓名縮寫化，合併受傷部位於同一列中。
 
-**Architecture:** 新增 `InjuryHandler` 用於阻斷、比對與讀取 Yahoo API 成員名單並進行篩選；利用狀態碼（O, INJ, DTD, GTD）映射至 Flex Message 專屬標籤顏色；對接現有 LLM 意圖路由進行自動轉化。
+**Architecture:** 
+1. 實作 `abbreviate_player_name` 姓名縮寫工具函數 (首字字母 + 點 + 空格 + 姓氏，例如 `S. Curry` 或 `L. James`)。
+2. 修改 `InjuryHandler` 中的 `_build_flex_message` 邏輯，取消 Flex 的 `header` 區塊，直接將姓名大字與球隊小字置於 `body` 首段做為白底 Header。
+3. 採用 `spans` 將縮寫姓名與受傷部位合併（例如 `L. James - Knee`）。
+4. 更新單元測試以適應全新的 Flex Message JSON 結構。
 
 **Tech Stack:** Python 3, Pytest, line-bot-sdk, yahoofantasy
 
 ---
 
-### Task 1: 建立 `InjuryHandler` 架構骨架
+### Task 1: 撰寫預期失敗的單元測試
 
 **Files:**
-- Create: `src/handlers/injury_handler.py`
+- Modify: `tests/handlers/test_injury_handler.py`
 
-- [ ] **Step 1: 建立 Handler 類別骨架**
+- [ ] **Step 1: 修改測試案例**
 
-建立 `src/handlers/injury_handler.py` 檔案並填入以下內容，此時 `execute` 方法僅留存空實作，並定義基本匹配與描述屬性：
-
-```python
-import re
-import logging
-from linebot.v3.webhooks import MessageEvent
-from linebot.v3.messaging import Configuration
-from .base_handler import BaseHandler
-
-class InjuryHandler(BaseHandler):
-    def __init__(self):
-        # 匹配 #傷兵 加上後續參數
-        self.pattern = re.compile(r"^#傷兵\s*(.+)?$")
-
-    @property
-    def instruction_desc(self) -> str:
-        return """
-- #傷兵 <玩家名稱>：查詢我們聯盟中特定玩家隊伍目前的傷兵名單（例如：#傷兵 韋哥）。
-        """
-
-    def can_handle(self, user_text: str) -> bool:
-        return bool(self.pattern.match(user_text))
-
-    def execute(self, event: MessageEvent, configuration: Configuration) -> None:
-        # 暫時留空，後續實作核心邏輯
-        pass
-```
-
-- [ ] **Step 2: 提交代碼**
-
-```bash
-git add src/handlers/injury_handler.py
-git commit -m "feat: create injury handler skeleton"
-```
-
----
-
-### Task 2: 撰寫 `InjuryHandler` 單元測試
-
-**Files:**
-- Create: `tests/handlers/test_injury_handler.py`
-
-- [ ] **Step 1: 撰寫測試案例**
-
-建立 `tests/handlers/test_injury_handler.py` 用以驗證指令匹配、無效參數/無參數時的忽略機制，以及 Mock 模擬 API 回傳傷兵名單時所產生的 Flex Message JSON 結構。
+修改 `tests/handlers/test_injury_handler.py` 以反映全新的排版需求：
+1. 驗證 Header 放置於 `body` 內容中（白底極簡風）。
+2. 驗證球員人名縮寫。
+3. 驗證姓名與傷勢透過 `spans` 合併。
+4. 驗證移除守備位置與 NBA 球隊欄位。
 
 ```python
 import pytest
@@ -85,7 +49,7 @@ class MockRoster:
 class MockTeam:
     def __init__(self, name, team_id, players):
         self.name = name
-        self.id = team_id
+        self.team_id = team_id
         self.team_key = f"nba.l.12345.t.{team_id}"
         self._players = players
     def roster(self):
@@ -110,7 +74,6 @@ def test_execute_ignored_on_empty_param(mock_config):
     event.message.text = "#傷兵"
     
     with patch.object(handler, "_load_team_mapping", return_value={"1": "韋哥"}):
-        # 測試空值直接返回，不會嘗試連線 API
         with patch("src.handlers.injury_handler.YahooFantasyFetcher") as mock_fetcher:
             handler.execute(event, MagicMock())
             mock_fetcher.assert_not_called()
@@ -132,14 +95,12 @@ def test_execute_success_with_injuries(mock_config):
     event = MagicMock()
     event.message.text = "#傷兵 韋哥"
     
-    # 模擬 韋哥 擁有兩位球員，一傷一健康
     players = [
         MockPlayer("Stephen Curry", status="O", team_abbr="GSW", injury_note="Knee"),
         MockPlayer("Draymond Green", status=None, team_abbr="GSW")
     ]
     mock_team = MockTeam("韋哥隊", "1", players)
     
-    # Mock context 與 League 取得對應隊伍
     mock_ctx = MagicMock()
     mock_league = MockLeague([mock_team])
     
@@ -153,22 +114,31 @@ def test_execute_success_with_injuries(mock_config):
                 with patch.object(handler, "reply_flex") as mock_reply:
                     handler.execute(event, MagicMock())
                     
-                    # 驗證有發出 Flex Message 回覆
                     mock_reply.assert_called_once()
                     args = mock_reply.call_args[0]
                     alt_text = args[2]
                     flex_dict = args[3]
                     
                     assert "韋哥 的傷兵名單" in alt_text
-                    assert flex_dict["header"]["contents"][0]["text"] == "🏥 韋哥 的傷兵名單"
                     
-                    # 只有 Curry 應該出現在名單中
+                    # 1. 驗證白底 Header (置於 body 的首個元件)
+                    assert "header" not in flex_dict
                     body_contents = flex_dict["body"]["contents"]
-                    assert len(body_contents) == 1
-                    assert body_contents[0]["contents"][0]["text"] == "Stephen Curry"
+                    header_box = body_contents[0]
+                    assert header_box["contents"][0]["text"] == "韋哥"
+                    assert header_box["contents"][1]["text"] == "韋哥隊"
                     
-                    # 顏色分級為深紅 (O status)
-                    assert body_contents[0]["contents"][2]["contents"][0]["color"] == "#922B21"
+                    # 2. 驗證球員數據列 (Curry 應該被縮寫為 S. Curry，並與 - Knee 合併)
+                    player_row = body_contents[1]
+                    name_span_box = player_row["contents"][0]
+                    assert name_span_box["type"] == "text"
+                    assert name_span_box["contents"][0]["text"] == "S. Curry"
+                    assert name_span_box["contents"][1]["text"] == " - Knee"
+                    
+                    # 3. 驗證狀態標籤的背景顏色 (O 為深紅)
+                    status_box = player_row["contents"][1]
+                    assert status_box["backgroundColor"] == "#922B21"
+                    assert status_box["contents"][0]["text"] == "O"
 
 @patch("src.handlers.injury_handler.load_config", return_value={"LEAGUE_ID": "12345"})
 def test_execute_success_all_healthy(mock_config):
@@ -196,34 +166,32 @@ def test_execute_success_all_healthy(mock_config):
                     mock_reply.assert_called_once()
                     flex_dict = mock_reply.call_args[0][3]
                     
-                    # 驗證全隊健康提示文字
                     body_contents = flex_dict["body"]["contents"]
-                    assert "目前全隊球員皆健康！" in body_contents[0]["text"]
+                    assert "目前全隊球員皆健康！" in body_contents[1]["text"]
 ```
 
-- [ ] **Step 2: 執行測試並確認其失敗**
+- [ ] **Step 2: 執行測試確認失敗**
 
-執行以下命令確認測試程式因邏輯未實作而失敗：
 Run: `.\.venv\Scripts\pytest tests/handlers/test_injury_handler.py -v`
-Expected: FAIL (AssertionError)
+Expected: FAIL (AssertionError / KeyError)
 
-- [ ] **Step 3: 提交測試代碼**
+- [ ] **Step 3: 提交變更**
 
 ```bash
 git add tests/handlers/test_injury_handler.py
-git commit -m "test: add tests for injury handler"
+git commit -m "test: update injury handler test cases for new visual spec"
 ```
 
 ---
 
-### Task 3: 實現 `InjuryHandler` 核心邏輯
+### Task 2: 實現球員人名縮寫與極簡白底 Flex Message
 
 **Files:**
 - Modify: `src/handlers/injury_handler.py`
 
-- [ ] **Step 1: 實作核心執行與 Flex Message 生成代碼**
+- [ ] **Step 1: 實作新排版邏輯與 `abbreviate_player_name` 函數**
 
-修改 `src/handlers/injury_handler.py` 將 Yahoo API 讀取、傷兵篩選、顏色比對邏輯完整實作：
+修改 `src/handlers/injury_handler.py` 實作符合規格書設計的排版邏輯：
 
 ```python
 import re
@@ -264,7 +232,6 @@ class InjuryHandler(BaseHandler):
         param = param.strip()
         mapping = self._load_team_mapping()
         
-        # 尋找匹配的玩家 Team ID
         target_team_id = None
         target_manager_name = None
         for tid, nickname in mapping.items():
@@ -288,10 +255,8 @@ class InjuryHandler(BaseHandler):
         league_id = fetcher._normalize_league_id(config["LEAGUE_ID"])
         league = yahoofantasy.League(fetcher.ctx, league_id)
         
-        # 獲取對應隊伍
         target_team = None
         for team in league.teams():
-            # 確保獲取的 team_id 為字串比對
             if str(getattr(team, "team_id", "")) == str(target_team_id):
                 target_team = team
                 break
@@ -300,66 +265,63 @@ class InjuryHandler(BaseHandler):
             logging.error(f"[InjuryHandler] 無法在 Yahoo API 獲取對應的 Team ID: {target_team_id}")
             return
             
-        # 篩選傷兵
         injured_players = []
         for player in target_team.roster().players:
             status = getattr(player, "status", None)
             if status and str(status).strip():
                 injured_players.append(player)
                 
-        # 渲染 Flex Message JSON
-        flex_dict = self._build_flex_message(target_manager_name, injured_players)
+        official_name = getattr(target_team, "name", "Unknown Team")
+        flex_dict = self._build_flex_message(target_manager_name, official_name, injured_players)
         
-        # 發送 Flex
         self.reply_flex(event, configuration, f"🏥 {target_manager_name} 的傷兵名單", flex_dict)
+
+    def _abbreviate_player_name(self, full_name: str) -> str:
+        parts = str(full_name).strip().split()
+        if len(parts) >= 2:
+            first_initial = parts[0][0]
+            last_name = " ".join(parts[1:])
+            return f"{first_initial}. {last_name}"
+        return full_name
 
     def _get_status_color(self, status: str) -> str:
         status_upper = str(status).upper()
-        # O / INJ / Out (出賽成疑/確定缺陣)：深紅色 (#922B21)
         if status_upper in ("O", "INJ", "OUT"):
             return "#922B21"
-        # Doubtful (極低機率出賽)：紅橘色 (#D35400)
         elif status_upper in ("DOUBTFUL", "DOU"):
             return "#D35400"
-        # Questionable / DTD (可能缺陣/每日觀察)：橘色 (#E67E22)
         elif status_upper in ("QUESTIONABLE", "QUE", "DTD"):
             return "#E67E22"
-        # Probable / GTD (高機率出賽/賽前決定)：黃橘色/黃色 (#F1C40F)
         elif status_upper in ("PROBABLE", "PRO", "GTD"):
             return "#F1C40F"
-        # 其他狀態 (如 SSP 禁賽)：灰色 (#7F8C8D)
         else:
             return "#7F8C8D"
 
-    def _build_flex_message(self, manager_name: str, players: list) -> dict:
+    def _build_flex_message(self, manager_name: str, official_name: str, players: list) -> dict:
         bubble = {
             "type": "bubble",
-            "header": {
-                "type": "box",
-                "layout": "vertical",
-                "backgroundColor": "#2C3E50",
-                "contents": [
-                    {
-                        "type": "text",
-                        "text": f"🏥 {manager_name} 的傷兵名單",
-                        "weight": "bold",
-                        "size": "lg",
-                        "color": "#FFFFFF"
-                    }
-                ]
-            },
             "body": {
                 "type": "box",
                 "layout": "vertical",
                 "spacing": "md",
-                "contents": []
+                "contents": [
+                    # 1. 玩家資訊標頭 (Header Box) - 置於 Body 內以達白底極簡風
+                    {
+                        "type": "box",
+                        "layout": "vertical",
+                        "spacing": "xs",
+                        "contents": [
+                            {"type": "text", "text": manager_name, "weight": "bold", "size": "xl", "color": "#111111"},
+                            {"type": "text", "text": official_name, "size": "sm", "color": "#555555"}
+                        ]
+                    }
+                ]
             }
         }
         
         body_contents = bubble["body"]["contents"]
         
         if not players:
-            # 全隊健康
             body_contents.append({
                 "type": "text",
                 "text": "🟢 目前全隊球員皆健康！",
@@ -373,9 +335,9 @@ class InjuryHandler(BaseHandler):
 
         # 有傷兵球員，生成列表
         for p in players:
-            name = getattr(p.name, "full", "Unknown Player")
-            pos = getattr(p, "display_position", "Util")
-            team_abbr = getattr(p, "editorial_team_abbr", "NBA")
+            full_name = getattr(p.name, "full", "Unknown Player")
+            abbrev_name = self._abbreviate_player_name(full_name)
+            
             status = getattr(p, "status", "INJ")
             injury_note = getattr(p, "injury_note", "Injured")
             
@@ -387,24 +349,16 @@ class InjuryHandler(BaseHandler):
                 "align": "center",
                 "spacing": "sm",
                 "contents": [
-                    # 1. 姓名
+                    # 1. 姓名縮寫 + 傷勢
                     {
                         "type": "text",
-                        "text": name,
-                        "weight": "bold",
-                        "size": "sm",
-                        "color": "#111111",
-                        "flex": 4
+                        "contents": [
+                            {"type": "span", "text": abbrev_name, "weight": "bold", "size": "sm", "color": "#111111"},
+                            {"type": "span", "text": f" - {injury_note}", "size": "xxs", "color": "#777777"}
+                        ],
+                        "flex": 1
                     },
-                    # 2. 位置與球隊
-                    {
-                        "type": "text",
-                        "text": f"{pos} - {team_abbr}",
-                        "size": "xs",
-                        "color": "#555555",
-                        "flex": 3
-                    },
-                    # 3. 傷病標籤
+                    # 2. 傷病標籤
                     {
                         "type": "box",
                         "layout": "vertical",
@@ -425,15 +379,6 @@ class InjuryHandler(BaseHandler):
                             }
                         ],
                         "flex": 0
-                    },
-                    # 4. 傷病細節
-                    {
-                        "type": "text",
-                        "text": injury_note,
-                        "size": "xxs",
-                        "color": "#777777",
-                        "align": "end",
-                        "flex": 2
                     }
                 ]
             }
@@ -442,96 +387,14 @@ class InjuryHandler(BaseHandler):
         return bubble
 ```
 
-- [ ] **Step 2: 重新運行單元測試確認通過**
+- [ ] **Step 2: 重新執行測試驗證通過**
 
-Run: `.\.venv\Scripts\pytest tests/handlers/test_injury_handler.py -v`
-Expected: PASS
+Run: `.\.venv\Scripts\pytest -v`
+Expected: ALL PASS (149 passed)
 
-- [ ] **Step 3: 提交程式代碼**
+- [ ] **Step 3: 提交變更**
 
 ```bash
 git add src/handlers/injury_handler.py
-git commit -m "feat: implement InjuryHandler logic and color styling"
-```
-
----
-
-### Task 4: 註冊 `InjuryHandler` 至 Dispatcher
-
-**Files:**
-- Modify: `bot.py:72-80`
-
-- [ ] **Step 1: 在 `bot.py` 中引入並註冊 `InjuryHandler`**
-
-打開 `bot.py` 檔案，在文件頭部引入 `InjuryHandler`，並將其註冊至 `CommandDispatcher`：
-
-```python
-# 修改 bot.py
-# 尋找以下引入段落：
-from src.handlers.football_handler import FootballHandler
-# 在其下方加入：
-from src.handlers.injury_handler import InjuryHandler
-
-# 尋找註冊 handler 的段落：
-# dispatcher.register(FootballHandler())
-# 在其下方加入：
-dispatcher.register(InjuryHandler())
-```
-
-- [ ] **Step 2: 執行測試並驗證系統指令包含新指令**
-
-我們可以執行 dispatcher 的指令獲取測試，以確保新的 Handler 已經成功載入並可輸出正確指令說明：
-Run: `.\.venv\Scripts\pytest tests/test_dispatcher_instruction.py -v`
-Expected: PASS
-
-- [ ] **Step 3: 提交修改**
-
-```bash
-git add bot.py
-git commit -m "feat: register InjuryHandler in bot.py"
-```
-
----
-
-### Task 5: 驗證意圖路由 (Intent Router) 與 LLM 轉化
-
-**Files:**
-- Modify: `tests/test_intent_router.py`
-
-- [ ] **Step 1: 新增 LLM 路由測試案例**
-
-我們在 `tests/test_intent_router.py` 尾部加上對 `#傷兵` 自然語言意圖對應至標準指令的驗證，以確保意圖路由功能正常發揮：
-
-```python
-# 在 tests/test_intent_router.py 末尾添加
-
-@patch('src.llm.llm_agent.LLMAgent.analyze_intent')
-def test_router_converts_injury_command_and_dispatches(mock_analyze):
-    dispatcher = MagicMock()
-    router = IntentRouter(dispatcher)
-    
-    # 模擬使用者發問：看韋哥傷兵
-    event = create_mock_event("幫我看一下韋哥有誰受傷", chat_type="user")
-    mock_analyze.return_value = {"is_command": True, "command_text": "#傷兵 韋哥", "reply_text": None}
-    
-    config = Configuration()
-    config.access_token = "dummy_access_token"
-    
-    router.route(event, config)
-    mock_analyze.assert_called_once()
-    # 確保成功轉交 dispatcher 處理，且其內容被置換為 "#傷兵 韋哥"
-    dispatcher.handle.assert_called_once_with(event, config)
-    assert event.message.text == "#傷兵 韋哥"
-```
-
-- [ ] **Step 2: 執行所有測試並確保無 regressions**
-
-Run: `.\.venv\Scripts\pytest -v`
-Expected: ALL PASS
-
-- [ ] **Step 3: 提交修改**
-
-```bash
-git add tests/test_intent_router.py
-git commit -m "test: add integration test for injury command LLM routing"
+git commit -m "feat: simplify injury flex layout to white background and abbreviate names"
 ```
