@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 from pyngrok import ngrok
 from src.config import load_config
 from src.fetcher import YahooFantasyFetcher
-from src.cache_utils import save_league_metadata
+from src.utils.cache_utils import save_league_metadata
 from src.utils.token_utils import is_token_processed
 
 from src.handlers.dispatcher import CommandDispatcher

@@ -12,7 +12,7 @@ from .base_handler import BaseHandler
 
 # Required project imports
 from src.config import load_config
-from src.cache_utils import load_league_metadata, is_empty_data, save_league_metadata
+from src.utils.cache_utils import load_league_metadata, is_empty_data, save_league_metadata
 from src.utils.time_utils import get_pacific_date, get_fantasy_week
 from src.fetcher import YahooFantasyFetcher
 

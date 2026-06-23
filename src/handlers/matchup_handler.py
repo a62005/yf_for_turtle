@@ -6,7 +6,7 @@ from linebot.v3.webhooks import MessageEvent
 from linebot.v3.messaging import ApiClient, MessagingApi, ReplyMessageRequest, FlexMessage, FlexContainer, TextMessage, Configuration
 from .base_handler import BaseHandler
 from src.config import load_config
-from src.cache_utils import load_league_metadata
+from src.utils.cache_utils import load_league_metadata
 from src.fetcher import YahooFantasyFetcher
 from src.utils.time_utils import get_pacific_datetime, get_fantasy_week
 

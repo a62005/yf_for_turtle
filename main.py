@@ -54,7 +54,7 @@ def main():
         if test_week:
             current_week = int(test_week)
         else:
-            from src.cache_utils import load_league_metadata
+            from src.utils.cache_utils import load_league_metadata
             meta = load_league_metadata()
             today_str = get_pacific_date()
             date_to_week = meta.get("date_to_week", {})

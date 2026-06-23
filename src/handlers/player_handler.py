@@ -10,7 +10,7 @@ from linebot.v3.messaging import ApiClient, MessagingApi, ReplyMessageRequest, T
 from .base_handler import BaseHandler
 
 from src.config import load_config
-from src.cache_utils import load_league_metadata
+from src.utils.cache_utils import load_league_metadata
 from src.fetcher import YahooFantasyFetcher
 from src.llm.prompts.player_fuzzy_search import parse_player_nickname
 from src.utils.player_cache import get_cached_player, set_cached_player

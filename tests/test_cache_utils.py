@@ -2,7 +2,7 @@ import pytest
 import os
 import json
 from unittest.mock import patch, mock_open
-from src.cache_utils import _load_cache, _save_cache, is_empty_data, mark_empty_data, save_league_metadata, load_league_metadata
+from src.utils.cache_utils import _load_cache, _save_cache, is_empty_data, mark_empty_data, save_league_metadata, load_league_metadata
 
 @pytest.fixture
 def mock_cache_file(tmp_path):
@@ -37,29 +37,29 @@ def test_save_cache(mock_replace, mock_makedirs):
     assert m().write.called
     mock_replace.assert_called_once_with("dummy_path.tmp", "dummy_path")
 
-@patch("src.cache_utils._load_cache", return_value={"test_key": True})
+@patch("src.utils.cache_utils._load_cache", return_value={"test_key": True})
 def test_is_empty_data_true(mock_load):
     assert is_empty_data("test_key") is True
 
-@patch("src.cache_utils._load_cache", return_value={})
+@patch("src.utils.cache_utils._load_cache", return_value={})
 def test_is_empty_data_false(mock_load):
     assert is_empty_data("test_key") is False
 
-@patch("src.cache_utils._load_cache", return_value={})
-@patch("src.cache_utils._save_cache")
-@patch("src.cache_utils.FileLock")
+@patch("src.utils.cache_utils._load_cache", return_value={})
+@patch("src.utils.cache_utils._save_cache")
+@patch("src.utils.cache_utils.FileLock")
 def test_mark_empty_data(mock_lock, mock_save, mock_load):
     mark_empty_data("new_key")
     # verify save was called with the updated dict
     mock_save.assert_called_once_with({"new_key": True})
 
-@patch("src.cache_utils._load_cache", return_value={"league_id": "123"})
+@patch("src.utils.cache_utils._load_cache", return_value={"league_id": "123"})
 def test_load_league_metadata(mock_load):
     assert load_league_metadata() == {"league_id": "123"}
     mock_load.assert_called_once()
 
-@patch("src.cache_utils._save_cache")
-@patch("src.cache_utils.FileLock")
+@patch("src.utils.cache_utils._save_cache")
+@patch("src.utils.cache_utils.FileLock")
 def test_save_league_metadata(mock_lock, mock_save):
     save_league_metadata({"league_id": "123"})
     

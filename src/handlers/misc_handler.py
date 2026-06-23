@@ -16,7 +16,7 @@ from linebot.v3.messaging import (
 
 from .base_handler import BaseHandler
 from src.config import load_config
-from src.cache_utils import load_league_metadata
+from src.utils.cache_utils import load_league_metadata
 from src.utils.time_utils import get_pacific_date
 
 class MiscHandler(BaseHandler):

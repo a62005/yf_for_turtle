@@ -1,6 +1,6 @@
 import logging
 from datetime import datetime, timedelta
-from src.cache_utils import load_league_metadata, save_league_metadata
+from src.utils.cache_utils import load_league_metadata, save_league_metadata
 from src.fetcher import YahooFantasyFetcher
 
 def generate_dates(start_str: str, end_str: str) -> list[str]:
