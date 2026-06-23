@@ -2,11 +2,19 @@ import os
 from dotenv import load_dotenv
 
 def load_config() -> dict:
+    # 備份由 bot.py 動態設定的 SERVER_URL (例如 ngrok 自動網址)
+    dynamic_server_url = os.environ.get("SERVER_URL")
+    
     # 1. 載入公開的聯盟設定 (不覆蓋系統環境變數)
     load_dotenv("league.env", encoding="utf-8")
     
     # 2. 載入私密設定 (override=True 以便覆蓋 league.env 中的值)
     load_dotenv(".env", override=True, encoding="utf-8")
+    
+    # 若載入後變為空值或空字串，但原先有備份的動態設定，則將其還原
+    current_server_url = os.environ.get("SERVER_URL")
+    if (not current_server_url or current_server_url.strip() == "") and dynamic_server_url:
+        os.environ["SERVER_URL"] = dynamic_server_url
     
     league_id = os.getenv("LEAGUE_ID")
     if not league_id:
