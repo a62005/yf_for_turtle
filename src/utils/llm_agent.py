@@ -1,18 +1,14 @@
-import os
-import json
 import logging
-import requests
-import google.generativeai as genai
+from .llm.factory import LLMProviderFactory
 
 class LLMAgent:
     def __init__(self):
-        # 優先使用通用環境變數 LLM_MODEL，其次相容 GEMINI_MODEL，預設使用 gemini-2.5-flash
-        self.model_name = os.getenv("LLM_MODEL") or os.getenv("GEMINI_MODEL") or "gemini-2.5-flash"
-        logging.info(f"[LLM] 初始化模型: {self.model_name}")
-        
-        # 優先使用通用環境變數 LLM_API_KEY，其次相容 GEMINI_API_KEY
-        self.api_key = os.getenv("LLM_API_KEY") or os.getenv("GEMINI_API_KEY")
-        
+        try:
+            self.provider = LLMProviderFactory.get_provider()
+        except ValueError as e:
+            logging.warning(f"[LLM] 警告：{e} LLM 功能將無法正常運作。")
+            self.provider = None
+
         self.system_prompt = """你是一個擁有多功能、博學且親切的 AI 助手。
 你的主要任務是分析用戶的輸入：
 
@@ -37,81 +33,27 @@ class LLMAgent:
 - command_text: (string | null) 若匹配到指令，輸出轉換後格式完全正確的「#標準指令」；否則為 null。
 - reply_text: (string | null) 若沒有匹配到任何指令意圖，請在此填入直接且完整的回答內容；若有匹配到指令，則為 null。"""
 
-        # 判斷是否使用 Agnes AI 模型
-        self.is_agnes = "agnes" in self.model_name.lower()
-        if not self.is_agnes:
-            if not self.api_key:
-                logging.warning("[LLM] 警告：未設定 LLM_API_KEY 或 GEMINI_API_KEY，LLM 功能將無法正常運作。")
-            genai.configure(api_key=self.api_key)
-            self.model = genai.GenerativeModel(
-                model_name=self.model_name,
-                generation_config={
-                    "response_mime_type": "application/json",
-                    "temperature": 0.2
-                }
-            )
-
     def analyze_intent(self, text: str, commands_desc: str) -> dict:
+        if not self.provider:
+            return {
+                "is_command": False, 
+                "command_text": None, 
+                "reply_text": "系統目前未配置 AI 金鑰，無法為您服務。"
+            }
+
         formatted_system = self.system_prompt.replace("{commands_desc}", commands_desc)
-        
-        if self.is_agnes:
-            model_to_use = self.model_name
-            if model_to_use.lower() == "agnes":
-                model_to_use = "agnes-2.0-flash"
-                
-            api_url = "https://apihub.agnes-ai.com/v1/chat/completions"
-            api_key_to_use = self.api_key or "sk-dummy"
-            headers = {
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {api_key_to_use}"
-            }
-            
-            payload = {
-                "model": model_to_use,
-                "messages": [
-                    {"role": "system", "content": formatted_system},
-                    {"role": "user", "content": text}
-                ],
-                "response_format": {"type": "json_object"},
-                "temperature": 0.2
-            }
-            
-            try:
-                response = requests.post(api_url, json=payload, headers=headers, timeout=15)
-                response.raise_for_status()
-                res_json = response.json()
-                content = res_json["choices"][0]["message"]["content"]
-                data = json.loads(content.strip())
-                return data
-            except requests.exceptions.RequestException as e:
-                logging.error(f"[LLM] 呼叫 Agnes AI 服務失敗: {e}")
+        try:
+            return self.provider.generate_json(text, system_instruction=formatted_system, temperature=0.2)
+        except Exception as e:
+            logging.error(f"[LLM] 意圖解析失敗: {e}")
+            from .llm.agnes import AgnesProvider
+            if isinstance(self.provider, AgnesProvider):
                 return {
                     "is_command": False, 
                     "command_text": None, 
                     "reply_text": "我的大腦暫時離線了，請確認 Agnes AI 服務是否正常！"
                 }
-            except (KeyError, json.JSONDecodeError) as e:
-                logging.error(f"[LLM] 回傳的 JSON 結構解析失敗: {e}")
-                return {
-                    "is_command": False, 
-                    "command_text": None, 
-                    "reply_text": "我剛剛有點神智不清，可以請您再問一次嗎？"
-                }
-        else:
-            # 走原本的 Google 官方 SDK 機制
-            if not self.api_key:
-                return {
-                    "is_command": False, 
-                    "command_text": None, 
-                    "reply_text": "系統目前未配置 AI 金鑰，無法為您服務。"
-                }
-            prompt = f"{formatted_system}\n\n用戶輸入：{text}"
-            try:
-                response = self.model.generate_content(prompt)
-                data = json.loads(response.text.strip())
-                return data
-            except Exception as e:
-                logging.error(f"[LLM] 意圖解析出錯: {e}")
+            else:
                 return {
                     "is_command": False, 
                     "command_text": None, 
