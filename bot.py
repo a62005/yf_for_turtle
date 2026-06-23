@@ -24,6 +24,7 @@ from src.handlers.matchup_handler import MatchupHandler
 from src.handlers.misc_handler import MiscHandler
 from src.handlers.intent_router import IntentRouter
 from src.handlers.football_handler import FootballHandler
+from src.handlers.injury_handler import InjuryHandler
 
 def cleanup_port(port):
     for proc in psutil.process_iter(['pid', 'name']):
@@ -77,6 +78,7 @@ dispatcher.register(UserStatsHandler())
 dispatcher.register(MatchupHandler())
 dispatcher.register(MiscHandler())
 dispatcher.register(FootballHandler())
+dispatcher.register(InjuryHandler())
 
 # Initialize IntentRouter
 intent_router = IntentRouter(dispatcher)
