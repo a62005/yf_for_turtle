@@ -36,7 +36,6 @@ class InjuryHandler(BaseHandler):
         param = param.strip()
         mapping = self._load_team_mapping()
         
-        # 尋找匹配的玩家 Team ID
         target_team_id = None
         target_manager_name = None
         for tid, nickname in mapping.items():
@@ -60,10 +59,8 @@ class InjuryHandler(BaseHandler):
         league_id = fetcher._normalize_league_id(config["LEAGUE_ID"])
         league = yahoofantasy.League(fetcher.ctx, league_id)
         
-        # 獲取對應隊伍
         target_team = None
         for team in league.teams():
-            # 確保獲取的 team_id 為字串比對
             if str(getattr(team, "team_id", "")) == str(target_team_id):
                 target_team = team
                 break
@@ -72,66 +69,63 @@ class InjuryHandler(BaseHandler):
             logging.error(f"[InjuryHandler] 無法在 Yahoo API 獲取對應的 Team ID: {target_team_id}")
             return
             
-        # 篩選傷兵
         injured_players = []
         for player in target_team.roster().players:
             status = getattr(player, "status", None)
             if status and str(status).strip():
                 injured_players.append(player)
                 
-        # 渲染 Flex Message JSON
-        flex_dict = self._build_flex_message(target_manager_name, injured_players)
+        official_name = getattr(target_team, "name", "Unknown Team")
+        flex_dict = self._build_flex_message(target_manager_name, official_name, injured_players)
         
-        # 發送 Flex
         self.reply_flex(event, configuration, f"🏥 {target_manager_name} 的傷兵名單", flex_dict)
+
+    def _abbreviate_player_name(self, full_name: str) -> str:
+        parts = str(full_name).strip().split()
+        if len(parts) >= 2:
+            first_initial = parts[0][0]
+            last_name = " ".join(parts[1:])
+            return f"{first_initial}. {last_name}"
+        return full_name
 
     def _get_status_color(self, status: str) -> str:
         status_upper = str(status).upper()
-        # O / INJ / Out (出賽成疑/確定缺陣)：深紅色 (#922B21)
         if status_upper in ("O", "INJ", "OUT"):
             return "#922B21"
-        # Doubtful (極低機率出賽)：紅橘色 (#D35400)
         elif status_upper in ("DOUBTFUL", "DOU"):
             return "#D35400"
-        # Questionable / DTD (可能缺陣/每日觀察)：橘色 (#E67E22)
         elif status_upper in ("QUESTIONABLE", "QUE", "DTD"):
             return "#E67E22"
-        # Probable / GTD (高機率出賽/賽前決定)：黃橘色/黃色 (#F1C40F)
         elif status_upper in ("PROBABLE", "PRO", "GTD"):
             return "#F1C40F"
-        # 其他狀態 (如 SSP 禁賽)：灰色 (#7F8C8D)
         else:
             return "#7F8C8D"
 
-    def _build_flex_message(self, manager_name: str, players: list) -> dict:
+    def _build_flex_message(self, manager_name: str, official_name: str, players: list) -> dict:
         bubble = {
             "type": "bubble",
-            "header": {
-                "type": "box",
-                "layout": "vertical",
-                "backgroundColor": "#2C3E50",
-                "contents": [
-                    {
-                        "type": "text",
-                        "text": f"🏥 {manager_name} 的傷兵名單",
-                        "weight": "bold",
-                        "size": "lg",
-                        "color": "#FFFFFF"
-                    }
-                ]
-            },
             "body": {
                 "type": "box",
                 "layout": "vertical",
                 "spacing": "md",
-                "contents": []
+                "contents": [
+                    # 1. 玩家資訊標頭 (Header Box) - 置於 Body 內以達白底極簡風
+                    {
+                        "type": "box",
+                        "layout": "vertical",
+                        "spacing": "xs",
+                        "contents": [
+                            {"type": "text", "text": manager_name, "weight": "bold", "size": "xl", "color": "#111111"},
+                            {"type": "text", "text": official_name, "size": "sm", "color": "#555555"}
+                        ]
+                    }
+                ]
             }
         }
         
         body_contents = bubble["body"]["contents"]
         
         if not players:
-            # 全隊健康
             body_contents.append({
                 "type": "text",
                 "text": "🟢 目前全隊球員皆健康！",
@@ -145,9 +139,9 @@ class InjuryHandler(BaseHandler):
 
         # 有傷兵球員，生成列表
         for p in players:
-            name = getattr(p.name, "full", "Unknown Player")
-            pos = getattr(p, "display_position", "Util")
-            team_abbr = getattr(p, "editorial_team_abbr", "NBA")
+            full_name = getattr(p.name, "full", "Unknown Player")
+            abbrev_name = self._abbreviate_player_name(full_name)
+            
             status = getattr(p, "status", "INJ")
             injury_note = getattr(p, "injury_note", "Injured")
             
@@ -159,24 +153,16 @@ class InjuryHandler(BaseHandler):
                 "align": "center",
                 "spacing": "sm",
                 "contents": [
-                    # 1. 姓名
+                    # 1. 姓名縮寫 + 傷勢
                     {
                         "type": "text",
-                        "text": name,
-                        "weight": "bold",
-                        "size": "sm",
-                        "color": "#111111",
-                        "flex": 4
+                        "contents": [
+                            {"type": "span", "text": abbrev_name, "weight": "bold", "size": "sm", "color": "#111111"},
+                            {"type": "span", "text": f" - {injury_note}", "size": "xxs", "color": "#777777"}
+                        ],
+                        "flex": 1
                     },
-                    # 2. 位置與球隊
-                    {
-                        "type": "text",
-                        "text": f"{pos} - {team_abbr}",
-                        "size": "xs",
-                        "color": "#555555",
-                        "flex": 3
-                    },
-                    # 3. 傷病標籤
+                    # 2. 傷病標籤
                     {
                         "type": "box",
                         "layout": "vertical",
@@ -197,15 +183,6 @@ class InjuryHandler(BaseHandler):
                             }
                         ],
                         "flex": 0
-                    },
-                    # 4. 傷病細節
-                    {
-                        "type": "text",
-                        "text": injury_note,
-                        "size": "xxs",
-                        "color": "#777777",
-                        "align": "end",
-                        "flex": 2
                     }
                 ]
             }
