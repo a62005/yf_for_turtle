@@ -71,14 +71,24 @@ def get_target_date(is_offseason: bool = False, end_date: str = None, current_tw
         
     return target_dt.strftime("%Y-%m-%d")
 
-def is_stats_query_allowed(is_offseason: bool = False) -> tuple[bool, str]:
+def is_stats_query_allowed(is_offseason: bool = False, target_date: str = None) -> tuple[bool, str]:
     """
     今日綜合戰績限制在美西打完比賽後才能查詢。
+    優先透過 ESPN Scoreboard API 判斷，若無法判斷則降級退回時段阻擋：
     夏令台北時間 14:00 後允許，冬令台北時間 15:00 後允許。
     """
     if is_offseason:
         return True, ""
         
+    if target_date is None:
+        target_date = get_target_date(is_offseason=is_offseason)
+        
+    # 優先嘗試外部即時狀態監控
+    espn_result = check_nba_game_status(target_date)
+    if espn_result is not None:
+        return espn_result
+        
+    # API 連線或解析異常，降級退回原有的靜態時段阻擋邏輯
     allow_hour = 15 if is_winter_time_pacific() else 14
     
     tw_tz = pytz.timezone("Asia/Taipei")

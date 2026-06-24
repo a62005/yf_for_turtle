@@ -109,3 +109,57 @@ def test_check_nba_game_status_exception():
         from src.utils.time_utils import check_nba_game_status
         result = check_nba_game_status("2026-06-24")
         assert result is None
+
+
+def test_is_stats_query_allowed_offseason():
+    from src.utils.time_utils import is_stats_query_allowed
+    allowed, msg = is_stats_query_allowed(is_offseason=True)
+    assert allowed is True
+    assert msg == ""
+
+
+def test_is_stats_query_allowed_espn_success():
+    from unittest.mock import patch
+    from src.utils.time_utils import is_stats_query_allowed
+    # 模擬 ESPN 回傳阻擋
+    with patch("src.utils.time_utils.check_nba_game_status", return_value=(False, "目前仍有比賽正在進行")):
+        allowed, msg = is_stats_query_allowed(is_offseason=False, target_date="2026-06-24")
+        assert allowed is False
+        assert msg == "currently_in_progress_msg" or msg == "目前仍有比賽正在進行"
+
+
+def test_is_stats_query_allowed_fallback_blocked():
+    from unittest.mock import patch, MagicMock
+    from src.utils.time_utils import is_stats_query_allowed
+    # 模擬 ESPN 失敗 (回傳 None)
+    with patch("src.utils.time_utils.check_nba_game_status", return_value=None):
+        # 模擬冬令時間且台北時間為早上 10 點 (尚未到 15:00)
+        with patch("src.utils.time_utils.is_winter_time_pacific", return_value=True):
+            mock_now = MagicMock()
+            mock_now.hour = 10
+            with patch("src.utils.time_utils.datetime") as mock_datetime:
+                mock_datetime.now.return_value = mock_now
+                mock_datetime.strptime = datetime.strptime # 保持 strptime 正常運作
+                
+                allowed, msg = is_stats_query_allowed(is_offseason=False, target_date="2026-06-24")
+                assert allowed is False
+                assert "請於 15:00 後再進行查詢。" in msg
+
+
+def test_is_stats_query_allowed_fallback_allowed():
+    from unittest.mock import patch, MagicMock
+    from src.utils.time_utils import is_stats_query_allowed
+    # 模擬 ESPN 失敗 (回傳 None)
+    with patch("src.utils.time_utils.check_nba_game_status", return_value=None):
+        # 模擬冬令時間且台北時間為下午 16 點 (已過 15:00)
+        with patch("src.utils.time_utils.is_winter_time_pacific", return_value=True):
+            mock_now = MagicMock()
+            mock_now.hour = 16
+            with patch("src.utils.time_utils.datetime") as mock_datetime:
+                mock_datetime.now.return_value = mock_now
+                mock_datetime.strptime = datetime.strptime
+                
+                allowed, msg = is_stats_query_allowed(is_offseason=False, target_date="2026-06-24")
+                assert allowed is True
+                assert msg == ""
+
