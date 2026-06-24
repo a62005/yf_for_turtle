@@ -168,3 +168,55 @@ def test_execute_lock_file_exists(mock_open, mock_exists, mock_is_empty, mock_me
     
     reply_req = mock_messaging_api.return_value.reply_message.call_args[0][0]
     assert reply_req.messages[0].text == "數據更新中"
+
+@patch("src.handlers.stats_handler.load_config", return_value={"DEFAULT_SEASON_START": "2025-10-21", "LEAGUE_ID": "123"})
+@patch("src.handlers.stats_handler.load_league_metadata")
+@patch("src.handlers.stats_handler.get_pacific_date", return_value="2025-11-15")
+@patch("src.utils.time_utils.is_stats_query_allowed", return_value=(False, "目前仍有比賽正在進行"))
+@patch("src.handlers.stats_handler.ApiClient")
+@patch("src.handlers.stats_handler.MessagingApi")
+@patch("src.handlers.stats_handler.is_empty_data", return_value=False)
+@patch("os.path.exists", return_value=False)
+def test_execute_current_week_blocked(mock_exists, mock_is_empty, mock_messaging_api, mock_api_client, mock_allowed, mock_get_pacific, mock_load_meta, mock_load_config, mock_event, mock_config):
+    # 當前日期 2025-11-15 應為第 4 週 (從 2025-10-21 計算)
+    mock_load_meta.return_value = {
+        "start_date": "2025-10-21", 
+        "end_date": "2026-04-05", 
+        "end_week": 23,
+        "week_dates": {"3": "2025-11-09", "4": "2025-11-16"}
+    }
+    
+    # 用戶查詢當前週 `#戰績W4`
+    mock_event.message.text = "#戰績W4"
+    handler = StatsHandler()
+    handler.execute(mock_event, mock_config)
+    
+    # 預期被阻擋，並發送錯誤提示
+    reply_req = mock_messaging_api.return_value.reply_message.call_args[0][0]
+    assert reply_req.messages[0].text == "目前仍有比賽正在進行"
+
+@patch("src.handlers.stats_handler.load_config", return_value={"DEFAULT_SEASON_START": "2025-10-21", "LEAGUE_ID": "123"})
+@patch("src.handlers.stats_handler.load_league_metadata")
+@patch("src.handlers.stats_handler.get_pacific_date", return_value="2025-11-15")
+@patch("src.utils.time_utils.is_stats_query_allowed", return_value=(False, "目前仍有比賽正在進行"))
+@patch("src.handlers.stats_handler.ApiClient")
+@patch("src.handlers.stats_handler.MessagingApi")
+@patch("src.handlers.stats_handler.is_empty_data", return_value=False)
+@patch("os.path.exists", return_value=True) # 歷史週查詢通常會有圖片快取
+def test_execute_past_week_not_blocked(mock_exists, mock_is_empty, mock_messaging_api, mock_api_client, mock_allowed, mock_get_pacific, mock_load_meta, mock_load_config, mock_event, mock_config):
+    mock_load_meta.return_value = {
+        "start_date": "2025-10-21", 
+        "end_date": "2026-04-05", 
+        "end_week": 23,
+        "week_dates": {"3": "2025-11-09", "4": "2025-11-16"}
+    }
+    
+    # 用戶查詢歷史週 `#戰績W3` (當前是第 4 週)
+    mock_event.message.text = "#戰績W3"
+    handler = StatsHandler()
+    handler.execute(mock_event, mock_config)
+    
+    # 歷史查詢不應呼叫 is_stats_query_allowed，且因為有圖片快取，正常發送圖片
+    reply_req = mock_messaging_api.return_value.reply_message.call_args[0][0]
+    assert hasattr(reply_req.messages[0], 'original_content_url')
+

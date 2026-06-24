@@ -173,10 +173,13 @@ class StatsHandler(BaseHandler):
                 MessagingApi(api_client).reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text="查無當天數據")]))
             return
 
-        is_current = cmd_type == "combined"
-        if is_current:
+        is_today_query = (cmd_type == "combined")
+        current_week = date_to_week.get(today_pacific) or get_fantasy_week(start_date, today_dt)
+        is_current_week_query = (cmd_type == "specific_week" and target_week == current_week)
+
+        if is_today_query or is_current_week_query:
             from src.utils.time_utils import is_stats_query_allowed
-            allowed, err_msg = is_stats_query_allowed(is_offseason=is_offseason)
+            allowed, err_msg = is_stats_query_allowed(is_offseason=is_offseason, target_date=today_pacific)
             if not allowed:
                 with ApiClient(configuration) as api_client:
                     MessagingApi(api_client).reply_message(

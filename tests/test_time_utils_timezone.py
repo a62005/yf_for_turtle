@@ -41,6 +41,8 @@ def test_get_target_date_standard_boundaries(mocker):
 def test_is_stats_query_allowed_dst(mocker):
     # 模擬為夏令時 (限時 14:00)
     mocker.patch("src.utils.time_utils.is_winter_time_pacific", return_value=False)
+    # 模擬外部 API 回傳 None (走降級備援機制)
+    mocker.patch("src.utils.time_utils.check_nba_game_status", return_value=None)
     
     # 模擬台北時間 13:59
     mock_dt = datetime(2026, 4, 5, 13, 59, 0, tzinfo=pytz.timezone("Asia/Taipei"))
@@ -58,6 +60,8 @@ def test_is_stats_query_allowed_dst(mocker):
 def test_is_stats_query_allowed_standard(mocker):
     # 模擬為冬令時 (限時 15:00)
     mocker.patch("src.utils.time_utils.is_winter_time_pacific", return_value=True)
+    # 模擬外部 API 回傳 None (走降級備援機制)
+    mocker.patch("src.utils.time_utils.check_nba_game_status", return_value=None)
     
     # 模擬台北時間 14:59
     mock_dt = datetime(2026, 4, 5, 14, 59, 0, tzinfo=pytz.timezone("Asia/Taipei"))
