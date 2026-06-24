@@ -88,3 +88,58 @@ def is_stats_query_allowed(is_offseason: bool = False) -> tuple[bool, str]:
         return False, f"請於 {allow_hour}:00 後再進行查詢。"
     return True, ""
 
+
+def check_nba_game_status(date_str: str) -> tuple[bool, str] | None:
+    """
+    透過 ESPN Scoreboard API 即時檢查指定日期的 NBA 比賽狀態。
+    參數:
+        date_str: 格式為 YYYY-MM-DD 的日期字串
+    回傳:
+        tuple[bool, str]: (allowed, err_msg)
+        None: 當 API 請求或解析發生異常時，回傳 None 以便上層進行時段降級備援。
+    """
+    import requests
+    import logging
+
+    try:
+        espn_date = date_str.replace("-", "")
+        url = f"https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard?dates={espn_date}"
+        
+        response = requests.get(url, timeout=3)
+        response.raise_for_status()
+        data = response.json()
+        
+        events = data.get("events", [])
+        if not events:
+            return True, ""
+            
+        n_pre = 0
+        n_in = 0
+        n_post = 0
+        
+        for event in events:
+            status = event.get("status", {})
+            status_type = status.get("type", {})
+            state = status_type.get("state")  # 'pre', 'in', 'post'
+            
+            if state == "pre":
+                n_pre += 1
+            elif state == "in":
+                n_in += 1
+            elif state == "post":
+                n_post += 1
+                
+        if n_in > 0:
+            return False, "目前仍有比賽正在進行"
+        elif n_pre > 0:
+            if n_post > 0:
+                return False, "今日比賽尚未全部結束，請在所有比賽結束後再進行查詢"
+            else:
+                return False, "今日比賽尚未開始"
+        else:
+            return True, ""
+            
+    except Exception as e:
+        logging.warning(f"ESPN Scoreboard API 請求或解析失敗: {e}，將降級採用靜態時間阻擋規則。")
+        return None
+
