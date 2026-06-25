@@ -99,11 +99,11 @@ def test_execute_success_with_injuries(mock_config):
                     assert header_box["contents"][1]["text"] == "韋哥隊"
                     
                     # 2. 驗證球員數據列 (Curry 應該被縮寫為 S. Curry，並與 - Knee 合併)
-                    player_row = body_contents[1]
-                    name_span_box = player_row["contents"][0]
-                    assert name_span_box["type"] == "text"
-                    assert name_span_box["contents"][0]["text"] == "S. Curry"
-                    assert name_span_box["contents"][1]["text"] == " - Knee"
+                    rows_box = body_contents[2]
+                    player_row = rows_box["contents"][0]
+                    name_text_box = player_row["contents"][0]
+                    assert name_text_box["type"] == "text"
+                    assert name_text_box["text"] == "S. Curry - Knee"
                     
                     # 3. 驗證狀態標籤的背景顏色 (O 為深紅)
                     status_box = player_row["contents"][1]
@@ -137,4 +137,59 @@ def test_execute_success_all_healthy(mock_config):
                     flex_dict = mock_reply.call_args[0][3]
                     
                     body_contents = flex_dict["body"]["contents"]
-                    assert "目前全隊球員皆健康！" in body_contents[1]["text"]
+                    assert "目前全隊球員皆健康！" in body_contents[2]["contents"][0]["text"]
+
+@patch("src.handlers.injury_handler.load_config", return_value={"LEAGUE_ID": "12345"})
+def test_execute_api_failure(mock_config):
+    handler = InjuryHandler()
+    event = MagicMock()
+    event.message.text = "#傷兵 韋哥"
+    
+    with patch.object(handler, "_load_team_mapping", return_value={"1": "韋哥"}):
+        with patch("src.handlers.injury_handler.YahooFantasyFetcher") as mock_fetcher:
+            mock_fetcher.side_effect = Exception("Network Error")
+            
+            with patch.object(handler, "reply_text") as mock_reply_text:
+                handler.execute(event, MagicMock())
+                
+                # 這裡使用任何 MagicMock 作為 configuration 的斷言
+                mock_reply_text.assert_called_once()
+                args = mock_reply_text.call_args[0]
+                assert args[0] == event
+                assert args[2] == "獲取傷兵名單失敗，請稍後再試"
+
+@patch("src.handlers.injury_handler.load_config", return_value={"LEAGUE_ID": "12345"})
+def test_execute_player_without_name(mock_config):
+    handler = InjuryHandler()
+    event = MagicMock()
+    event.message.text = "#傷兵 韋哥"
+    
+    class EmptyPlayer:
+        def __init__(self, status="O", injury_note="Knee"):
+            self.status = status
+            self.injury_note = injury_note
+            
+    players = [EmptyPlayer()]
+    mock_team = MockTeam("韋哥隊", "1", players)
+    mock_ctx = MagicMock()
+    mock_league = MockLeague([mock_team])
+    
+    with patch.object(handler, "_load_team_mapping", return_value={"1": "韋哥"}):
+        with patch("src.handlers.injury_handler.YahooFantasyFetcher") as mock_fetcher:
+            fetcher_inst = mock_fetcher.return_value
+            fetcher_inst.ctx = mock_ctx
+            fetcher_inst._normalize_league_id.return_value = "nba.l.12345"
+            
+            with patch("yahoofantasy.League", return_value=mock_league):
+                with patch.object(handler, "reply_flex") as mock_reply:
+                    handler.execute(event, MagicMock())
+                    
+                    mock_reply.assert_called_once()
+                    flex_dict = mock_reply.call_args[0][3]
+                    
+                    body_contents = flex_dict["body"]["contents"]
+                    rows_box = body_contents[2]
+                    player_row = rows_box["contents"][0]
+                    name_text_box = player_row["contents"][0]
+                    assert "Unknown Player" in name_text_box["text"]
+

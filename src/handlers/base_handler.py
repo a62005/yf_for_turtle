@@ -5,6 +5,7 @@ from abc import ABC, abstractmethod
 from linebot.v3.webhooks import MessageEvent
 from linebot.v3.messaging import ApiClient, MessagingApi, ReplyMessageRequest, FlexMessage, FlexContainer, Configuration
 from src.config import load_config
+from src.visualizer.flex_builder import build_button_menu_card
 
 class BaseHandler(ABC):
     """Base interface for all bot message handlers."""
@@ -34,6 +35,8 @@ class BaseHandler(ABC):
                     return json.load(f)
             except Exception as e:
                 logging.error(f"Failed to load team mapping in BaseHandler: {e}")
+        else:
+            logging.warning(f"Team mapping file does not exist: {mapping_file}")
         return {}
 
     def reply_flex(self, event: MessageEvent, configuration: Configuration, alt_text: str, flex_dict: dict) -> None:
@@ -44,6 +47,17 @@ class BaseHandler(ABC):
                 ReplyMessageRequest(
                     reply_token=event.reply_token,
                     messages=[FlexMessage(alt_text=alt_text, contents=flex_container)]
+                )
+            )
+
+    def reply_text(self, event: MessageEvent, configuration: Configuration, text: str) -> None:
+        """Reply to user with a LINE Text Message."""
+        from linebot.v3.messaging import TextMessage
+        with ApiClient(configuration) as api_client:
+            MessagingApi(api_client).reply_message(
+                ReplyMessageRequest(
+                    reply_token=event.reply_token,
+                    messages=[TextMessage(text=text)]
                 )
             )
 
@@ -64,37 +78,7 @@ class BaseHandler(ABC):
         subtitle = "請點擊下方玩家，將自動搜尋該數據"
         command_prefix = "#對戰" if is_matchup else "#玩家"
 
-        buttons = []
-        for name in nicknames:
-            buttons.append({
-                "type": "button",
-                "action": {
-                    "type": "message",
-                    "label": name,
-                    "text": f"{command_prefix} {name}"
-                },
-                "style": "secondary",
-                "height": "sm"
-            })
-
-        flex_dict = {
-            "type": "bubble",
-            "header": {
-                "type": "box",
-                "layout": "vertical",
-                "spacing": "xs",
-                "contents": [
-                    {"type": "text", "text": title, "weight": "bold", "size": "lg", "color": "#111111"},
-                    {"type": "text", "text": subtitle, "size": "xs", "color": "#777777"}
-                ]
-            },
-            "body": {
-                "type": "box",
-                "layout": "vertical",
-                "spacing": "sm",
-                "contents": buttons
-            }
-        }
+        buttons = [(name, f"{command_prefix} {name}") for name in nicknames]
+        flex_dict = build_button_menu_card(title, subtitle, buttons)
 
         self.reply_flex(event, configuration, f"{title}選單", flex_dict)
-
