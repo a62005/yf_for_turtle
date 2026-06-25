@@ -33,14 +33,14 @@ def mark_empty_data(key: str):
         cache[key] = True
         _save_cache(cache, path)
 
-def save_league_metadata(data: dict):
+def save_league_metadata(data: dict, league_id: str = None):
     """Save league metadata with a timestamp."""
-    path = get_league_metadata_path()
+    path = get_league_metadata_path(league_id)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with FileLock(path + ".lock"):
         data["last_updated"] = datetime.now().isoformat()
         _save_cache(data, path)
 
-def load_league_metadata() -> dict:
+def load_league_metadata(league_id: str = None) -> dict:
     """Load league metadata from cache."""
-    return _load_cache(get_league_metadata_path())
+    return _load_cache(get_league_metadata_path(league_id))
