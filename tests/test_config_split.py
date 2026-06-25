@@ -21,15 +21,15 @@ def test_config_load_priority(tmp_path, monkeypatch):
     
     # 建立測試用的 env 檔案
     league_env = d / "league.env"
-    league_env.write_text("LEAGUE_ID=123\nSEASON_START_DATE=2025-01-01")
+    league_env.write_text("SEASON_START_DATE=2025-01-01")
     
     private_env = d / ".env"
-    private_env.write_text("LEAGUE_ID=456\nYAHOO_CLIENT_ID=secret_token")
+    private_env.write_text("SEASON_START_DATE=2025-01-02\nYAHOO_CLIENT_ID=secret_token")
     
     # 執行載入
     config = load_config()
     
     # 驗證覆蓋與合併邏輯
-    assert config["LEAGUE_ID"] == "456" # .env 應覆蓋 league.env
-    assert config["SEASON_START_DATE"] == "2025-01-01" # 來自 league.env
+    assert config["LEAGUE_ID"] is None # 環境變數應被忽略
+    assert config["SEASON_START_DATE"] == "2025-01-02" # .env 應覆蓋 league.env
     assert config["YAHOO_CLIENT_ID"] == "secret_token" # 來自 .env

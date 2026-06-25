@@ -12,10 +12,8 @@ def load_config() -> dict:
     if (not current_server_url or current_server_url.strip() == "") and dynamic_server_url:
         os.environ["SERVER_URL"] = dynamic_server_url
     
-    # 讀取環境變數
-    league_id = os.getenv("LEAGUE_ID")
-    
-    # 優先讀取動態設定 data/security/league_config.json
+    # 僅從動態設定檔 data/security/league_config.json 讀取聯盟 ID，不再從環境變數或 env 讀取
+    league_id = None
     security_file = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "security", "league_config.json"))
     if os.path.exists(security_file):
         try:
