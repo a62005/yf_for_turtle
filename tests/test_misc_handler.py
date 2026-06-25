@@ -160,14 +160,22 @@ def test_execute_prize(mock_messaging_api, mock_api_client, mock_load_config, mo
     mock_get_pacific.return_value = "2026-05-29"
     
     # 1. Missing PRIZE_IMAGE_PATH or SERVER_URL -> silently ignore
-    mock_load_config.return_value = {"PRIZE_IMAGE_PATH": None, "SERVER_URL": "http://localhost:5000"}
-    handler.execute(mock_event, mock_config)
-    mock_api_client.assert_not_called()
+    with patch("os.path.exists", return_value=False):
+        mock_load_config.return_value = {"PRIZE_IMAGE_PATH": None, "SERVER_URL": "http://localhost:5000"}
+        handler.execute(mock_event, mock_config)
+        mock_api_client.assert_not_called()
+    
+    # Reset mock for the next case
+    mock_api_client.reset_mock()
     
     # 2. Path not existing -> silently ignore
-    mock_load_config.return_value = {"PRIZE_IMAGE_PATH": "non_existent.png", "SERVER_URL": "http://localhost:5000"}
-    handler.execute(mock_event, mock_config)
-    mock_api_client.assert_not_called()
+    with patch("os.path.exists", return_value=False):
+        mock_load_config.return_value = {"PRIZE_IMAGE_PATH": "non_existent.png", "SERVER_URL": "http://localhost:5000"}
+        handler.execute(mock_event, mock_config)
+        mock_api_client.assert_not_called()
+    
+    # Reset mock for the next case
+    mock_api_client.reset_mock()
     
     # 3. Path exists -> Reply ImageMessage
     with patch("os.path.exists", return_value=True):

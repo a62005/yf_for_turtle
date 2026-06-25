@@ -31,8 +31,8 @@ class BaseHandler(ABC):
 
     def _load_team_mapping(self) -> dict:
         """Load and return the team mapping from json config file."""
-        config = load_config()
-        mapping_file = config.get("TEAM_MAPPING_FILE", "team_mapping.json")
+        from src.utils.path_utils import get_league_team_mapping_path
+        mapping_file = get_league_team_mapping_path()
         if os.path.exists(mapping_file):
             try:
                 with open(mapping_file, "r", encoding="utf-8") as f:

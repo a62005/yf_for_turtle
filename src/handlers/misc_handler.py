@@ -134,27 +134,35 @@ class MiscHandler(BaseHandler):
 
     def _handle_prize(self, event: MessageEvent, configuration: Configuration) -> None:
         config = load_config()
-        prize_image_path = config.get("PRIZE_IMAGE_PATH")
-        if not prize_image_path:
-            logging.info("PRIZE_IMAGE_PATH not configured, ignoring")
-            return
-            
-        # Resolve path in case it is relative to the project root
-        if not os.path.exists(prize_image_path):
-            project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-            resolved_path = os.path.join(project_root, prize_image_path)
-            if not os.path.exists(resolved_path):
-                logging.info(f"Prize image path does not exist: {prize_image_path} (resolved: {resolved_path}), ignoring")
-                return
-            prize_image_path = resolved_path
-            
+        prize_image_path = config.get("PRIZE_IMAGE_PATH") or "data/images/bonus.png"
+        
+        from src.utils.path_utils import get_league_image_dir
+        league_img_dir = get_league_image_dir()
+        filename = os.path.basename(prize_image_path)
+        img_path = os.path.join(league_img_dir, filename)
+        
+        if not os.path.exists(img_path):
+            if os.path.exists(prize_image_path):
+                img_path = prize_image_path
+            else:
+                project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+                resolved_path = os.path.join(project_root, prize_image_path)
+                if os.path.exists(resolved_path):
+                    img_path = resolved_path
+                else:
+                    default_bonus = os.path.join(project_root, "data", "images", "bonus.png")
+                    if os.path.exists(default_bonus):
+                        img_path = default_bonus
+                    else:
+                        logging.info("Prize image path does not exist anywhere, ignoring")
+                        return
+                        
         server_url = config.get("SERVER_URL")
         if not server_url:
             logging.info("SERVER_URL not configured, ignoring")
             return
             
         server_url = server_url.rstrip("/")
-        filename = os.path.basename(prize_image_path)
         
         if server_url.startswith("http://"):
             server_url = server_url.replace("http://", "https://")
