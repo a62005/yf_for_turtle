@@ -38,6 +38,5 @@ def load_config() -> dict:
         "NEXT_SEASON_START_DATE": os.getenv("NEXT_SEASON_START_DATE"),
         "DRAFT_DATE": os.getenv("DRAFT_DATE"),
         "PRIZE_IMAGE_PATH": os.getenv("PRIZE_IMAGE_PATH"),
-        "MAX_EVENT_DELAY_SECONDS": os.getenv("MAX_EVENT_DELAY_SECONDS", "10.0"),
         "ENABLE_FOOTBALL_ANALYSIS": os.getenv("ENABLE_FOOTBALL_ANALYSIS", "False").lower() in ("true", "1", "yes")
     }

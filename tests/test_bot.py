@@ -13,13 +13,11 @@ def mock_event():
     return event
 
 @patch("bot.is_token_processed", return_value=False)
-@patch("bot.load_config")
 @patch("bot.intent_router")
 @patch("time.time")
-def test_handle_message_timeout_ignored(mock_time, mock_intent_router, mock_load_config, mock_is_processed, mock_event):
+def test_handle_message_timeout_ignored(mock_time, mock_intent_router, mock_is_processed, mock_event):
     # Event is 1672531199.0s. Now is 1672531220.0s -> 21s delay (> 10s max)
     mock_time.return_value = 1672531220.0
-    mock_load_config.return_value = {"MAX_EVENT_DELAY_SECONDS": "10.0"}
     
     # Late import to prevent side effects before patching
     from bot import handle_message
@@ -29,13 +27,11 @@ def test_handle_message_timeout_ignored(mock_time, mock_intent_router, mock_load
     mock_intent_router.route.assert_not_called()
 
 @patch("bot.is_token_processed", return_value=False)
-@patch("bot.load_config")
 @patch("bot.intent_router")
 @patch("time.time")
-def test_handle_message_under_timeout_processed(mock_time, mock_intent_router, mock_load_config, mock_is_processed, mock_event):
+def test_handle_message_under_timeout_processed(mock_time, mock_intent_router, mock_is_processed, mock_event):
     # Event is 1672531199.0s. Now is 1672531204.0s -> 5s delay (< 10s max)
     mock_time.return_value = 1672531204.0
-    mock_load_config.return_value = {"MAX_EVENT_DELAY_SECONDS": "10.0"}
     
     import bot
     bot.handle_message(mock_event)

@@ -121,11 +121,7 @@ def handle_message(event):
     event_time_ms = getattr(event, "timestamp", None)
     if event_time_ms:
         delay_sec = (now_ms - event_time_ms) / 1000.0
-        config = load_config()
-        try:
-            max_delay = float(config.get("MAX_EVENT_DELAY_SECONDS", 10.0))
-        except ValueError:
-            max_delay = 10.0
+        max_delay = 10.0
             
         if delay_sec > max_delay:
             logging.warning(
