@@ -73,3 +73,24 @@ class LLMAgent:
                 "reply_text": "我的大腦暫時離線了，請稍後再試！",
                 "error": True
             }
+
+    def search_nba_season_start(self, year: int) -> dict:
+        """使用 LLM 搭配 Google 搜尋，查詢特定年份/賽季的 NBA 開季日期。"""
+        if not self.provider or not hasattr(self.provider, "generate_json_with_search"):
+            return {"success": False, "start_date": None}
+            
+        prompt = (
+            f"請搜尋網路，找出 NBA {year}-{str(year+1)[2:]} 新賽季（或下一個即將開始的賽季）官方公佈的開季日期與時間。"
+            "請嚴格回傳 JSON 格式，欄位包含：\n"
+            "- 'start_date': 字串，格式必須為 'YYYY-MM-DD HH:MM:SS' (例如 '2026-10-20 08:00:00'，時間若無精確公佈請使用上午8點 '08:00:00')。\n"
+            "- 'success': 布林值，代表是否找到該球季精確的官方開季日期。"
+        )
+        
+        try:
+            result = self.provider.generate_json_with_search(prompt)
+            return result
+        except Exception as e:
+            import logging
+            logging.error(f"[LLM] 搜尋開季日期失敗: {e}")
+            return {"success": False, "start_date": None}
+
