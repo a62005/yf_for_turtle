@@ -85,27 +85,29 @@ def test_build_matchup_comparison_card_special_header():
     body_contents = card["body"]["contents"]
     
     # Check matchup header structure
-    header = body_contents[0]
-    assert header["contents"][0]["text"] == "WEEK 6 MATCHUP"
-    assert header["contents"][0]["size"] == "xl"
-    assert header["contents"][1]["text"] == "My Team VS Opp Team"
-    assert header["contents"][1]["size"] == "sm"
+    title_box = body_contents[0]
+    assert title_box["text"] == "WEEK 6 MATCHUP"
+    assert title_box["size"] == "xxs"
+    assert title_box["color"] == "#cccccc"
     
-    # Check matchup_info_box in body
-    matchup_info_box = body_contents[1]
+    nickname_box = body_contents[1]
+    assert nickname_box["contents"][0]["text"] == "My Team"
+    assert nickname_box["contents"][1]["text"] == "VS"
+    assert nickname_box["contents"][2]["text"] == "Opp Team"
     
+    team_name_box = body_contents[2]
+    assert team_name_box["contents"][0]["text"] == "My Official Co."
+    assert team_name_box["contents"][2]["text"] == "Opp Official Co."
+    
+    score_box = body_contents[3]
     # scores (my_win = wins 5 > losses 4, so wins should have size 20px, losses size 18px)
-    assert matchup_info_box["contents"][0]["contents"][0]["text"] == "5"
-    assert matchup_info_box["contents"][0]["contents"][0]["size"] == "20px"
-    assert matchup_info_box["contents"][0]["contents"][2]["text"] == "4"
-    assert matchup_info_box["contents"][0]["contents"][2]["size"] == "18px"
-    
-    # official name row
-    assert matchup_info_box["contents"][1]["contents"][0]["text"] == "My Official Co."
-    assert matchup_info_box["contents"][1]["contents"][1]["text"] == "Opp Official Co."
+    assert score_box["contents"][0]["text"] == "5"
+    assert score_box["contents"][0]["size"] == "20px"
+    assert score_box["contents"][2]["text"] == "4"
+    assert score_box["contents"][2]["size"] == "18px"
     
     # Check comparison rows
-    rows_box = body_contents[2]
+    rows_box = body_contents[4]
     # Row 0: FGM/A is aux row (value sizes should be xs)
     row0 = rows_box["contents"][0]
     assert row0["contents"][0]["text"] == "25/50"

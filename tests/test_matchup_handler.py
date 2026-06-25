@@ -158,28 +158,41 @@ def test_format_matchup_stats():
     
     body = bubble["body"]["contents"]
     
-    # 驗證 Header 層：WEEK 24 MATCHUP 且 副標題為 韋哥 VS Jerry
-    header_box = body[0]
-    assert header_box["contents"][0]["text"] == "WEEK 24 MATCHUP"
-    assert header_box["contents"][0]["size"] == "xl"
-    assert header_box["contents"][1]["text"] == "韋哥 VS Jerry"
-    assert header_box["contents"][1]["size"] == "sm"
+    # 驗證 Header 第一層：週次標題
+    title_box = body[0]
+    assert title_box["text"] == "WEEK 24 MATCHUP"
+    assert title_box["size"] == "xxs"
+    assert title_box["color"] == "#cccccc"
+
+    # 驗證 Header 第二層：玩家暱稱 (韋哥 VS Jerry)
+    nickname_box = body[1]
+    assert nickname_box["contents"][0]["text"] == "韋哥"
+    assert nickname_box["contents"][0]["weight"] == "bold"
+    assert nickname_box["contents"][0]["size"] == "xl"
+    assert nickname_box["contents"][0]["color"] == "#111111"
     
-    # 驗證 比分與官方隊名 Box (位於 body[1])
-    matchup_info_box = body[1]
+    assert nickname_box["contents"][1]["text"] == "VS"
+    assert nickname_box["contents"][1]["weight"] == "bold"
+    assert nickname_box["contents"][1]["size"] == "sm"
+    assert nickname_box["contents"][1]["color"] == "#aaaaaa"
     
-    # 官方隊名
-    team_name_box = matchup_info_box["contents"][1]
+    assert nickname_box["contents"][2]["text"] == "Jerry"
+    assert nickname_box["contents"][2]["weight"] == "bold"
+    assert nickname_box["contents"][2]["size"] == "xl"
+    assert nickname_box["contents"][2]["color"] == "#111111"
+    
+    # 驗證 Header 第三層：官方隊名
+    team_name_box = body[2]
     assert team_name_box["contents"][0]["text"] == "Vigo's Superteam"
     assert team_name_box["contents"][0]["size"] == "xxs"
     assert team_name_box["contents"][0]["color"] == "#999999"
     
-    assert team_name_box["contents"][1]["text"] == "Jerry's Awesome"
-    assert team_name_box["contents"][1]["size"] == "xxs"
-    assert team_name_box["contents"][1]["color"] == "#999999"
+    assert team_name_box["contents"][2]["text"] == "Jerry's Awesome"
+    assert team_name_box["contents"][2]["size"] == "xxs"
+    assert team_name_box["contents"][2]["color"] == "#999999"
     
-    # 比分對決 (5:4，我方領先大黑 20px/bold/#111111，落後小灰 18px/regular/#aaaaaa)
-    score_box = matchup_info_box["contents"][0]
+    # 驗證 Header 第四層：比分對決 (5:4，我方領先大黑 20px/bold/#111111，落後小灰 18px/regular/#aaaaaa)
+    score_box = body[3]
     assert score_box["contents"][0]["text"] == "5"
     assert score_box["contents"][0]["size"] == "20px"
     assert score_box["contents"][0]["weight"] == "bold"
@@ -191,7 +204,7 @@ def test_format_matchup_stats():
     assert score_box["contents"][2]["color"] == "#aaaaaa"
     
     # 驗證 Body 11 行指標 (如 FG%，我方贏 -> 我方大黑，對手小灰)
-    fg_row = body[2]["contents"][1] # index 2 is the box containing rows, index 1 is FG% row
+    fg_row = body[4]["contents"][1] # index 4 is the box containing rows, index 1 is FG% row
     assert fg_row["contents"][0]["text"] == "51.4%"
     assert fg_row["contents"][0]["weight"] == "bold"
     assert fg_row["contents"][0]["size"] == "16px"

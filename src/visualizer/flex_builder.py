@@ -190,16 +190,39 @@ def build_matchup_comparison_card(title: str, subtitle: dict | str = None, compa
         dict: LINE Flex bubble message.
     """
     body_contents = []
-    
-    if isinstance(subtitle, dict):
-        subtitle_str = f"{subtitle.get('my_nickname', '')} VS {subtitle.get('opp_nickname', '')}"
-    else:
-        subtitle_str = subtitle
-
-    body_contents.append(_create_header(title, subtitle_str))
 
     if isinstance(subtitle, dict):
-        # Matchup Score and Team Officials moved to Body
+        # 週次標題 (E.g. WEEK 6 MATCHUP)
+        body_contents.append({
+            "type": "text",
+            "text": title,
+            "weight": "bold",
+            "size": "xxs",
+            "color": "#cccccc",
+            "align": "center",
+            "margin": "xs"
+        })
+        # 第一層：玩家中文暱稱 VS
+        body_contents.append({
+            "type": "box",
+            "layout": "horizontal",
+            "contents": [
+                {"type": "text", "text": subtitle.get("my_nickname", ""), "weight": "bold", "size": "xl", "color": "#111111", "flex": 4},
+                {"type": "text", "text": "VS", "align": "center", "weight": "bold", "size": "sm", "color": "#aaaaaa", "flex": 2},
+                {"type": "text", "text": subtitle.get("opp_nickname", ""), "weight": "bold", "size": "xl", "color": "#111111", "align": "end", "flex": 4}
+            ]
+        })
+        # 第二層：Fantasy 官方隊名
+        body_contents.append({
+            "type": "box",
+            "layout": "horizontal",
+            "contents": [
+                {"type": "text", "text": subtitle.get("my_official", ""), "size": "xxs", "color": "#999999", "flex": 5},
+                {"type": "text", "text": " ", "size": "xxs", "flex": 1},
+                {"type": "text", "text": subtitle.get("opp_official", ""), "size": "xxs", "color": "#999999", "align": "end", "flex": 5}
+            ]
+        })
+        # 第三層：即時比分對決
         wins_val = subtitle.get("wins", 0)
         losses_val = subtitle.get("losses", 0)
         try:
@@ -219,69 +242,17 @@ def build_matchup_comparison_card(title: str, subtitle: dict | str = None, compa
             my_score_style = {"size": "20px", "weight": "bold", "color": "#111111"}
             opp_score_style = {"size": "20px", "weight": "bold", "color": "#111111"}
 
-        score_row = {
-            "type": "box",
-            "layout": "horizontal",
-            "alignItems": "center",
-            "contents": [
-                {
-                    "type": "text",
-                    "text": str(wins_val),
-                    "size": my_score_style["size"],
-                    "weight": my_score_style["weight"],
-                    "color": my_score_style["color"],
-                    "flex": 4
-                },
-                {
-                    "type": "text",
-                    "text": ":",
-                    "size": "md",
-                    "weight": "bold",
-                    "color": "#cccccc",
-                    "align": "center",
-                    "flex": 2
-                },
-                {
-                    "type": "text",
-                    "text": str(losses_val),
-                    "size": opp_score_style["size"],
-                    "weight": opp_score_style["weight"],
-                    "color": opp_score_style["color"],
-                    "align": "end",
-                    "flex": 4
-                }
-            ]
-        }
-
-        officials_row = {
+        body_contents.append({
             "type": "box",
             "layout": "horizontal",
             "contents": [
-                {
-                    "type": "text",
-                    "text": subtitle.get("my_official", ""),
-                    "size": "xxs",
-                    "color": "#999999",
-                    "flex": 5
-                },
-                {
-                    "type": "text",
-                    "text": subtitle.get("opp_official", ""),
-                    "size": "xxs",
-                    "color": "#999999",
-                    "align": "end",
-                    "flex": 5
-                }
+                {"type": "text", "text": str(wins_val), "align": "end", "weight": my_score_style["weight"], "size": my_score_style["size"], "color": my_score_style["color"], "flex": 4},
+                {"type": "text", "text": ":", "align": "center", "weight": "bold", "size": "md", "color": "#cccccc", "flex": 2},
+                {"type": "text", "text": str(losses_val), "align": "start", "weight": opp_score_style["weight"], "size": opp_score_style["size"], "color": opp_score_style["color"], "flex": 4}
             ]
-        }
-
-        matchup_info_box = {
-            "type": "box",
-            "layout": "vertical",
-            "spacing": "xs",
-            "contents": [score_row, officials_row]
-        }
-        body_contents.append(matchup_info_box)
+        })
+    else:
+        body_contents.append(_create_header(title, subtitle))
 
     if comparison_rows:
         rows_boxes = []
