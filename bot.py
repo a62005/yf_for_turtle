@@ -140,17 +140,9 @@ if __name__ == "__main__":
     config = load_config()
     
     league_id = config.get("LEAGUE_ID")
-    if league_id:
-        fetcher = YahooFantasyFetcher(
-            client_id=config.get("YAHOO_CLIENT_ID"), 
-            client_secret=config.get("YAHOO_CLIENT_SECRET")
-        )
-        try:
-            from src.utils.season_utils import sync_season_metadata
-            sync_season_metadata(fetcher, league_id)
-        except Exception as e:
-            logging.error(f"[SYSTEM] 賽季資料同步失敗: {e}")
+    if not league_id:
+        logging.warning("[SYSTEM] 聯賽 ID (LEAGUE_ID) 尚未配置，請透過 LINE 執行 `#設置聯盟ID` 進行設定。")
     else:
-        logging.warning("[SYSTEM] 聯賽 ID (LEAGUE_ID) 尚未配置，將跳過啟動時的賽季資料同步。請透過 LINE 設置。")
+        logging.info(f"[SYSTEM] 目前配置的聯賽 ID 為: {league_id}")
 
     app.run(host="0.0.0.0", port=5001)
