@@ -92,7 +92,7 @@ def _create_header(title: str, subtitle: str | dict = None) -> dict:
                         "size": "xl",
                         "weight": "bold",
                         "color": "#111111",
-                        "align": "right",
+                        "align": "end",
                         "flex": 4
                     }
                 ]
@@ -113,7 +113,7 @@ def _create_header(title: str, subtitle: str | dict = None) -> dict:
                         "text": subtitle.get("opp_official", ""),
                         "size": "xxs",
                         "color": "#999999",
-                        "align": "right",
+                        "align": "end",
                         "flex": 5
                     }
                 ]
@@ -146,7 +146,7 @@ def _create_header(title: str, subtitle: str | dict = None) -> dict:
                         "size": opp_score_style["size"],
                         "weight": opp_score_style["weight"],
                         "color": opp_score_style["color"],
-                        "align": "right",
+                        "align": "end",
                         "flex": 4
                     }
                 ]
@@ -382,7 +382,7 @@ def build_matchup_comparison_card(title: str, subtitle: dict | str = None, compa
                         "size": right_style.get("size", "sm"),
                         "weight": right_style.get("weight", "regular"),
                         "color": right_style.get("color", "#111111"),
-                        "align": "right",
+                        "align": "end",
                         "flex": 4
                     }
                 ]

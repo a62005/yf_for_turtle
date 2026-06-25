@@ -184,3 +184,34 @@ def test_build_button_menu_card():
     assert btn0["style"] == "secondary"
     assert btn0["action"]["label"] == "陳威"
     assert btn0["action"]["text"] == "#對戰 陳威"
+
+
+def test_all_cards_schema_validation():
+    import json
+    from linebot.v3.messaging import FlexContainer
+    
+    # 1. Stats card
+    sections = [{"header": "2026-06-24", "rows": [("FGM/A", "5/10"), ("FG%", "50.0%")]}]
+    card1 = build_stats_list_card("Player Stats", "Season Average", sections)
+    FlexContainer.from_json(json.dumps(card1))
+    
+    # 2. Matchup card
+    subtitle_dict = {
+        "my_nickname": "My Team", "my_official": "My Co.",
+        "opp_nickname": "Opp Team", "opp_official": "Opp Co.",
+        "wins": 5, "losses": 4
+    }
+    comparison_rows = [("FGM/A", "25/50", "30/60", None, True), ("FG%", "50.0%", "50.0%", "tie", False)]
+    card2 = build_matchup_comparison_card("WEEK 6 MATCHUP", subtitle_dict, comparison_rows)
+    FlexContainer.from_json(json.dumps(card2))
+    
+    # 3. Injury card
+    items = [("S. Curry", "Knee", "O", "#922B21")]
+    card3 = build_status_badge_list_card("Injury Report", "Active", items)
+    FlexContainer.from_json(json.dumps(card3))
+    
+    # 4. Button card
+    buttons = [("陳威", "#對戰 陳威")]
+    card4 = build_button_menu_card("Matchup Menu", "Select", buttons)
+    FlexContainer.from_json(json.dumps(card4))
+
