@@ -104,7 +104,8 @@ def callback():
 
 @app.route("/images/<path:filename>")
 def serve_image(filename):
-    image_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "images")
+    from src.utils.path_utils import get_league_image_dir
+    image_dir = get_league_image_dir()
     return send_from_directory(image_dir, filename)
 
 @handler.add(MessageEvent, message=TextMessageContent)
@@ -135,30 +136,19 @@ def handle_message(event):
 if __name__ == "__main__":
     cleanup_port(5001)
     config = load_config()
-
-
-
-    fetcher = YahooFantasyFetcher(client_id=config.get("YAHOO_CLIENT_ID"), client_secret=config.get("YAHOO_CLIENT_SECRET"))
-    try:
-        from src.utils.season_utils import sync_season_metadata
-        sync_season_metadata(fetcher, config["LEAGUE_ID"])
-    except Exception as e:
-        logging.error(f"[SYSTEM] 賽季資料同步失敗: {e}")
-
-    port = 5001
-
-    if config.get("NGROK_AUTHTOKEN"):
-        logging.info("NGROK_AUTHTOKEN found. Starting automated setup...")
+    
+    league_id = config.get("LEAGUE_ID")
+    if league_id:
+        fetcher = YahooFantasyFetcher(
+            client_id=config.get("YAHOO_CLIENT_ID"), 
+            client_secret=config.get("YAHOO_CLIENT_SECRET")
+        )
         try:
-            public_url = setup_ngrok(config["NGROK_AUTHTOKEN"], port)
-            SERVER_URL = public_url
-            os.environ['SERVER_URL'] = public_url # Pass down to subprocesses
-            logging.info(f"ngrok tunnel opened at: {public_url}")
-            update_line_webhook(configuration, public_url)
+            from src.utils.season_utils import sync_season_metadata
+            sync_season_metadata(fetcher, league_id)
         except Exception as e:
-            logging.error(f"ngrok setup failed: {e}")
-            logging.info("Falling back to manual SERVER_URL.")
+            logging.error(f"[SYSTEM] 賽季資料同步失敗: {e}")
     else:
-        logging.info("No NGROK_AUTHTOKEN found. Using existing SERVER_URL.")
+        logging.warning("[SYSTEM] 聯賽 ID (LEAGUE_ID) 尚未配置，將跳過啟動時的賽季資料同步。請透過 LINE 設置。")
 
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=5001)

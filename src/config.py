@@ -1,30 +1,36 @@
 import os
+import json
 from dotenv import load_dotenv
 
 def load_config() -> dict:
-    # 備份由 bot.py 動態設定的 SERVER_URL (例如 ngrok 自動網址)
     dynamic_server_url = os.environ.get("SERVER_URL")
     
-    # 1. 載入公開的聯盟設定 (不覆蓋系統環境變數)
     load_dotenv("league.env", encoding="utf-8")
-    
-    # 2. 載入私密設定 (override=True 以便覆蓋 league.env 中的值)
     load_dotenv(".env", override=True, encoding="utf-8")
     
-    # 若載入後變為空值或空字串，但原先有備份的動態設定，則將其還原
     current_server_url = os.environ.get("SERVER_URL")
     if (not current_server_url or current_server_url.strip() == "") and dynamic_server_url:
         os.environ["SERVER_URL"] = dynamic_server_url
     
+    # 讀取環境變數
     league_id = os.getenv("LEAGUE_ID")
-    if not league_id:
-        raise ValueError("LEAGUE_ID is not set in environment, .env, or league.env file.")
     
+    # 優先讀取動態設定 data/security/league_config.json
+    security_file = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "security", "league_config.json"))
+    if os.path.exists(security_file):
+        try:
+            with open(security_file, "r", encoding="utf-8") as f:
+                sec_data = json.load(f)
+                if sec_data.get("LEAGUE_ID"):
+                    league_id = str(sec_data["LEAGUE_ID"])
+        except Exception:
+            pass
+            
     mapping_file = os.getenv("TEAM_MAPPING_FILE", "team_mapping.json")
     season_start = os.getenv("SEASON_START_DATE")
     
     return {
-        "LEAGUE_ID": league_id,
+        "LEAGUE_ID": league_id, # 可以為 None
         "TEAM_MAPPING_FILE": mapping_file,
         "SEASON_START_DATE": season_start,
         "YAHOO_CLIENT_ID": os.getenv("YAHOO_CLIENT_ID"),
