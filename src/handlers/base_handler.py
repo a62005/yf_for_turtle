@@ -10,6 +10,10 @@ from src.visualizer.flex_builder import build_button_menu_card
 class BaseHandler(ABC):
     """Base interface for all bot message handlers."""
     
+    def __init__(self):
+        self.requires_super_admin: bool = False
+        self.requires_whitelist: bool = False
+        
     @abstractmethod
     def can_handle(self, user_text: str) -> bool:
         """Return True if this handler can process the given text."""
