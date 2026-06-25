@@ -25,6 +25,7 @@ from src.handlers.misc_handler import MiscHandler
 from src.handlers.intent_router import IntentRouter
 from src.handlers.football_handler import FootballHandler
 from src.handlers.injury_handler import InjuryHandler
+from src.handlers.id_handler import IdHandler
 
 def cleanup_port(port):
     for proc in psutil.process_iter(['pid', 'name']):
@@ -72,6 +73,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 
 # Initialize Dispatcher
 dispatcher = CommandDispatcher()
+dispatcher.register(IdHandler())
 dispatcher.register(StatsHandler())
 dispatcher.register(PlayerHandler())
 dispatcher.register(UserStatsHandler())
