@@ -99,7 +99,7 @@ def test_execute_success_with_injuries(mock_config):
                     assert header_box["contents"][1]["text"] == "韋哥隊"
                     
                     # 2. 驗證球員數據列 (Curry 應該被縮寫為 S. Curry，並與 - Knee 合併)
-                    rows_box = body_contents[2]
+                    rows_box = body_contents[1]
                     player_row = rows_box["contents"][0]
                     name_text_box = player_row["contents"][0]
                     assert name_text_box["type"] == "text"
@@ -137,7 +137,7 @@ def test_execute_success_all_healthy(mock_config):
                     flex_dict = mock_reply.call_args[0][3]
                     
                     body_contents = flex_dict["body"]["contents"]
-                    assert "目前全隊球員皆健康！" in body_contents[2]["contents"][0]["text"]
+                    assert "目前全隊球員皆健康！" in body_contents[1]["contents"][0]["text"]
 
 @patch("src.handlers.injury_handler.load_config", return_value={"LEAGUE_ID": "12345"})
 def test_execute_api_failure(mock_config):
@@ -188,7 +188,7 @@ def test_execute_player_without_name(mock_config):
                     flex_dict = mock_reply.call_args[0][3]
                     
                     body_contents = flex_dict["body"]["contents"]
-                    rows_box = body_contents[2]
+                    rows_box = body_contents[1]
                     player_row = rows_box["contents"][0]
                     name_text_box = player_row["contents"][0]
                     assert "U. Player" in name_text_box["text"]

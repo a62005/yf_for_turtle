@@ -78,10 +78,10 @@ def test_format_stats():
     assert body_contents[0]["contents"][1]["text"] == "Los Angeles Lakers#23"
     
     # 2. 當日日期標頭
-    assert body_contents[2]["contents"][0]["text"] == "2026-11-12"
+    assert body_contents[1]["contents"][0]["text"] == "2026-11-12"
     
     # 3. 驗證 Body 部分的數據格線對齊
-    daily_stats_box = body_contents[2]["contents"][1]["contents"]
+    daily_stats_box = body_contents[1]["contents"][1]["contents"]
     # FGM/A 列
     assert daily_stats_box[0]["contents"][0]["text"] == "FGM/A"
     assert daily_stats_box[0]["contents"][1]["text"] == "14/24"
@@ -118,7 +118,7 @@ def test_format_stats_invalid_values():
     formatted = handler.format_player_stats(player_info, stats, "2026-11-12")
     assert isinstance(formatted, dict)
     body_contents = formatted["body"]["contents"]
-    daily_stats_box = body_contents[2]["contents"][1]["contents"]
+    daily_stats_box = body_contents[1]["contents"][1]["contents"]
     
     # FG% 列
     assert daily_stats_box[1]["contents"][0]["text"] == "FG%"

@@ -248,7 +248,6 @@ def build_stats_list_card(title: str, subtitle: str = None, sections: list = Non
     body_contents.append(_create_header(title, subtitle))
 
     if sections:
-        body_contents.append(_create_separator())
         for i, sec in enumerate(sections):
             if i > 0:
                 body_contents.append(_create_separator())
@@ -415,7 +414,6 @@ def build_status_badge_list_card(title: str, subtitle: str = None, items: list =
     """
     body_contents = []
     body_contents.append(_create_header(title, subtitle))
-    body_contents.append(_create_separator())
 
     if not items:
         body_contents.append({

@@ -34,10 +34,8 @@ def test_build_stats_list_card():
     assert header["type"] == "box"
     assert header["contents"][0]["text"] == "Player Stats"
     assert header["contents"][1]["text"] == "Season Average"
-    # Check separator
-    assert body_contents[1]["type"] == "separator"
     # Check section box
-    section_box = body_contents[2]
+    section_box = body_contents[1]
     assert section_box["contents"][0]["text"] == "2026-06-24"
     assert section_box["contents"][0]["size"] == "md"
     assert section_box["contents"][0]["margin"] == "md"
@@ -144,7 +142,7 @@ def test_build_matchup_comparison_card_special_header():
 def test_build_status_badge_list_card():
     # Test empty items
     card_empty = build_status_badge_list_card("Injury Report", "None", [])
-    assert card_empty["body"]["contents"][2]["contents"][0]["text"] == "🟢 目前全隊球員皆健康！"
+    assert card_empty["body"]["contents"][1]["contents"][0]["text"] == "🟢 目前全隊球員皆健康！"
     
     # Test items
     items = [
@@ -153,7 +151,7 @@ def test_build_status_badge_list_card():
     ]
     card = build_status_badge_list_card("Injury Report", "Active", items)
     body_contents = card["body"]["contents"]
-    rows_box = body_contents[2]
+    rows_box = body_contents[1]
     
     # Check S. Curry
     row0 = rows_box["contents"][0]
