@@ -158,25 +158,18 @@ def test_format_matchup_stats():
     
     body = bubble["body"]["contents"]
     
-    # 驗證 Header 第一層：中文暱稱 (韋哥 VS Jerry)
-    header_box = body[0]["contents"][1]
-    assert header_box["contents"][0]["text"] == "韋哥"
-    assert header_box["contents"][0]["weight"] == "bold"
+    # 驗證 Header 層：WEEK 24 MATCHUP 且 副標題為 韋哥 VS Jerry
+    header_box = body[0]
+    assert header_box["contents"][0]["text"] == "WEEK 24 MATCHUP"
     assert header_box["contents"][0]["size"] == "xl"
-    assert header_box["contents"][0]["color"] == "#111111"
-    
-    assert header_box["contents"][1]["text"] == "VS"
-    assert header_box["contents"][1]["weight"] == "bold"
+    assert header_box["contents"][1]["text"] == "韋哥 VS Jerry"
     assert header_box["contents"][1]["size"] == "sm"
-    assert header_box["contents"][1]["color"] == "#aaaaaa"
     
-    assert header_box["contents"][2]["text"] == "Jerry"
-    assert header_box["contents"][2]["weight"] == "bold"
-    assert header_box["contents"][2]["size"] == "xl"
-    assert header_box["contents"][2]["color"] == "#111111"
+    # 驗證 比分與官方隊名 Box (位於 body[1])
+    matchup_info_box = body[1]
     
-    # 驗證 Header 第二層：官方隊名
-    team_name_box = body[0]["contents"][2]
+    # 官方隊名
+    team_name_box = matchup_info_box["contents"][1]
     assert team_name_box["contents"][0]["text"] == "Vigo's Superteam"
     assert team_name_box["contents"][0]["size"] == "xxs"
     assert team_name_box["contents"][0]["color"] == "#999999"
@@ -185,8 +178,8 @@ def test_format_matchup_stats():
     assert team_name_box["contents"][1]["size"] == "xxs"
     assert team_name_box["contents"][1]["color"] == "#999999"
     
-    # 驗證 Header 第三層：比分對決 (5:4，我方領先大黑 20px/bold/#111111，落後小灰 18px/regular/#aaaaaa)
-    score_box = body[0]["contents"][3]
+    # 比分對決 (5:4，我方領先大黑 20px/bold/#111111，落後小灰 18px/regular/#aaaaaa)
+    score_box = matchup_info_box["contents"][0]
     assert score_box["contents"][0]["text"] == "5"
     assert score_box["contents"][0]["size"] == "20px"
     assert score_box["contents"][0]["weight"] == "bold"

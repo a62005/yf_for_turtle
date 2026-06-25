@@ -33,12 +33,14 @@ def test_build_stats_list_card():
     header = body_contents[0]
     assert header["type"] == "box"
     assert header["contents"][0]["text"] == "Player Stats"
+    assert header["contents"][0]["size"] == "xl"
     assert header["contents"][1]["text"] == "Season Average"
+    assert header["contents"][1]["size"] == "sm"
+    
     # Check section box
     section_box = body_contents[1]
     assert section_box["contents"][0]["text"] == "2026-06-24"
     assert section_box["contents"][0]["size"] == "md"
-    assert section_box["contents"][0]["margin"] == "md"
     
     rows_box = section_box["contents"][1]
     assert len(rows_box["contents"]) == 2
@@ -84,25 +86,23 @@ def test_build_matchup_comparison_card_special_header():
     
     # Check matchup header structure
     header = body_contents[0]
-    # title (uppercase)
     assert header["contents"][0]["text"] == "WEEK 6 MATCHUP"
-    # nickname row
-    assert header["contents"][1]["contents"][0]["text"] == "My Team"
-    assert header["contents"][1]["contents"][1]["text"] == "VS"
-    assert header["contents"][1]["contents"][2]["text"] == "Opp Team"
+    assert header["contents"][0]["size"] == "xl"
+    assert header["contents"][1]["text"] == "My Team VS Opp Team"
+    assert header["contents"][1]["size"] == "sm"
     
-    # official name row
-    assert header["contents"][2]["contents"][0]["text"] == "My Official Co."
-    assert header["contents"][2]["contents"][1]["text"] == "Opp Official Co."
+    # Check matchup_info_box in body
+    matchup_info_box = body_contents[1]
     
     # scores (my_win = wins 5 > losses 4, so wins should have size 20px, losses size 18px)
-    assert header["contents"][3]["contents"][0]["text"] == "5"
-    assert header["contents"][3]["contents"][0]["size"] == "20px"
-    assert header["contents"][3]["contents"][2]["text"] == "4"
-    assert header["contents"][3]["contents"][2]["size"] == "18px"
+    assert matchup_info_box["contents"][0]["contents"][0]["text"] == "5"
+    assert matchup_info_box["contents"][0]["contents"][0]["size"] == "20px"
+    assert matchup_info_box["contents"][0]["contents"][2]["text"] == "4"
+    assert matchup_info_box["contents"][0]["contents"][2]["size"] == "18px"
     
-    # Check separator
-    assert body_contents[1]["type"] == "separator"
+    # official name row
+    assert matchup_info_box["contents"][1]["contents"][0]["text"] == "My Official Co."
+    assert matchup_info_box["contents"][1]["contents"][1]["text"] == "Opp Official Co."
     
     # Check comparison rows
     rows_box = body_contents[2]
@@ -175,7 +175,7 @@ def test_build_button_menu_card():
     ]
     card = build_button_menu_card("Matchup Menu", "Select Opponent", buttons)
     body_contents = card["body"]["contents"]
-    buttons_box = body_contents[2]
+    buttons_box = body_contents[1]
     assert len(buttons_box["contents"]) == 2
     btn0 = buttons_box["contents"][0]
     assert btn0["type"] == "button"

@@ -59,14 +59,11 @@ def test_format_user_stats():
     assert daily_box[5]["contents"][0]["text"] == "PTS"
     assert daily_box[5]["contents"][1]["text"] == "35"
     
-    # 3. 第二個 Separator
-    assert body_contents[2]["type"] == "separator"
-    
-    # 4. 第二個 Section Box (包含週數與當週數據)
+    # 3. 第二個 Section Box (包含週數與當週數據)
     # contents[0] 為週數標頭文本
-    assert body_contents[3]["contents"][0]["text"] == "W24"
+    assert body_contents[2]["contents"][0]["text"] == "W24"
     # contents[1] 為當週數據的 vertical box
-    weekly_box = body_contents[3]["contents"][1]["contents"]
+    weekly_box = body_contents[2]["contents"][1]["contents"]
     assert weekly_box[0]["contents"][0]["text"] == "FGM/A"
     assert weekly_box[0]["contents"][1]["text"] == "80/150"
     assert weekly_box[5]["contents"][0]["text"] == "PTS"
@@ -111,12 +108,9 @@ def test_format_user_stats_with_composite_keys():
     assert daily_box[3]["contents"][0]["text"] == "FT%"
     assert daily_box[3]["contents"][1]["text"] == "75.0%"
     
-    # 驗證第二個 Separator
-    assert body_contents[2]["type"] == "separator"
-    
     # 驗證第二個 Section Box 中的週數標頭與當週數據
-    assert body_contents[3]["contents"][0]["text"] == "W24"
-    weekly_box = body_contents[3]["contents"][1]["contents"]
+    assert body_contents[2]["contents"][0]["text"] == "W24"
+    weekly_box = body_contents[2]["contents"][1]["contents"]
     assert weekly_box[0]["contents"][0]["text"] == "FGM/A"
     assert weekly_box[0]["contents"][1]["text"] == "35/70"
     assert weekly_box[2]["contents"][0]["text"] == "FTM/A"

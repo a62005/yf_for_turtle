@@ -17,171 +17,44 @@ def _create_bubble(body_contents: list) -> dict:
         "body": {
             "type": "box",
             "layout": "vertical",
+            "spacing": "md",
             "contents": body_contents
         }
     }
 
 
-def _create_header(title: str, subtitle: str | dict = None) -> dict:
+def _create_header(title: str, subtitle: str | None = None) -> dict:
     """Create a header box for Flex Messages.
-
-    If subtitle is a dictionary, it renders a specialized Matchup header.
-    Otherwise, it renders a standard header with title and optional subtitle.
 
     Args:
         title: Title of the card.
-        subtitle: Optional subtitle (str) or matchup dict.
+        subtitle: Optional subtitle (str).
 
     Returns:
         dict: Flex box component.
     """
-    if isinstance(subtitle, dict):
-        # Matchup Special Header
-        wins_val = subtitle.get("wins", 0)
-        losses_val = subtitle.get("losses", 0)
-        try:
-            w_f = float(wins_val)
-            l_f = float(losses_val)
-        except (ValueError, TypeError):
-            w_f = 0.0
-            l_f = 0.0
-
-        if w_f > l_f:
-            my_score_style = {"size": "20px", "weight": "bold", "color": "#111111"}
-            opp_score_style = {"size": "18px", "weight": "regular", "color": "#aaaaaa"}
-        elif w_f < l_f:
-            my_score_style = {"size": "18px", "weight": "regular", "color": "#aaaaaa"}
-            opp_score_style = {"size": "20px", "weight": "bold", "color": "#111111"}
-        else:
-            my_score_style = {"size": "20px", "weight": "bold", "color": "#111111"}
-            opp_score_style = {"size": "20px", "weight": "bold", "color": "#111111"}
-
-        header_contents = [
-            {
-                "type": "text",
-                "text": title.upper() if title else "",
-                "align": "center",
-                "size": "xxs",
-                "weight": "bold",
-                "color": "#999999"
-            },
-            {
-                "type": "box",
-                "layout": "horizontal",
-                "contents": [
-                    {
-                        "type": "text",
-                        "text": subtitle.get("my_nickname", ""),
-                        "size": "xl",
-                        "weight": "bold",
-                        "color": "#111111",
-                        "flex": 4
-                    },
-                    {
-                        "type": "text",
-                        "text": "VS",
-                        "size": "sm",
-                        "weight": "bold",
-                        "color": "#aaaaaa",
-                        "align": "center",
-                        "flex": 2
-                    },
-                    {
-                        "type": "text",
-                        "text": subtitle.get("opp_nickname", ""),
-                        "size": "xl",
-                        "weight": "bold",
-                        "color": "#111111",
-                        "align": "end",
-                        "flex": 4
-                    }
-                ]
-            },
-            {
-                "type": "box",
-                "layout": "horizontal",
-                "contents": [
-                    {
-                        "type": "text",
-                        "text": subtitle.get("my_official", ""),
-                        "size": "xxs",
-                        "color": "#999999",
-                        "flex": 5
-                    },
-                    {
-                        "type": "text",
-                        "text": subtitle.get("opp_official", ""),
-                        "size": "xxs",
-                        "color": "#999999",
-                        "align": "end",
-                        "flex": 5
-                    }
-                ]
-            },
-            {
-                "type": "box",
-                "layout": "horizontal",
-                "alignItems": "center",
-                "contents": [
-                    {
-                        "type": "text",
-                        "text": str(wins_val),
-                        "size": my_score_style["size"],
-                        "weight": my_score_style["weight"],
-                        "color": my_score_style["color"],
-                        "flex": 4
-                    },
-                    {
-                        "type": "text",
-                        "text": ":",
-                        "size": "md",
-                        "weight": "bold",
-                        "color": "#cccccc",
-                        "align": "center",
-                        "flex": 2
-                    },
-                    {
-                        "type": "text",
-                        "text": str(losses_val),
-                        "size": opp_score_style["size"],
-                        "weight": opp_score_style["weight"],
-                        "color": opp_score_style["color"],
-                        "align": "end",
-                        "flex": 4
-                    }
-                ]
-            }
-        ]
-        return {
-            "type": "box",
-            "layout": "vertical",
-            "spacing": "sm",
-            "contents": header_contents
+    header_contents = [
+        {
+            "type": "text",
+            "text": title,
+            "weight": "bold",
+            "size": "xl",
+            "color": "#111111"
         }
-    else:
-        # Standard Header
-        header_contents = [
-            {
-                "type": "text",
-                "text": title,
-                "weight": "bold",
-                "size": "lg",
-                "color": "#111111"
-            }
-        ]
-        if subtitle:
-            header_contents.append({
-                "type": "text",
-                "text": subtitle,
-                "size": "xs",
-                "color": "#999999"
-            })
-        return {
-            "type": "box",
-            "layout": "vertical",
-            "spacing": "xs",
-            "contents": header_contents
-        }
+    ]
+    if subtitle:
+        header_contents.append({
+            "type": "text",
+            "text": subtitle,
+            "size": "sm",
+            "color": "#555555"
+        })
+    return {
+        "type": "box",
+        "layout": "vertical",
+        "spacing": "xs",
+        "contents": header_contents
+    }
 
 
 def _create_separator(color: str = "#EAEAEA") -> dict:
@@ -249,9 +122,6 @@ def build_stats_list_card(title: str, subtitle: str = None, sections: list = Non
 
     if sections:
         for i, sec in enumerate(sections):
-            if i > 0:
-                body_contents.append(_create_separator())
-
             section_contents = []
             sec_header = sec.get("header")
             if sec_header:
@@ -260,8 +130,7 @@ def build_stats_list_card(title: str, subtitle: str = None, sections: list = Non
                     "text": sec_header,
                     "weight": "bold",
                     "size": "md",
-                    "color": "#111111",
-                    "margin": "md"
+                    "color": "#111111"
                 })
 
             rows_contents = []
@@ -321,10 +190,100 @@ def build_matchup_comparison_card(title: str, subtitle: dict | str = None, compa
         dict: LINE Flex bubble message.
     """
     body_contents = []
-    body_contents.append(_create_header(title, subtitle))
+    
+    if isinstance(subtitle, dict):
+        subtitle_str = f"{subtitle.get('my_nickname', '')} VS {subtitle.get('opp_nickname', '')}"
+    else:
+        subtitle_str = subtitle
+
+    body_contents.append(_create_header(title, subtitle_str))
+
+    if isinstance(subtitle, dict):
+        # Matchup Score and Team Officials moved to Body
+        wins_val = subtitle.get("wins", 0)
+        losses_val = subtitle.get("losses", 0)
+        try:
+            w_f = float(wins_val)
+            l_f = float(losses_val)
+        except (ValueError, TypeError):
+            w_f = 0.0
+            l_f = 0.0
+
+        if w_f > l_f:
+            my_score_style = {"size": "20px", "weight": "bold", "color": "#111111"}
+            opp_score_style = {"size": "18px", "weight": "regular", "color": "#aaaaaa"}
+        elif w_f < l_f:
+            my_score_style = {"size": "18px", "weight": "regular", "color": "#aaaaaa"}
+            opp_score_style = {"size": "20px", "weight": "bold", "color": "#111111"}
+        else:
+            my_score_style = {"size": "20px", "weight": "bold", "color": "#111111"}
+            opp_score_style = {"size": "20px", "weight": "bold", "color": "#111111"}
+
+        score_row = {
+            "type": "box",
+            "layout": "horizontal",
+            "alignItems": "center",
+            "contents": [
+                {
+                    "type": "text",
+                    "text": str(wins_val),
+                    "size": my_score_style["size"],
+                    "weight": my_score_style["weight"],
+                    "color": my_score_style["color"],
+                    "flex": 4
+                },
+                {
+                    "type": "text",
+                    "text": ":",
+                    "size": "md",
+                    "weight": "bold",
+                    "color": "#cccccc",
+                    "align": "center",
+                    "flex": 2
+                },
+                {
+                    "type": "text",
+                    "text": str(losses_val),
+                    "size": opp_score_style["size"],
+                    "weight": opp_score_style["weight"],
+                    "color": opp_score_style["color"],
+                    "align": "end",
+                    "flex": 4
+                }
+            ]
+        }
+
+        officials_row = {
+            "type": "box",
+            "layout": "horizontal",
+            "contents": [
+                {
+                    "type": "text",
+                    "text": subtitle.get("my_official", ""),
+                    "size": "xxs",
+                    "color": "#999999",
+                    "flex": 5
+                },
+                {
+                    "type": "text",
+                    "text": subtitle.get("opp_official", ""),
+                    "size": "xxs",
+                    "color": "#999999",
+                    "align": "end",
+                    "flex": 5
+                }
+            ]
+        }
+
+        matchup_info_box = {
+            "type": "box",
+            "layout": "vertical",
+            "spacing": "xs",
+            "contents": [score_row, officials_row]
+        }
+        body_contents.append(matchup_info_box)
 
     if comparison_rows:
-        body_contents.append(_create_separator())
         rows_boxes = []
         for row in comparison_rows:
             metric_name = row[0]
@@ -510,7 +469,6 @@ def build_button_menu_card(title: str, subtitle: str = None, buttons: list = Non
     body_contents.append(_create_header(title, subtitle))
 
     if buttons:
-        body_contents.append(_create_separator())
         buttons_box = {
             "type": "box",
             "layout": "vertical",
