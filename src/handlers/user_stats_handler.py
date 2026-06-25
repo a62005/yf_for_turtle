@@ -1,17 +1,16 @@
 import re
-import os
-import json
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 import pytz
 from linebot.v3.webhooks import MessageEvent
-from linebot.v3.messaging import ApiClient, MessagingApi, ReplyMessageRequest, TextMessage, Configuration, FlexMessage, FlexContainer
+from linebot.v3.messaging import Configuration
 from .base_handler import BaseHandler
 
 from src.config import load_config
 from src.utils.cache_utils import load_league_metadata
 from src.fetcher import YahooFantasyFetcher
 from src.utils.time_utils import get_fantasy_week
+from src.visualizer.flex_builder import build_stats_list_card
 
 class UserStatsHandler(BaseHandler):
     def __init__(self):
@@ -103,79 +102,27 @@ class UserStatsHandler(BaseHandler):
                 ("3PM", pm3), ("PTS", pts), ("REB", reb), ("AST", ast),
                 ("STL", stl), ("BLK", blk), ("TO", to)
             ]
-            rows = []
-            for label, val in raw_stats:
-                rows.append({
-                    "type": "box",
-                    "layout": "horizontal",
-                    "contents": [
-                        {"type": "text", "text": label, "color": "#666666", "size": "sm"},
-                        {"type": "text", "text": val, "align": "end", "weight": "bold", "color": "#111111", "size": "sm"}
-                    ]
-                })
-            return rows
+            return raw_stats
 
         daily_rows = build_stat_rows(daily_stats)
         weekly_rows = build_stat_rows(weekly_stats)
 
-        # 組裝白底極簡雙層卡片字典
-        return {
-            "type": "bubble",
-            "body": {
-                "type": "box",
-                "layout": "vertical",
-                "spacing": "md",
-                "contents": [
-                    # 1. 玩家資訊標頭
-                    {
-                        "type": "box",
-                        "layout": "vertical",
-                        "spacing": "xs",
-                        "contents": [
-                            {"type": "text", "text": player_info["manager_name"], "weight": "bold", "size": "xl", "color": "#111111"},
-                            {"type": "text", "text": player_info["official_name"], "size": "sm", "color": "#555555"}
-                        ]
-                    },
-                    # 2. 當日日期標頭
-                    {
-                        "type": "text",
-                        "text": date_str,
-                        "weight": "bold",
-                        "size": "md",
-                        "color": "#111111",
-                        "margin": "md"
-                    },
-                    # 3. 當日數據
-                    {
-                        "type": "box",
-                        "layout": "vertical",
-                        "spacing": "xs",
-                        "contents": daily_rows
-                    },
-                    # 4. 精緻分隔線
-                    {
-                        "type": "separator",
-                        "color": "#EAEAEA"
-                    },
-                    # 5. 當週週數標頭
-                    {
-                        "type": "text",
-                        "text": f"W{week_str}",
-                        "weight": "bold",
-                        "size": "md",
-                        "color": "#111111",
-                        "margin": "md"
-                    },
-                    # 6. 當週數據
-                    {
-                        "type": "box",
-                        "layout": "vertical",
-                        "spacing": "xs",
-                        "contents": weekly_rows
-                    }
-                ]
+        sections = [
+            {
+                "header": date_str,
+                "rows": daily_rows
+            },
+            {
+                "header": f"W{week_str}",
+                "rows": weekly_rows
             }
-        }
+        ]
+
+        return build_stats_list_card(
+            title=player_info["manager_name"],
+            subtitle=player_info["official_name"],
+            sections=sections
+        )
 
     def execute(self, event: MessageEvent, configuration: Configuration) -> None:
         user_text = event.message.text.strip()
@@ -277,11 +224,3 @@ class UserStatsHandler(BaseHandler):
             # 依規範安全且安靜地退出，不打擾群組
             logging.error(f"Failed to fetch team real-time stats for manager {nickname}: {e}")
 
-    def reply_text(self, event: MessageEvent, configuration: Configuration, text: str) -> None:
-        with ApiClient(configuration) as api_client:
-            MessagingApi(api_client).reply_message(
-                ReplyMessageRequest(
-                    reply_token=event.reply_token,
-                    messages=[TextMessage(text=text)]
-                )
-            )

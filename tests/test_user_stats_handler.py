@@ -42,31 +42,34 @@ def test_format_user_stats():
     assert isinstance(formatted, dict)
     assert formatted["type"] == "bubble"
     
-    # 驗證 Body 部分的雙層對比格線 (玩家資訊標頭 + 日期標頭 + 當日 + 分割線 + 當週標頭 + 當週)
+    # 驗證 Body 部分的雙層對比格線 (玩家資訊標頭 + Separator + 第一個 Section Box + Separator + 第二個 Section Box)
     body_contents = formatted["body"]["contents"]
     
     # 1. 玩家資訊標頭
     assert body_contents[0]["contents"][0]["text"] == "韋哥"
     assert body_contents[0]["contents"][1]["text"] == "Vigo's Superteam"
     
-    # 2. 日期標頭
-    assert body_contents[1]["text"] == "2026-05-28"
+    # 2. 第一個 Separator
+    assert body_contents[1]["type"] == "separator"
     
-    # 3. 當日數據
-    daily_box = body_contents[2]["contents"]
+    # 3. 第一個 Section Box (包含日期與當日數據)
+    # contents[0] 為日期標頭文本
+    assert body_contents[2]["contents"][0]["text"] == "2026-05-28"
+    # contents[1] 為當日數據的 vertical box
+    daily_box = body_contents[2]["contents"][1]["contents"]
     assert daily_box[0]["contents"][0]["text"] == "FGM/A"
     assert daily_box[0]["contents"][1]["text"] == "14/24"
     assert daily_box[5]["contents"][0]["text"] == "PTS"
     assert daily_box[5]["contents"][1]["text"] == "35"
     
-    # 4. 分割線
+    # 4. 第二個 Separator
     assert body_contents[3]["type"] == "separator"
     
-    # 5. 當週標頭
-    assert body_contents[4]["text"] == "W24"
-    
-    # 6. 當週數據
-    weekly_box = body_contents[5]["contents"]
+    # 5. 第二個 Section Box (包含週數與當週數據)
+    # contents[0] 為週數標頭文本
+    assert body_contents[4]["contents"][0]["text"] == "W24"
+    # contents[1] 為當週數據的 vertical box
+    weekly_box = body_contents[4]["contents"][1]["contents"]
     assert weekly_box[0]["contents"][0]["text"] == "FGM/A"
     assert weekly_box[0]["contents"][1]["text"] == "80/150"
     assert weekly_box[5]["contents"][0]["text"] == "PTS"
@@ -99,11 +102,12 @@ def test_format_user_stats_with_composite_keys():
     assert body_contents[0]["contents"][0]["text"] == "肥儒"
     assert body_contents[0]["contents"][1]["text"] == "Feiru's Superteam"
     
-    # 驗證日期標頭
-    assert body_contents[1]["text"] == "2026-05-28"
+    # 驗證第一個 Separator
+    assert body_contents[1]["type"] == "separator"
     
-    # 驗證當日數據
-    daily_box = body_contents[2]["contents"]
+    # 驗證第一個 Section Box 中的日期標頭與當日數據
+    assert body_contents[2]["contents"][0]["text"] == "2026-05-28"
+    daily_box = body_contents[2]["contents"][1]["contents"]
     assert daily_box[0]["contents"][0]["text"] == "FGM/A"
     assert daily_box[0]["contents"][1]["text"] == "5/10"
     assert daily_box[1]["contents"][0]["text"] == "FG%"
@@ -113,8 +117,12 @@ def test_format_user_stats_with_composite_keys():
     assert daily_box[3]["contents"][0]["text"] == "FT%"
     assert daily_box[3]["contents"][1]["text"] == "75.0%"
     
-    # 驗證當週數據
-    weekly_box = body_contents[5]["contents"]
+    # 驗證第二個 Separator
+    assert body_contents[3]["type"] == "separator"
+    
+    # 驗證第二個 Section Box 中的週數標頭與當週數據
+    assert body_contents[4]["contents"][0]["text"] == "W24"
+    weekly_box = body_contents[4]["contents"][1]["contents"]
     assert weekly_box[0]["contents"][0]["text"] == "FGM/A"
     assert weekly_box[0]["contents"][1]["text"] == "35/70"
     assert weekly_box[2]["contents"][0]["text"] == "FTM/A"
@@ -158,3 +166,55 @@ def test_parse_nickname_and_date():
     assert handler._parse_nickname_and_date("Jerry   20260101") == ("Jerry", "2026-01-01")
 
 
+def test_execute_user_stats_success(mocker):
+    # Mock load_config
+    mocker.patch("src.handlers.user_stats_handler.load_config", return_value={
+        "LEAGUE_ID": "123",
+        "YAHOO_CLIENT_ID": "client_id",
+        "YAHOO_CLIENT_SECRET": "client_secret"
+    })
+    
+    # Mock load_league_metadata
+    mocker.patch("src.handlers.user_stats_handler.load_league_metadata", return_value={
+        "start_date": "2025-10-20",
+        "end_date": "2026-04-15",
+        "date_to_week": {"2026-01-01": 10}
+    })
+    
+    # Mock time_utils
+    mocker.patch("src.utils.time_utils.get_pacific_date", return_value="2026-01-02")
+    
+    # Mock Team Mapping
+    mock_mapping = {"1": "韋哥", "2": "Jerry"}
+    mocker.patch("src.handlers.user_stats_handler.UserStatsHandler._load_team_mapping", return_value=mock_mapping)
+    
+    # Mock YahooFantasyFetcher fetch_single_team_stats_by_url
+    mock_fetch = mocker.patch("src.handlers.user_stats_handler.YahooFantasyFetcher.fetch_single_team_stats_by_url")
+    mock_fetch.side_effect = [
+        {"team_name": "Vigo's Superteam", "stats": {"PTS": "35", "FGM/FGA": "10/20"}},
+        {"team_name": "Vigo's Superteam", "stats": {"PTS": "210", "FGM/FGA": "70/150"}}
+    ]
+    
+    handler = UserStatsHandler()
+    
+    # Mock Message Event
+    mock_event = MagicMock()
+    mock_event.message.text = "#玩家 韋哥 20260101"
+    mock_event.reply_token = "reply_token_test"
+    
+    mock_config = MagicMock()
+    
+    # Spy on reply_flex
+    mock_reply_flex = mocker.patch.object(handler, "reply_flex")
+    
+    # Execute
+    handler.execute(mock_event, mock_config)
+    
+    # Assert reply_flex is called
+    mock_reply_flex.assert_called_once()
+    args, kwargs = mock_reply_flex.call_args
+    assert args[0] == mock_event
+    assert args[1] == mock_config
+    assert args[2] == "玩家 韋哥 數據統計"
+    assert isinstance(args[3], dict)
+    assert args[3]["type"] == "bubble"
