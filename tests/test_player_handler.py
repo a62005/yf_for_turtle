@@ -78,10 +78,10 @@ def test_format_stats():
     assert body_contents[0]["contents"][1]["text"] == "Los Angeles Lakers#23"
     
     # 2. 當日日期標頭
-    assert body_contents[1]["text"] == "2026-11-12"
+    assert body_contents[2]["contents"][0]["text"] == "2026-11-12"
     
     # 3. 驗證 Body 部分的數據格線對齊
-    daily_stats_box = body_contents[2]["contents"]
+    daily_stats_box = body_contents[2]["contents"][1]["contents"]
     # FGM/A 列
     assert daily_stats_box[0]["contents"][0]["text"] == "FGM/A"
     assert daily_stats_box[0]["contents"][1]["text"] == "14/24"
@@ -91,3 +91,39 @@ def test_format_stats():
     assert daily_stats_box[5]["contents"][0]["text"] == "PTS"
     assert daily_stats_box[5]["contents"][1]["text"] == "35"
     assert daily_stats_box[5]["contents"][1]["align"] == "end"
+
+def test_format_stats_invalid_values():
+    handler = PlayerHandler()
+    player_info = {
+        "english_name": "LeBron James",
+        "chinese_name": "勒布朗·詹姆斯",
+        "team": "Los Angeles Lakers",
+        "jersey_number": "23"
+    }
+    stats = {
+        "stat_4": "14",
+        "stat_3": "24",
+        "FG%": None,
+        "stat_7": "3",
+        "stat_6": "4",
+        "FT%": "N/A",
+        "3PTM": "4",
+        "PTS": "35",
+        "REB": "9",
+        "AST": "12",
+        "ST": "2",
+        "BLK": "1",
+        "TO": "3"
+    }
+    formatted = handler.format_player_stats(player_info, stats, "2026-11-12")
+    assert isinstance(formatted, dict)
+    body_contents = formatted["body"]["contents"]
+    daily_stats_box = body_contents[2]["contents"][1]["contents"]
+    
+    # FG% 列
+    assert daily_stats_box[1]["contents"][0]["text"] == "FG%"
+    assert daily_stats_box[1]["contents"][1]["text"] == "-"
+    
+    # FT% 列
+    assert daily_stats_box[3]["contents"][0]["text"] == "FT%"
+    assert daily_stats_box[3]["contents"][1]["text"] == "-"

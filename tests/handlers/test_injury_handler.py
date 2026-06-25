@@ -191,5 +191,5 @@ def test_execute_player_without_name(mock_config):
                     rows_box = body_contents[2]
                     player_row = rows_box["contents"][0]
                     name_text_box = player_row["contents"][0]
-                    assert "Unknown Player" in name_text_box["text"]
+                    assert "U. Player" in name_text_box["text"]
 

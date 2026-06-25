@@ -1,25 +1,26 @@
 import re
-import os
 import logging
 import xml.etree.ElementTree as ET
-from datetime import datetime, timedelta
+from datetime import datetime
 import pytz
-import json
 from linebot.v3.webhooks import MessageEvent
 from linebot.v3.messaging import ApiClient, MessagingApi, ReplyMessageRequest, TextMessage, Configuration, FlexMessage, FlexContainer
 from .base_handler import BaseHandler
+from src.visualizer.flex_builder import build_stats_list_card
 
 from src.config import load_config
 from src.utils.cache_utils import load_league_metadata
 from src.fetcher import YahooFantasyFetcher
 from src.llm.prompts.player_fuzzy_search import parse_player_nickname
 from src.utils.player_cache import get_cached_player, set_cached_player
+from src.utils.time_utils import get_target_date
+from src.constants.stat_map import translate_stat_id
 
 YAHOO_NS = {'ns': 'http://fantasysports.yahooapis.com/fantasy/v2/base.rng'}
 
 class PlayerHandler(BaseHandler):
-    def __init__(self):
-        self.pattern = re.compile(r"^#球員\s+(.+)$")
+    def __init__(self) -> None:
+        self.pattern: re.Pattern[str] = re.compile(r"^#球員\s+(.+)$")
 
     @property
     def instruction_desc(self) -> str:
@@ -34,17 +35,7 @@ class PlayerHandler(BaseHandler):
         config = load_config()
         return bool(config.get("LLM_API_KEY"))
 
-    def reply_flex(self, event: MessageEvent, configuration: Configuration, alt_text: str, flex_dict: dict) -> None:
-        flex_container = FlexContainer.from_json(json.dumps(flex_dict))
-        with ApiClient(configuration) as api_client:
-            MessagingApi(api_client).reply_message(
-                ReplyMessageRequest(
-                    reply_token=event.reply_token,
-                    messages=[FlexMessage(alt_text=alt_text, contents=flex_container)]
-                )
-            )
-
-    def format_player_stats(self, player_info: dict, stats: dict, date_str: str = None) -> dict:
+    def format_player_stats(self, player_info: dict, stats: dict, date_str: str | None = None) -> dict:
         def to_percent_str(val):
             try:
                 f_val = float(val)
@@ -75,60 +66,30 @@ class PlayerHandler(BaseHandler):
         blk = stats.get("BLK", "0")
         to = stats.get("TO", "0")
 
-        # 構造 9-Cat 數據列 JSON 格式
-        stat_rows = []
-        raw_stats = [
-            ("FGM/A", fgm_a), ("FG%", fg_pct), ("FTM/A", ftm_a), ("FT%", ft_pct),
-            ("3PM", pm3), ("PTS", pts), ("REB", reb), ("AST", ast),
-            ("STL", stl), ("BLK", blk), ("TO", to)
-        ]
-        for label, val in raw_stats:
-            stat_rows.append({
-                "type": "box",
-                "layout": "horizontal",
-                "contents": [
-                    {"type": "text", "text": label, "color": "#666666", "size": "sm"},
-                    {"type": "text", "text": val, "align": "end", "weight": "bold", "color": "#111111", "size": "sm"}
-                ]
-            })
-
-        # 回傳完整的清爽極簡風 Flex dict
-        return {
-            "type": "bubble",
-            "body": {
-                "type": "box",
-                "layout": "vertical",
-                "spacing": "md",
-                "contents": [
-                    # 1. 球員資訊標頭
-                    {
-                        "type": "box",
-                        "layout": "vertical",
-                        "spacing": "xs",
-                        "contents": [
-                            {"type": "text", "text": player_info.get("english_name", "Unknown"), "weight": "bold", "size": "xl", "color": "#111111"},
-                            {"type": "text", "text": f"{player_info.get('team', 'Unknown')}#{player_info.get('jersey_number', '0')}", "size": "sm", "color": "#555555"}
-                        ]
-                    },
-                    # 2. 當日日期標頭
-                    {
-                        "type": "text",
-                        "text": date_str or "",
-                        "weight": "bold",
-                        "size": "md",
-                        "color": "#111111",
-                        "margin": "md"
-                    },
-                    # 3. 數據列
-                    {
-                        "type": "box",
-                        "layout": "vertical",
-                        "spacing": "xs",
-                        "contents": stat_rows
-                    }
+        sections = [
+            {
+                "header": date_str,
+                "rows": [
+                    ("FGM/A", fgm_a),
+                    ("FG%", fg_pct),
+                    ("FTM/A", ftm_a),
+                    ("FT%", ft_pct),
+                    ("3PM", pm3),
+                    ("PTS", pts),
+                    ("REB", reb),
+                    ("AST", ast),
+                    ("STL", stl),
+                    ("BLK", blk),
+                    ("TO", to)
                 ]
             }
-        }
+        ]
+
+        return build_stats_list_card(
+            title=player_info.get("english_name", "Unknown"),
+            subtitle=f"{player_info.get('team', 'Unknown')}#{player_info.get('jersey_number', '0')}",
+            sections=sections
+        )
 
     def execute(self, event: MessageEvent, configuration: Configuration) -> None:
         user_text = event.message.text.strip()
@@ -170,9 +131,10 @@ class PlayerHandler(BaseHandler):
                     self.reply_text(event, configuration, f"AI 識別為 {english_name}，但當前 Yahoo 聯盟中找不到該球員數據。")
                     return
                 
-                player_key = player_node.find('ns:player_key', YAHOO_NS).text
+                player_key_node = player_node.find('ns:player_key', YAHOO_NS)
+                player_key = player_key_node.text if (player_key_node is not None and player_key_node.text is not None) else ""
                 uniform_node = player_node.find('ns:uniform_number', YAHOO_NS)
-                jersey_number = uniform_node.text if uniform_node is not None else llm_res.get("jersey_number", "0")
+                jersey_number = uniform_node.text if (uniform_node is not None and uniform_node.text is not None) else llm_res.get("jersey_number", "0")
                 
                 player_info = {
                     "english_name": english_name,
@@ -188,7 +150,6 @@ class PlayerHandler(BaseHandler):
                 return
 
         # 3. Target date calculation
-        from src.utils.time_utils import get_target_date
         target_date = get_target_date(is_offseason=is_offseason, end_date=meta.get('end_date'))
         
         # 4. Fetch Stats by date
@@ -204,12 +165,13 @@ class PlayerHandler(BaseHandler):
             stats_dict = {}
             stat_nodes = root.findall('.//ns:player_stats/ns:stats/ns:stat', YAHOO_NS)
             for node in stat_nodes:
-                s_id = node.find('ns:stat_id', YAHOO_NS).text
-                s_val = node.find('ns:value', YAHOO_NS).text
-                # Import standard map translation
-                from src.constants.stat_map import translate_stat_id
-                label = translate_stat_id(s_id)
-                stats_dict[label] = s_val
+                s_id_node = node.find('ns:stat_id', YAHOO_NS)
+                s_val_node = node.find('ns:value', YAHOO_NS)
+                s_id = s_id_node.text if s_id_node is not None else None
+                s_val = s_val_node.text if s_val_node is not None else "0"
+                if s_id is not None:
+                    label = translate_stat_id(s_id)
+                    stats_dict[label] = s_val
                 
             # Guard: if no game played (MIN or PTS is 0 or stat_id not present)
             minutes = stats_dict.get("stat_0", "0") # stat_0 is typically MIN in Yahoo
@@ -224,12 +186,3 @@ class PlayerHandler(BaseHandler):
         except Exception as e:
             logging.error(f"Yahoo fetch stats failed: {e}")
             self.reply_text(event, configuration, f"獲取球員統計數據失敗: {str(e)}")
-
-    def reply_text(self, event: MessageEvent, configuration: Configuration, text: str) -> None:
-        with ApiClient(configuration) as api_client:
-            MessagingApi(api_client).reply_message(
-                ReplyMessageRequest(
-                    reply_token=event.reply_token,
-                    messages=[TextMessage(text=text)]
-                )
-            )
