@@ -145,4 +145,20 @@ if __name__ == "__main__":
     else:
         logging.info(f"[SYSTEM] 目前配置的聯賽 ID 為: {league_id}")
 
-    app.run(host="0.0.0.0", port=5001)
+    port = 5001
+
+    if config.get("NGROK_AUTHTOKEN"):
+        logging.info("NGROK_AUTHTOKEN found. Starting automated setup...")
+        try:
+            public_url = setup_ngrok(config["NGROK_AUTHTOKEN"], port)
+            SERVER_URL = public_url
+            os.environ['SERVER_URL'] = public_url # Pass down to subprocesses
+            logging.info(f"ngrok tunnel opened at: {public_url}")
+            update_line_webhook(configuration, public_url)
+        except Exception as e:
+            logging.error(f"ngrok setup failed: {e}")
+            logging.info("Falling back to manual SERVER_URL.")
+    else:
+        logging.info("No NGROK_AUTHTOKEN found. Using existing SERVER_URL.")
+
+    app.run(host="0.0.0.0", port=port)
