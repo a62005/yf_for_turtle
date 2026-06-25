@@ -16,8 +16,9 @@ from linebot.v3.messaging import (
 
 from .base_handler import BaseHandler
 from src.config import load_config
-from src.utils.cache_utils import load_league_metadata
+from src.utils.cache_utils import load_league_metadata, save_league_metadata
 from src.utils.time_utils import get_pacific_date
+from src.llm.llm_agent import LLMAgent
 
 class MiscHandler(BaseHandler):
     def __init__(self):
@@ -45,11 +46,7 @@ class MiscHandler(BaseHandler):
         is_offseason = bool(end_date and today_pacific > end_date)
 
         if user_text == "#開季":
-            if is_offseason:
-                self._handle_season_start(event, configuration)
-            else:
-                logging.info("Not offseason, ignoring #開季")
-                return
+            self._handle_season_start(event, configuration)
         elif user_text == "#選秀":
             if is_offseason:
                 self._handle_draft_countdown(event, configuration)
@@ -80,15 +77,49 @@ class MiscHandler(BaseHandler):
         return f"{days} 天 {hours} 小時 {minutes} 分鐘"
 
     def _handle_season_start(self, event: MessageEvent, configuration: Configuration) -> None:
-        config = load_config()
-        target_time_str = config.get("NEXT_SEASON_START_DATE")
-        if not target_time_str:
-            logging.info("NEXT_SEASON_START_DATE not configured, ignoring")
-            return
+        meta = load_league_metadata()
+        if meta is None:
+            meta = {}
+        today_pacific = get_pacific_date()
+        target_time_str = None
         
+        # 1. 優先檢查快取中是否有 next_season_start_date
+        if "next_season_start_date" in meta:
+            target_time_str = meta["next_season_start_date"]
+            
+        # 2. 檢查目前中繼資料的 start_date 是否為未來的日期（代表已配置新賽季的 LEAGUE_ID）
+        if not target_time_str:
+            meta_start = meta.get("start_date")
+            if meta_start and meta_start > today_pacific:
+                target_time_str = f"{meta_start} 08:00:00"
+                
+        # 3. 啟動 LLM 網路搜尋
+        if not target_time_str:
+            logging.info("[MiscHandler] 啟動 LLM 搜尋新賽季開始時間...")
+            agent = LLMAgent()
+            
+            # 推估新賽季的年份：若當前月份大於等於10月，新賽季在明年，否則在今年
+            current_year = datetime.now().year
+            nba_year = current_year if datetime.now().month < 10 else current_year + 1
+            
+            res = agent.search_nba_season_start(nba_year)
+            if res.get("success") and res.get("start_date"):
+                target_time_str = res["start_date"]
+                meta["next_season_start_date"] = target_time_str
+                save_league_metadata(meta)
+                logging.info(f"[MiscHandler] 成功將 LLM 搜尋到的開季時間寫入快取: {target_time_str}")
+                
+        # 4. 回覆或倒數
+        if not target_time_str:
+            self.reply_text(event, configuration, "🏀 無法獲取新賽季開季時間")
+            return
+            
         countdown_text = self._calculate_countdown(target_time_str)
-        reply_content = f"🏀 距離 2026-27 新賽季開季還有：\n👉 {countdown_text}"
-        self.reply_text(event, configuration, reply_content)
+        if countdown_text == "已經到達！":
+            self.reply_text(event, configuration, "🏀 新賽季已經開打囉！")
+        else:
+            reply_content = f"🏀 距離新賽季開季還有：\n👉 {countdown_text}"
+            self.reply_text(event, configuration, reply_content)
 
     def _handle_draft_countdown(self, event: MessageEvent, configuration: Configuration) -> None:
         config = load_config()
