@@ -1,17 +1,17 @@
 import re
-import os
-import json
 import logging
+from typing import Any
 from linebot.v3.webhooks import MessageEvent
-from linebot.v3.messaging import ApiClient, MessagingApi, ReplyMessageRequest, FlexMessage, FlexContainer, TextMessage, Configuration
+from linebot.v3.messaging import Configuration
 from .base_handler import BaseHandler
 from src.config import load_config
-from src.utils.cache_utils import load_league_metadata
 from src.fetcher import YahooFantasyFetcher
 from src.utils.time_utils import get_pacific_datetime, get_fantasy_week
+from src.visualizer.flex_builder import build_matchup_comparison_card
+
 
 class MatchupHandler(BaseHandler):
-    def __init__(self):
+    def __init__(self) -> None:
         self.pattern = re.compile(r"^#對戰(?:\s+(.+))?$")
 
     @property
@@ -38,7 +38,7 @@ class MatchupHandler(BaseHandler):
         mapping = self._load_team_mapping()
         return nickname in mapping.values()
 
-    def to_percent_str(self, val) -> str:
+    def to_percent_str(self, val: Any) -> str:
         try:
             f_val = float(val)
             if f_val == 0.0:
@@ -47,7 +47,7 @@ class MatchupHandler(BaseHandler):
         except (ValueError, TypeError):
             return "-"
 
-    def to_val_str(self, val) -> str:
+    def to_val_str(self, val: Any) -> str:
         if val is None:
             return "-"
         val_str = str(val).strip()
@@ -152,143 +152,40 @@ class MatchupHandler(BaseHandler):
         }
 
     def format_matchup_stats(self, player_info: dict, comp_res: dict, week_str: str) -> dict:
-        """組裝 11 行無 Footer 極簡風對稱 Flex Message 卡片"""
+        """組裝 Matchup Flex Message 卡片"""
         details = comp_res["details"]
         wins = comp_res["wins"]
         losses = comp_res["losses"]
 
-        # 1. 決定 Header 第三層比分的視覺樣式 (領先大黑，落後小灰)
-        if wins > losses:
-            my_score_style = {"size": "20px", "weight": "bold", "color": "#111111"}
-            opp_score_style = {"size": "18px", "weight": "regular", "color": "#aaaaaa"}
-        elif wins < losses:
-            my_score_style = {"size": "18px", "weight": "regular", "color": "#aaaaaa"}
-            opp_score_style = {"size": "20px", "weight": "bold", "color": "#111111"}
-        else:
-            my_score_style = {"size": "20px", "weight": "bold", "color": "#111111"}
-            opp_score_style = {"size": "20px", "weight": "bold", "color": "#111111"}
+        subtitle_dict = {
+            "my_nickname": player_info["my_nickname"],
+            "my_official": player_info["my_official"],
+            "opp_nickname": player_info["opp_nickname"],
+            "opp_official": player_info["opp_official"],
+            "wins": wins,
+            "losses": losses
+        }
 
-        # 2. 建立 11 行指標數據的輔助渲染函式
-        def build_row(label, is_aux=False):
-            data = details[label]
-            my_val = data["my_val"]
-            opp_val = data["opp_val"]
-
-            if is_aux:
-                # 輔助指標：不受規則影響，統一常規灰色 13px
-                return {
-                    "type": "box",
-                    "layout": "horizontal",
-                    "contents": [
-                        {"type": "text", "text": my_val, "align": "start", "size": "sm", "color": "#777777"},
-                        {"type": "text", "text": label, "align": "center", "size": "xs", "color": "#bbbbbb", "weight": "bold"},
-                        {"type": "text", "text": opp_val, "align": "end", "size": "sm", "color": "#777777"}
-                    ]
-                }
-            
-            # 正式 9-Cat：領先大黑 (16px bold #111111)，落後小灰 (14px regular #aaaaaa)
-            status = data.get("status")
-            if status == "my_win":
-                my_style = {"weight": "bold", "size": "16px", "color": "#111111"}
-                opp_style = {"weight": "regular", "size": "14px", "color": "#aaaaaa"}
-            elif status == "opp_win":
-                my_style = {"weight": "regular", "size": "14px", "color": "#aaaaaa"}
-                opp_style = {"weight": "bold", "size": "16px", "color": "#111111"}
-            else: # 平手
-                my_style = {"weight": "regular", "size": "14px", "color": "#555555"}
-                opp_style = {"weight": "regular", "size": "14px", "color": "#555555"}
-
-            # 將 ST 翻譯為 LINE 顯示的簡寫 STL
-            display_label = "STL" if label == "ST" else label
-
-            return {
-                "type": "box",
-                "layout": "horizontal",
-                "contents": [
-                    {"type": "text", "text": my_val, "align": "start", "weight": my_style["weight"], "size": my_style["size"], "color": my_style["color"]},
-                    {"type": "text", "text": display_label, "align": "center", "size": "xs", "color": "#bbbbbb", "weight": "bold"},
-                    {"type": "text", "text": opp_val, "align": "end", "weight": opp_style["weight"], "size": opp_style["size"], "color": opp_style["color"]}
-                ]
-            }
-
-        # 3. 依序建立 11 行指標數據的 rows
-        rows = [
-            build_row("FGM/A", is_aux=True),
-            build_row("FG%"),
-            build_row("FTM/A", is_aux=True),
-            build_row("FT%"),
-            build_row("3PTM"),
-            build_row("PTS"),
-            build_row("REB"),
-            build_row("AST"),
-            build_row("ST"),
-            build_row("BLK"),
-            build_row("TO")
+        comparison_rows = [
+            # (指標名稱, 左側數值, 右側數值, 勝負狀態, 是否為輔助行)
+            ("FGM/A", details["FGM/A"]["my_val"], details["FGM/A"]["opp_val"], None, True),
+            ("FG%", details["FG%"]["my_val"], details["FG%"]["opp_val"], details["FG%"]["status"], False),
+            ("FTM/A", details["FTM/A"]["my_val"], details["FTM/A"]["opp_val"], None, True),
+            ("FT%", details["FT%"]["my_val"], details["FT%"]["opp_val"], details["FT%"]["status"], False),
+            ("3PTM", details["3PTM"]["my_val"], details["3PTM"]["opp_val"], details["3PTM"]["status"], False),
+            ("PTS", details["PTS"]["my_val"], details["PTS"]["opp_val"], details["PTS"]["status"], False),
+            ("REB", details["REB"]["my_val"], details["REB"]["opp_val"], details["REB"]["status"], False),
+            ("AST", details["AST"]["my_val"], details["AST"]["opp_val"], details["AST"]["status"], False),
+            ("ST", details["ST"]["my_val"], details["ST"]["opp_val"], details["ST"]["status"], False),
+            ("BLK", details["BLK"]["my_val"], details["BLK"]["opp_val"], details["BLK"]["status"], False),
+            ("TO", details["TO"]["my_val"], details["TO"]["opp_val"], details["TO"]["status"], False)
         ]
 
-        # 4. 組裝完整 bubble dictionary (無 Footer 設計，更加乾淨)
-        return {
-            "type": "bubble",
-            "body": {
-                "type": "box",
-                "layout": "vertical",
-                "spacing": "md",
-                "contents": [
-                    # 週次標題
-                    {
-                        "type": "text",
-                        "text": f"WEEK {week_str} MATCHUP",
-                        "weight": "bold",
-                        "size": "xxs",
-                        "color": "#cccccc",
-                        "align": "center",
-                        "margin": "xs"
-                    },
-                    # 【第一層】玩家中文暱稱 VS (最大粗體)
-                    {
-                        "type": "box",
-                        "layout": "horizontal",
-                        "contents": [
-                            {"type": "text", "text": player_info["my_nickname"], "weight": "bold", "size": "xl", "color": "#111111"},
-                            {"type": "text", "text": "VS", "align": "center", "weight": "bold", "size": "sm", "color": "#aaaaaa"},
-                            {"type": "text", "text": player_info["opp_nickname"], "weight": "bold", "size": "xl", "color": "#111111", "align": "end"}
-                        ]
-                    },
-                    # 【第二層】Fantasy 官方隊名 (較小灰色，無 VS)
-                    {
-                        "type": "box",
-                        "layout": "horizontal",
-                        "contents": [
-                            {"type": "text", "text": player_info["my_official"], "size": "xxs", "color": "#999999"},
-                            {"type": "text", "text": " ", "size": "xxs"},
-                            {"type": "text", "text": player_info["opp_official"], "size": "xxs", "color": "#999999", "align": "end"}
-                        ]
-                    },
-                    # 【第三層】即時比分對決 (領先大黑，落後小灰)
-                    {
-                        "type": "box",
-                        "layout": "horizontal",
-                        "contents": [
-                            {"type": "text", "text": str(wins), "align": "end", "weight": my_score_style["weight"], "size": my_score_style["size"], "color": my_score_style["color"]},
-                            {"type": "text", "text": ":", "align": "center", "weight": "bold", "size": "md", "color": "#cccccc"},
-                            {"type": "text", "text": str(losses), "align": "start", "weight": opp_score_style["weight"], "size": opp_score_style["size"], "color": opp_score_style["color"]}
-                        ]
-                    },
-                    # 精緻對齊線
-                    {
-                        "type": "separator",
-                        "color": "#eeeeee"
-                    },
-                    # 11 行指標 rows
-                    {
-                        "type": "box",
-                        "layout": "vertical",
-                        "spacing": "sm",
-                        "contents": rows
-                    }
-                ]
-            }
-        }
+        return build_matchup_comparison_card(
+            title=f"WEEK {week_str} MATCHUP",
+            subtitle=subtitle_dict,
+            comparison_rows=comparison_rows
+        )
 
     def execute(self, event: MessageEvent, configuration: Configuration) -> None:
         try:

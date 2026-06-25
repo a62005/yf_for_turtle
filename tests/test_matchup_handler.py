@@ -159,7 +159,7 @@ def test_format_matchup_stats():
     body = bubble["body"]["contents"]
     
     # 驗證 Header 第一層：中文暱稱 (韋哥 VS Jerry)
-    header_box = body[1]
+    header_box = body[0]["contents"][1]
     assert header_box["contents"][0]["text"] == "韋哥"
     assert header_box["contents"][0]["weight"] == "bold"
     assert header_box["contents"][0]["size"] == "xl"
@@ -176,17 +176,17 @@ def test_format_matchup_stats():
     assert header_box["contents"][2]["color"] == "#111111"
     
     # 驗證 Header 第二層：官方隊名
-    team_name_box = body[2]
+    team_name_box = body[0]["contents"][2]
     assert team_name_box["contents"][0]["text"] == "Vigo's Superteam"
     assert team_name_box["contents"][0]["size"] == "xxs"
     assert team_name_box["contents"][0]["color"] == "#999999"
     
-    assert team_name_box["contents"][2]["text"] == "Jerry's Awesome"
-    assert team_name_box["contents"][2]["size"] == "xxs"
-    assert team_name_box["contents"][2]["color"] == "#999999"
+    assert team_name_box["contents"][1]["text"] == "Jerry's Awesome"
+    assert team_name_box["contents"][1]["size"] == "xxs"
+    assert team_name_box["contents"][1]["color"] == "#999999"
     
     # 驗證 Header 第三層：比分對決 (5:4，我方領先大黑 20px/bold/#111111，落後小灰 18px/regular/#aaaaaa)
-    score_box = body[3]
+    score_box = body[0]["contents"][3]
     assert score_box["contents"][0]["text"] == "5"
     assert score_box["contents"][0]["size"] == "20px"
     assert score_box["contents"][0]["weight"] == "bold"
@@ -198,7 +198,7 @@ def test_format_matchup_stats():
     assert score_box["contents"][2]["color"] == "#aaaaaa"
     
     # 驗證 Body 11 行指標 (如 FG%，我方贏 -> 我方大黑，對手小灰)
-    fg_row = body[5]["contents"][1] # index 5 is the box containing rows, index 1 is FG% row
+    fg_row = body[2]["contents"][1] # index 2 is the box containing rows, index 1 is FG% row
     assert fg_row["contents"][0]["text"] == "51.4%"
     assert fg_row["contents"][0]["weight"] == "bold"
     assert fg_row["contents"][0]["size"] == "16px"
