@@ -46,3 +46,21 @@ class GeminiProvider(BaseLLMProvider):
             config=config
         )
         return json.loads(response.text.strip())
+
+    def generate_json_with_search(self, prompt: str, system_instruction: str = None) -> dict:
+        """啟用 Google 搜尋 Grounding 來動態擷取最新的網路資訊，並返回 JSON 格式。"""
+        config = {
+            "temperature": 0.0,
+            "response_mime_type": "application/json",
+            "tools": [{"google_search": {}}]
+        }
+        if system_instruction:
+            config["system_instruction"] = system_instruction
+            
+        client = self._get_client()
+        response = client.models.generate_content(
+            model=self.model_name,
+            contents=prompt,
+            config=config
+        )
+        return json.loads(response.text.strip())

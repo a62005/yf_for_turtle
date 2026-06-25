@@ -14,3 +14,7 @@ class BaseLLMProvider(ABC):
     def generate_json(self, prompt: str, system_instruction: str = None, temperature: float = 0.2) -> dict:
         """Sends a prompt and returns a parsed JSON dictionary."""
         pass
+
+    def generate_json_with_search(self, prompt: str, system_instruction: str = None) -> dict:
+        """Sends a prompt enabling Google Search and returns a parsed JSON dictionary."""
+        raise NotImplementedError("This provider does not support web search grounding.")
