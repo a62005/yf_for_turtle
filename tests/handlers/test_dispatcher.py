@@ -5,6 +5,7 @@ from src.handlers.base_handler import BaseHandler
 
 class MockHandler(BaseHandler):
     def __init__(self, can_handle_result=True):
+        super().__init__()
         self._can_handle_result = can_handle_result
         self.executed = False
         
