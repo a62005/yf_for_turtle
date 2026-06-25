@@ -3,6 +3,11 @@ import json
 import pytest
 from src.fetcher import YahooFantasyFetcher
 
+@pytest.fixture(autouse=True)
+def mock_fetcher_fs(monkeypatch, tmp_path):
+    monkeypatch.setattr("src.fetcher.get_league_weekly_dir", lambda *args: str(tmp_path / "weekly"))
+    monkeypatch.setattr("src.fetcher.get_league_daily_dir", lambda *args: str(tmp_path / "daily"))
+
 class MockPlayer:
     def __init__(self, name):
         self.name = name

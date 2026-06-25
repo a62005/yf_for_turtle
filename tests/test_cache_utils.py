@@ -48,11 +48,13 @@ def test_is_empty_data_false(mock_load):
 @patch("src.utils.cache_utils._load_cache", return_value={})
 @patch("src.utils.cache_utils._save_cache")
 @patch("src.utils.cache_utils.FileLock")
-def test_mark_empty_data(mock_lock, mock_save, mock_load):
+@patch("os.makedirs")
+def test_mark_empty_data(mock_makedirs, mock_lock, mock_save, mock_load):
     mark_empty_data("new_key")
     # verify save was called with the updated dict
     mock_save.assert_called_once()
     assert mock_save.call_args[0][0] == {"new_key": True}
+    mock_makedirs.assert_called_once()
 
 @patch("src.utils.cache_utils._load_cache", return_value={"league_id": "123"})
 def test_load_league_metadata(mock_load):
@@ -61,7 +63,8 @@ def test_load_league_metadata(mock_load):
 
 @patch("src.utils.cache_utils._save_cache")
 @patch("src.utils.cache_utils.FileLock")
-def test_save_league_metadata(mock_lock, mock_save):
+@patch("os.makedirs")
+def test_save_league_metadata(mock_makedirs, mock_lock, mock_save):
     save_league_metadata({"league_id": "123"})
     
     # Assert save was called
@@ -71,3 +74,4 @@ def test_save_league_metadata(mock_lock, mock_save):
     # Assert it added a timestamp
     assert "league_id" in saved_data
     assert "last_updated" in saved_data
+    mock_makedirs.assert_called_once()
