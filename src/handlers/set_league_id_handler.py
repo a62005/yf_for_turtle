@@ -42,7 +42,8 @@ class SetLeagueIdHandler(BaseHandler):
             return
             
         # 同步成功，寫入設定檔 data/security/league_config.json
-        security_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "security"))
+        from src.utils.path_utils import BASE_DIR
+        security_dir = os.path.join(BASE_DIR, "data", "security")
         os.makedirs(security_dir, exist_ok=True)
         config_path = os.path.join(security_dir, "league_config.json")
         
