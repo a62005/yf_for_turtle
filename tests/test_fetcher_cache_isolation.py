@@ -10,6 +10,8 @@ def test_fetcher_weekly_stats_saves_to_league_dir(tmp_path):
     # Mock Context 的 make_request 回傳
     mock_data = {"test_stats": "data"}
     fetcher.ctx.make_request = MagicMock(return_value=mock_data)
+    fetcher._parse_teams_from_content = MagicMock(side_effect=lambda x: x)
+
     
     # Mock get_league_weekly_dir 指向 tmp_path
     with patch("src.fetcher.get_league_weekly_dir", return_value=str(tmp_path)):

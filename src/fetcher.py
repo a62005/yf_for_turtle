@@ -212,8 +212,13 @@ class YahooFantasyFetcher:
         
         if os.path.exists(cache_path):
             logging.info(f"[CACHE] 命中週數據快取: {cache_path}")
-            with open(cache_path, "r", encoding="utf-8") as f:
-                return json.load(f)
+            try:
+                with open(cache_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                if data:
+                    return self._parse_teams_from_content(data)
+            except Exception as e:
+                logging.warning(f"[CACHE] 讀取週數據快取失敗: {e}")
                 
         url = f"league/{league_id}/scoreboard;week={week}"
         data = self.ctx.make_request(url)
@@ -221,7 +226,7 @@ class YahooFantasyFetcher:
         os.makedirs(cache_dir, exist_ok=True)
         with open(cache_path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
-        return data
+        return self._parse_teams_from_content(data)
 
     def fetch_daily_stats(self, league_id: str, date_str: str) -> dict:
         league_id = self._normalize_league_id(league_id)
@@ -232,8 +237,13 @@ class YahooFantasyFetcher:
         
         if os.path.exists(cache_path):
             logging.info(f"[CACHE] 命中日數據快取: {cache_path}")
-            with open(cache_path, "r", encoding="utf-8") as f:
-                return json.load(f)
+            try:
+                with open(cache_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                if data:
+                    return self._parse_teams_from_content(data)
+            except Exception as e:
+                logging.warning(f"[CACHE] 讀取日數據快取失敗: {e}")
                 
         url = f"league/{league_id}/teams/stats;type=date;date={date_str}"
         data = self.ctx.make_request(url)
@@ -241,7 +251,8 @@ class YahooFantasyFetcher:
         os.makedirs(cache_dir, exist_ok=True)
         with open(cache_path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
-        return data
+        return self._parse_teams_from_content(data)
+
 
     def _parse_teams_from_content(self, data) -> dict:
         """Common parser for responses containing a list of teams (standings or teams/stats)."""

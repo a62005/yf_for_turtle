@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 from src.handlers.settings_handler import SettingsHandler
 
 def test_settings_handler_can_handle():
@@ -8,14 +8,14 @@ def test_settings_handler_can_handle():
 
 def test_settings_handler_execute():
     handler = SettingsHandler()
-    handler.reply_text = MagicMock()
+    handler.reply_flex = MagicMock()
 
     event = MagicMock()
     config = MagicMock()
 
-    handler.execute(event, config)
-    handler.reply_text.assert_called_once()
-    
-    # 確保回覆內容含有設置字樣
-    args, kwargs = handler.reply_text.call_args
-    assert "系統設置清單" in args[2]
+    with patch("src.handlers.settings_handler.load_config", return_value={"LEAGUE_ID": "12345"}):
+        handler.execute(event, config)
+        handler.reply_flex.assert_called_once()
+        args, kwargs = handler.reply_flex.call_args
+        assert "設置選單" in args[2]
+
