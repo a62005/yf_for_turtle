@@ -26,10 +26,9 @@ class MiscHandler(BaseHandler):
 
     @property
     def instruction_desc(self) -> str:
-        return """#開季 : 查詢新賽季開季倒數時間
-#選秀 : 查詢聯盟選秀倒數時間
-#獎金 : 查詢聯賽獎金與獎項圖片
-#幫助 : 獲取系統指令幫助清單"""
+        return """
+- #運勢：測試運勢或運氣。
+        """
 
     def can_handle(self, user_text: str) -> bool:
         user_text = user_text.strip()
