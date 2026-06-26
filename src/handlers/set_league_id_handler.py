@@ -55,8 +55,23 @@ class SetLeagueIdHandler(BaseHandler):
             mapping_path = get_league_team_mapping_path(target_id)
             if not os.path.exists(mapping_path):
                 os.makedirs(os.path.dirname(mapping_path), exist_ok=True)
+                
+                # 取得官方預設隊伍名稱並建立對應
+                default_mapping = {}
+                try:
+                    import yahoofantasy
+                    normalized_id = fetcher._normalize_league_id(target_id)
+                    league = yahoofantasy.League(fetcher.ctx, normalized_id)
+                    for team in league.teams():
+                        team_id = str(getattr(team, "team_id", ""))
+                        team_name = str(getattr(team, "name", ""))
+                        if team_id and team_name:
+                            default_mapping[team_id] = team_name
+                except Exception as ex:
+                    logging.error(f"[SetLeagueIdHandler] 無法取得官方暱稱，將初始化為空對應: {ex}")
+                
                 with open(mapping_path, "w", encoding="utf-8") as mf:
-                    json.dump({}, mf)
+                    json.dump(default_mapping, mf, ensure_ascii=False, indent=2)
                     
             self.reply_text(event, configuration, "✅ 聯盟 ID 設置成功，並已完成賽季資訊同步！")
         except Exception as fe:
