@@ -25,7 +25,7 @@ class SettingsHandler(BaseHandler):
             subtitle = None
             buttons = [
                 ("設置選秀時間 (即將推出)", ""),
-                ("設置玩家暱稱 (即將推出)", ""),
+                ("設置玩家暱稱", "#設置玩家暱稱"),
                 (None, None),
                 ("更換聯盟ID (即將推出)", ""),
                 ("移除聯盟ID (即將推出)", "")
