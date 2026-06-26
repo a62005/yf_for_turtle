@@ -79,7 +79,7 @@ def test_execute_season_start(mock_messaging_api, mock_api_client, mock_load_con
         mock_calc.assert_called_with("2026-10-20 08:00:00")
         reply_req = mock_messaging_api.return_value.reply_message.call_args[0][0]
         assert reply_req.reply_token == "dummy_reply_token"
-        assert reply_req.messages[0].text == "🏀 距離新賽季開季還有：\n👉 140 天 5 小時 20 分鐘"
+        assert reply_req.messages[0].text == "新賽季即將開始於\n2026年10月20日\n🏀 距離新賽季開季還有：\n👉 140 天 5 小時 20 分鐘"
 
     # 重設 mock 以供下一階段測試
     mock_messaging_api.reset_mock()
@@ -92,7 +92,7 @@ def test_execute_season_start(mock_messaging_api, mock_api_client, mock_load_con
         handler.execute(mock_event, mock_config)
         mock_calc.assert_called_with("2026-10-25 08:00:00")
         reply_req = mock_messaging_api.return_value.reply_message.call_args[0][0]
-        assert reply_req.messages[0].text == "🏀 距離新賽季開季還有：\n👉 145 天 5 小時 20 分鐘"
+        assert reply_req.messages[0].text == "新賽季即將開始於\n2026年10月25日\n🏀 距離新賽季開季還有：\n👉 145 天 5 小時 20 分鐘"
 
     mock_messaging_api.reset_mock()
     mock_api_client.reset_mock()
@@ -106,7 +106,7 @@ def test_execute_season_start(mock_messaging_api, mock_api_client, mock_load_con
         handler.execute(mock_event, mock_config)
         mock_calc.assert_called_with("2026-10-22 08:00:00")
         reply_req = mock_messaging_api.return_value.reply_message.call_args[0][0]
-        assert reply_req.messages[0].text == "🏀 距離新賽季開季還有：\n👉 142 天 5 小時 20 分鐘"
+        assert reply_req.messages[0].text == "新賽季即將開始於\n2026年10月22日\n🏀 距離新賽季開季還有：\n👉 142 天 5 小時 20 分鐘"
         mock_save_meta.assert_called_with({"next_season_start_date": "2026-10-22 08:00:00"})
 
     mock_messaging_api.reset_mock()

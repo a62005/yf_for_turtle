@@ -18,7 +18,7 @@ def test_misc_handler_season_start_flow_cache_hit():
         handler.reply_text.assert_called_once_with(
             event, 
             config, 
-            "🏀 距離新賽季開季還有：\n👉 10 天 5 小時 30 分鐘"
+            "新賽季即將開始於\n2026年10月20日\n🏀 距離新賽季開季還有：\n👉 10 天 5 小時 30 分鐘"
         )
 
 def test_misc_handler_season_start_flow_llm_search():
@@ -51,7 +51,7 @@ def test_misc_handler_season_start_flow_llm_search():
         handler.reply_text.assert_called_once_with(
             event, 
             config, 
-            "🏀 距離新賽季開季還有：\n👉 15 天 1 小時 0 分鐘"
+            "新賽季即將開始於\n2026年10月20日\n🏀 距離新賽季開季還有：\n👉 15 天 1 小時 0 分鐘"
         )
 
 def test_misc_handler_season_start_all_failed():

@@ -118,7 +118,23 @@ class MiscHandler(BaseHandler):
         if countdown_text == "已經到達！":
             self.reply_text(event, configuration, "🏀 新賽季已經開打囉！")
         else:
-            reply_content = f"🏀 距離新賽季開季還有：\n👉 {countdown_text}"
+            formatted_date = target_time_str
+            try:
+                dt = datetime.strptime(target_time_str, "%Y-%m-%d %H:%M:%S")
+                formatted_date = f"{dt.year}年{dt.month}月{dt.day}日"
+            except Exception:
+                try:
+                    dt = datetime.strptime(target_time_str.split()[0], "%Y-%m-%d")
+                    formatted_date = f"{dt.year}年{dt.month}月{dt.day}日"
+                except Exception:
+                    pass
+            
+            reply_content = (
+                f"新賽季即將開始於\n"
+                f"{formatted_date}\n"
+                f"🏀 距離新賽季開季還有：\n"
+                f"👉 {countdown_text}"
+            )
             self.reply_text(event, configuration, reply_content)
 
     def _handle_draft_countdown(self, event: MessageEvent, configuration: Configuration) -> None:
