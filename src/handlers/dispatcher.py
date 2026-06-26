@@ -45,6 +45,8 @@ class CommandDispatcher:
         """Collect and concatenate instruction descriptions from all registered handlers."""
         descs = []
         for handler in self._handlers:
+            if getattr(handler, 'exclude_from_llm', False):
+                continue
             desc = handler.instruction_desc
             if desc:
                 descs.append(desc.strip())

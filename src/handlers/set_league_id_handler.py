@@ -14,6 +14,7 @@ class SetLeagueIdHandler(BaseHandler):
     def __init__(self):
         super().__init__()
         self.requires_whitelist = True
+        self.exclude_from_llm = True
         
     def can_handle(self, user_text: str) -> bool:
         return user_text.strip().startswith("#設置聯盟ID")

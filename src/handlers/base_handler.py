@@ -13,6 +13,7 @@ class BaseHandler(ABC):
     def __init__(self):
         self.requires_super_admin: bool = False
         self.requires_whitelist: bool = False
+        self.exclude_from_llm: bool = False
         
     @abstractmethod
     def can_handle(self, user_text: str) -> bool:
