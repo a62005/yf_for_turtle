@@ -183,3 +183,64 @@ def test_router_converts_injury_command_and_dispatches(mock_analyze):
     # 確保成功轉交 dispatcher 處理，且其內容被置換為 "#傷兵 韋哥"
     dispatcher.handle.assert_called_once_with(event, config)
     assert event.message.text == "#傷兵 韋哥"
+
+
+def test_intent_router_nickname_session_interception():
+    import json
+    from unittest.mock import mock_open
+    from src.handlers.dispatcher import CommandDispatcher
+    from src.handlers.intent_router import IntentRouter
+    from src.utils.session_manager import set_nickname_session, get_nickname_session
+    
+    dispatcher = CommandDispatcher()
+    router = IntentRouter(dispatcher)
+    
+    event = MagicMock()
+    event.source.user_id = "user_test_intercept"
+    event.source.type = "user"
+    event.message.text = "韋哥的新暱稱"
+    config = MagicMock()
+    
+    # 設置 60 秒的有效會話
+    set_nickname_session("user_test_intercept", "1", duration_sec=60)
+    
+    mock_mapping = {"1": "小明"}
+    
+    with patch("src.handlers.intent_router.load_config", return_value={"LEAGUE_ID": "123"}), \
+         patch("src.handlers.intent_router.get_league_team_mapping_path", return_value="dummy_dir/team_mapping.json"), \
+         patch("src.handlers.intent_router.os.path.exists", return_value=True), \
+         patch("src.handlers.intent_router.os.makedirs") as mock_makedirs, \
+         patch("src.handlers.intent_router.open", mock_open(read_data=json.dumps(mock_mapping))) as m_file, \
+         patch.object(router, "reply_text") as mock_reply:
+        
+        router.route(event, config)
+        
+        # 驗證會話被清空
+        assert get_nickname_session("user_test_intercept") is None
+        # 驗證寫入新暱稱
+        assert m_file().write.called
+        # 驗證回覆
+        mock_reply.assert_called_once_with(event, config, "✅ 成功將暱稱修改為：韋哥的新暱稱")
+
+def test_intent_router_nickname_session_reset_by_command():
+    from src.handlers.dispatcher import CommandDispatcher
+    from src.handlers.intent_router import IntentRouter
+    from src.utils.session_manager import set_nickname_session, get_nickname_session
+    
+    dispatcher = CommandDispatcher()
+    dispatcher.handle = MagicMock()
+    router = IntentRouter(dispatcher)
+    
+    event = MagicMock()
+    event.source.user_id = "user_test_reset"
+    event.message.text = "#對戰"
+    config = MagicMock()
+    
+    set_nickname_session("user_test_reset", "1", duration_sec=60)
+    
+    with patch.object(router, "should_process", return_value=True):
+        router.route(event, config)
+        # 標準指令將會話清除
+        assert get_nickname_session("user_test_reset") is None
+        # 正常分發指令
+        dispatcher.handle.assert_called_once()
