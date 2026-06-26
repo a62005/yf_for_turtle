@@ -130,8 +130,8 @@ class MiscHandler(BaseHandler):
                     pass
             
             reply_content = (
-                f"新賽季即將開始於\n"
-                f"{formatted_date}\n"
+                f"🏀 新賽季即將開始以下時間開打：\n"
+                f"👉 {formatted_date}\n"
                 f"🏀 距離新賽季開季還有：\n"
                 f"👉 {countdown_text}"
             )
