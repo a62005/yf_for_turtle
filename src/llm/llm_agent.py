@@ -91,6 +91,18 @@ class LLMAgent:
             return result
         except Exception as e:
             import logging
-            logging.error(f"[LLM] 搜尋開季日期失敗: {e}")
-            return {"success": False, "start_date": None}
+            logging.warning(f"[LLM] 搜尋開季日期失敗 (可能為搜尋工具配額限制): {e}。嘗試啟用不含搜尋的備用推估方案...")
+            try:
+                fallback_prompt = (
+                    f"請推估或提供 NBA {year}-{str(year+1)[2:]} 新賽季官方公佈或預計的開季日期與時間（通常在 {year} 年 10 月中下旬的某個星期二，例如 10 月 20 日、21 日或 22 日等）。\n"
+                    "請嚴格回傳 JSON 格式，欄位包含：\n"
+                    "- 'start_date': 字串，格式必須為 'YYYY-MM-DD HH:MM:SS' (例如 '2026-10-20 08:00:00'，時間請使用上午8點 '08:00:00')。\n"
+                    "- 'success': 布林值，代表是否成功產生此日期。"
+                )
+                result = self.provider.generate_json(fallback_prompt)
+                logging.info(f"[LLM] 備用方案成功推估開季日期: {result}")
+                return result
+            except Exception as fe:
+                logging.error(f"[LLM] 備用推估方案也失敗: {fe}")
+                return {"success": False, "start_date": None}
 
