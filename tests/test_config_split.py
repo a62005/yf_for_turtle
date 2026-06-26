@@ -27,7 +27,9 @@ def test_config_load_priority(tmp_path, monkeypatch):
     private_env.write_text("SEASON_START_DATE=2025-01-02\nYAHOO_CLIENT_ID=secret_token")
     
     # 執行載入
-    config = load_config()
+    from unittest.mock import patch
+    with patch("os.path.exists", return_value=False):
+        config = load_config()
     
     # 驗證覆蓋與合併邏輯
     assert config["LEAGUE_ID"] is None # 環境變數應被忽略
