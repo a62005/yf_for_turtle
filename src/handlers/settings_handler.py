@@ -17,15 +17,16 @@ class SettingsHandler(BaseHandler):
         league_id = config.get("LEAGUE_ID")
         
         if not league_id:
-            title = "⚙️ 系統初始化設置"
-            subtitle = "目前尚未配置聯盟 ID，請先完成設置："
+            title = "系統初始化設置"
+            subtitle = None
             buttons = [("設置聯盟 ID", "#設置聯盟ID ")]
         else:
-            title = f"⚙️ 聯盟設置 (ID: {league_id})"
-            subtitle = "可調整 the settings："
+            title = f"聯盟設置 (ID: {league_id})"
+            subtitle = None
             buttons = [
                 ("設置選秀時間 (即將推出)", ""),
                 ("設置玩家暱稱 (即將推出)", ""),
+                (None, None),
                 ("更換聯盟ID (即將推出)", ""),
                 ("移除聯盟ID (即將推出)", "")
             ]

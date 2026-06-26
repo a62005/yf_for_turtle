@@ -442,6 +442,14 @@ def build_button_menu_card(title: str, subtitle: str = None, buttons: list = Non
     if buttons:
         contents = []
         for btn_label, btn_text in buttons:
+            if btn_label is None:
+                contents.append({
+                    "type": "separator",
+                    "margin": "md",
+                    "color": "#EAEAEA"
+                })
+                continue
+
             if btn_text and btn_text.strip():
                 action = {
                     "type": "message",

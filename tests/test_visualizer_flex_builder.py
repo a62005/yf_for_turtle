@@ -239,3 +239,33 @@ def test_build_button_menu_card_with_empty_text():
     assert btn1["action"]["data"] == "action=ignore"
 
 
+def test_build_button_menu_card_with_separator():
+    buttons = [
+        ("設置選秀時間 (即將推出)", ""),
+        (None, None),
+        ("更換聯盟ID (即將推出)", "")
+    ]
+    card = build_button_menu_card("Settings Menu", None, buttons)
+    body_contents = card["body"]["contents"]
+    
+    # Header should not contain a subtitle since we passed None
+    header = body_contents[0]
+    assert len(header["contents"]) == 1
+    assert header["contents"][0]["text"] == "Settings Menu"
+    
+    buttons_box = body_contents[1]
+    assert len(buttons_box["contents"]) == 3
+    
+    # Index 0: Button
+    assert buttons_box["contents"][0]["type"] == "button"
+    
+    # Index 1: Separator
+    assert buttons_box["contents"][1]["type"] == "separator"
+    assert buttons_box["contents"][1]["margin"] == "md"
+    assert buttons_box["contents"][1]["color"] == "#EAEAEA"
+    
+    # Index 2: Button
+    assert buttons_box["contents"][2]["type"] == "button"
+
+
+
