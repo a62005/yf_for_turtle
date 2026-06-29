@@ -25,37 +25,14 @@ class SetLeagueIdHandler(BaseHandler):
         
         # 1. 收到無參數 #設置聯盟ID 時，發送包含 NBA 籃球與 MLB 棒球按鈕的 Flex Message
         if user_text == "#設置聯盟ID":
-            bubble = {
-              "type": "bubble",
-              "body": {
-                "type": "box",
-                "layout": "vertical",
-                "contents": [
-                  {"type": "text", "text": "請選擇要設置的運動項目：", "weight": "bold", "size": "md"},
-                  {
-                    "type": "box",
-                    "layout": "horizontal",
-                    "margin": "lg",
-                    "contents": [
-                      {
-                        "type": "button",
-                        "action": {"type": "message", "label": "NBA 籃球", "text": "#設置聯盟ID nba"},
-                        "style": "primary",
-                        "color": "#00B900"
-                      },
-                      {
-                        "type": "button",
-                        "action": {"type": "message", "label": "MLB 棒球", "text": "#設置聯盟ID mlb"},
-                        "style": "primary",
-                        "color": "#1E90FF",
-                        "margin": "md"
-                      }
-                    ]
-                  }
-                ]
-              }
-            }
-            self.reply_flex(event, configuration, "請選擇要設置的運動項目", bubble)
+            from src.visualizer.flex_builder import build_button_menu_card
+            title = "選擇要設置的運動項目"
+            buttons = [
+                ("NBA 籃球", "#設置聯盟ID nba"),
+                ("MLB 棒球", "#設置聯盟ID mlb")
+            ]
+            flex_dict = build_button_menu_card(title, None, buttons)
+            self.reply_flex(event, configuration, "請選擇要設置的運動項目", flex_dict)
             return
 
         parts = user_text.split()
