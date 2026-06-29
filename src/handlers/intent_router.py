@@ -133,7 +133,6 @@ class IntentRouter:
                 if user_text.startswith("#"):
                     clear_league_id_session(user_id)
                 else:
-                    clear_league_id_session(user_id)
                     event.message.text = f"#設置聯盟ID {user_text}"
                     self.dispatcher.handle(event, configuration)
                     return

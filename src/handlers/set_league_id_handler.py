@@ -21,23 +21,79 @@ class SetLeagueIdHandler(BaseHandler):
         
     def execute(self, event: MessageEvent, configuration: Configuration) -> None:
         user_text = event.message.text.strip()
+        user_id = getattr(event.source, "user_id", None)
         
+        # 1. 收到無參數 #設置聯盟ID 時，發送包含 NBA 籃球與 MLB 棒球按鈕的 Flex Message
         if user_text == "#設置聯盟ID":
-            user_id = getattr(event.source, "user_id", None)
+            bubble = {
+              "type": "bubble",
+              "body": {
+                "type": "box",
+                "layout": "vertical",
+                "contents": [
+                  {"type": "text", "text": "請選擇要設置的運動項目：", "weight": "bold", "size": "md"},
+                  {
+                    "type": "box",
+                    "layout": "horizontal",
+                    "margin": "lg",
+                    "contents": [
+                      {
+                        "type": "button",
+                        "action": {"type": "message", "label": "NBA 籃球", "text": "#設置聯盟ID nba"},
+                        "style": "primary",
+                        "color": "#00B900"
+                      },
+                      {
+                        "type": "button",
+                        "action": {"type": "message", "label": "MLB 棒球", "text": "#設置聯盟ID mlb"},
+                        "style": "primary",
+                        "color": "#1E90FF",
+                        "margin": "md"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+            self.reply_flex(event, configuration, "請選擇要設置的運動項目", bubble)
+            return
+
+        parts = user_text.split()
+        
+        # 2. 收到選擇後（例如 #設置聯盟ID nba），以 session_manager 設定對話狀態，攜帶 sport，引導輸入數字 ID
+        if len(parts) == 2 and parts[1].lower() in ["nba", "mlb"]:
+            sport = parts[1].lower()
             if user_id:
-                from src.utils.session_manager import set_league_id_session
-                set_league_id_session(user_id, duration_sec=60)
-                self.reply_text(event, configuration, "👉 請在 60 秒內直接輸入新的 Yahoo 聯盟 ID：")
+                from src.utils.session_manager import set_session
+                set_session(user_id, "set_league_id", {"sport": sport}, duration_sec=60)
+                sport_name = "NBA 籃球" if sport == "nba" else "MLB 棒球"
+                self.reply_text(event, configuration, f"您選擇了 {sport_name}。請在 60 秒內輸入您的聯盟 ID（純數字，例如 18457）：")
             else:
                 self.reply_text(event, configuration, "⚠️ 無法獲取您的 User ID，請重新嘗試。")
             return
-            
-        match = re.match(r"^#設置聯盟ID\s+(\d+)$", user_text)
-        if not match:
-            self.reply_text(event, configuration, "格式錯誤，請使用：#設置聯盟ID <純數字_ID>")
-            return
-            
-        target_id = match.group(1)
+
+        # 3. 處理使用者輸入的數字 ID (互動會話中)
+        session = None
+        if user_id:
+            from src.utils.session_manager import get_session
+            session = get_session(user_id, "set_league_id")
+
+        if session and len(parts) == 2 and parts[1].isdigit():
+            sport = session.get("sport", "nba")
+            target_id = f"{sport}.l.{parts[1]}"
+            from src.utils.session_manager import clear_session
+            clear_session(user_id, "set_league_id")
+        else:
+            # 4. 直接輸入參數或是其他情況
+            if len(parts) < 2:
+                self.reply_text(event, configuration, "⚠️ 指令格式錯誤。")
+                return
+            target_id = parts[1].strip()
+            # 補全前綴
+            if target_id.isdigit():
+                target_id = f"nba.l.{target_id}"
+            elif not target_id.startswith("nba.l.") and not target_id.startswith("mlb.l."):
+                target_id = f"nba.l.{target_id}"
         config = load_config()
         
         # 建立 Fetcher 並嘗試同步賽季資訊以驗證 ID 效力
