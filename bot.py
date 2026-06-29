@@ -260,9 +260,9 @@ if __name__ == "__main__":
     
     league_id = config.get("LEAGUE_ID")
     if not league_id:
-        logging.warning("[SYSTEM] 聯賽 ID (LEAGUE_ID) 尚未配置，請透過 LINE 執行 `#設置聯盟ID` 進行設定。")
+        logging.info("[SYSTEM] 多聯盟架構已啟動。聯賽 ID 將在接收到 LINE 指令時依據聊天室 ID 動態載入。")
     else:
-        logging.info(f"[SYSTEM] 目前配置的聯賽 ID 為: {league_id}")
+        logging.info(f"[SYSTEM] 目前配置的預設全域聯賽 ID 為: {league_id}")
 
     port = 5001
 
