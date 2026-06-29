@@ -151,7 +151,7 @@ def oauth_callback():
         
     # 2. 獲取該 chat_id 綁定的 LEAGUE_ID
     league_id = None
-    from src.utils.path_utils import BASE_DIR
+    from src.utils.path_utils import BASE_DIR, get_league_dir
     mapping_path = os.path.join(BASE_DIR, "data", "security", "chat_league_mapping.json")
     if os.path.exists(mapping_path):
         try:
@@ -164,8 +164,8 @@ def oauth_callback():
     if not league_id:
         return f"⚠️ 找不到此聊天室 ({chat_id}) 所綁定的聯賽，請先執行 #設置 以確認綁定關係。", 400
         
-    # 3. 寫入專屬聯賽隔離憑證
-    league_cred_dir = os.path.join(BASE_DIR, "data", "league", league_id)
+    # 3. 寫入專屬聯賽隔離憑證（使用 get_league_dir 正確解析 mlb.l.62358 -> data/league/mlb/62358）
+    league_cred_dir = get_league_dir(league_id)
     os.makedirs(league_cred_dir, exist_ok=True)
     league_cred_file = os.path.join(league_cred_dir, "oauth2.json")
     
