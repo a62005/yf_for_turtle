@@ -106,3 +106,33 @@ class LLMAgent:
                 logging.error(f"[LLM] 備用推估方案也失敗: {fe}")
                 return {"success": False, "start_date": None}
 
+    def parse_draft_date(self, text: str) -> dict:
+        """將自然語言的時間描述解析為標準格式 YYYY-MM-DD HH:MM。"""
+        if not self.provider:
+            return {"success": False, "date": None}
+            
+        import datetime
+        current_year = datetime.datetime.now().year
+        
+        prompt = (
+            f"請將以下這段中文所描述的時間，轉換成標準的日期與時間格式 'YYYY-MM-DD HH:MM'。\n"
+            f"當前年份是 {current_year} 年。如果使用者描述中未指明年份，請合理推估為當前或下一個最接近的年份。\n"
+            f"待解析字串：'{text}'\n\n"
+            "請嚴格以 JSON 格式回傳，包含以下兩個欄位：\n"
+            "- 'success': 布林值，代表是否能成功解析出明確的日期與時間（包含時與分，最小為分鐘，不包含秒數）。\n"
+            "- 'date': 字串，格式為 'YYYY-MM-DD HH:MM'（例如 '2026-10-15 20:30'）。若 success 為 false，此欄位必須為 null。"
+        )
+        
+        try:
+            result = self.provider.generate_json(prompt, temperature=0.1)
+            success = result.get("success") is True
+            date_str = result.get("date")
+            if success and date_str:
+                return {"success": True, "date": date_str}
+            return {"success": False, "date": None}
+        except Exception as e:
+            import logging
+            logging.error(f"[LLM] 解析選秀時間失敗: {e}")
+            return {"success": False, "date": None}
+
+

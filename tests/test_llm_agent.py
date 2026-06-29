@@ -98,3 +98,20 @@ def test_llm_agent_gemini_exception(mock_generate_json):
         assert result["is_command"] is False
         assert result.get("error") is True
         assert "大腦暫時離線" in result["reply_text"]
+
+@patch('src.llm.gemini.GeminiProvider.generate_json')
+def test_parse_draft_date_success(mock_generate_json):
+    mock_generate_json.return_value = {
+        "success": True,
+        "date": "2026-10-15 20:30"
+    }
+
+    with patch.dict('os.environ', {'LLM_API_KEY': 'fake_key', 'LLM_MODEL': 'gemini-2.5-flash'}, clear=True):
+        agent = LLMAgent()
+        result = agent.parse_draft_date("10月15號晚上8點30分")
+        assert result["success"] is True
+        assert result["date"] == "2026-10-15 20:30"
+        mock_generate_json.assert_called_once()
+        args, kwargs = mock_generate_json.call_args
+        assert "10月15號晚上8點30分" in args[0]
+
