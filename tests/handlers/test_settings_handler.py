@@ -29,4 +29,10 @@ def test_settings_handler_execute():
         nickname_btn = [btn for btn in buttons_box["contents"] if btn["type"] == "button" and btn["action"]["label"] == "設置玩家暱稱"][0]
         assert nickname_btn["action"]["text"] == "#設置玩家暱稱"
 
+        assert "設置選秀時間" in btn_labels
+        assert "設置選秀時間 (即將推出)" not in btn_labels
+        draft_time_btn = [btn for btn in buttons_box["contents"] if btn["type"] == "button" and btn["action"]["label"] == "設置選秀時間"][0]
+        assert draft_time_btn["action"]["text"] == "#設置選秀時間"
+
+
 
