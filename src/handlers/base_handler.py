@@ -23,11 +23,36 @@ class BaseHandler(ABC):
             except Exception as e:
                 from src.fetcher import LeaguePermissionError
                 if isinstance(e, LeaguePermissionError) or e.__class__.__name__ == "LeaguePermissionError":
-                    self.reply_text(
-                        event,
-                        configuration,
-                        "⚠️ 機器人 Yahoo 帳號目前無權限存取此聯盟。請確保已將機器人的 Yahoo 帳號邀請為該聯盟的成員或 Co-manager。"
+                    from src.config import current_chat_id, load_config
+                    cfg = load_config()
+                    client_id = ""
+                    server_url = ""
+                    # 1. 優先從傳入的 configuration (若為 dict) 獲取
+                    if isinstance(configuration, dict):
+                        client_id = configuration.get("YAHOO_CLIENT_ID")
+                        server_url = configuration.get("SERVER_URL")
+                    # 2. 若無則從 load_config() 獲取
+                    if not client_id or not server_url:
+                        client_id = client_id or cfg.get("YAHOO_CLIENT_ID") or ""
+                        server_url = server_url or cfg.get("SERVER_URL") or ""
+                        
+                    chat_id = current_chat_id.get() or ""
+                    redirect_uri = f"{server_url.rstrip('/')}/oauth/callback"
+                    
+                    auth_url = (
+                        "https://api.login.yahoo.com/oauth2/request_auth"
+                        f"?client_id={client_id}"
+                        f"&redirect_uri={redirect_uri}"
+                        f"&response_type=code"
+                        f"&state={chat_id}"
                     )
+                    
+                    msg = (
+                        "⚠️ 機器人 Yahoo 帳號目前無權限存取此聯盟。\n"
+                        "請聯絡白名單成員點擊以下連結進行 Yahoo 帳號授權以啟用此聯賽：\n"
+                        f"👉 {auth_url}"
+                    )
+                    self.reply_text(event, configuration, msg)
                 else:
                     raise
         self.execute = wrapped_execute

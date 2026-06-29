@@ -17,24 +17,38 @@ def test_base_handler_security_defaults():
 def test_base_handler_permission_error_handling():
     from src.fetcher import LeaguePermissionError
     from unittest.mock import MagicMock
+    from src.config import current_chat_id
     
-    class ErrorHandler(BaseHandler):
-        def can_handle(self, text):
-            return True
+    class DummyHandler(BaseHandler):
+        def can_handle(self, text): return True
         def execute(self, event, config):
             raise LeaguePermissionError("Permission Denied")
             
-    handler = ErrorHandler()
+    handler = DummyHandler()
     handler.reply_text = MagicMock()
     
     event = MagicMock()
-    config = MagicMock()
+    event.source.type = "group"
+    event.source.group_id = "C_dummy_group"
     
-    handler.execute(event, config)
+    # 這裡傳入對應的 dict 作為 configuration/config，相容 wrapped_execute
+    config = {
+        "YAHOO_CLIENT_ID": "client_123",
+        "SERVER_URL": "https://dummy.ngrok.io"
+    }
     
-    handler.reply_text.assert_called_once_with(
-        event,
-        config,
-        "⚠️ 機器人 Yahoo 帳號目前無權限存取此聯盟。請確保已將機器人的 Yahoo 帳號邀請為該聯盟的成員或 Co-manager。"
-    )
+    token = current_chat_id.set("C_dummy_group")
+    try:
+        handler.execute(event, config)
+        handler.reply_text.assert_called_once()
+        reply_content = handler.reply_text.call_args[0][2]
+        
+        # 驗證包含授權提示與正確的 Redirect 網址
+        assert "無權限存取此聯盟" in reply_content
+        assert "api.login.yahoo.com" in reply_content
+        assert "client_123" in reply_content
+        assert "C_dummy_group" in reply_content  # state 攜帶 chat_id
+        assert "https://dummy.ngrok.io/oauth/callback" in reply_content
+    finally:
+        current_chat_id.reset(token)
 
