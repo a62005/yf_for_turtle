@@ -440,23 +440,40 @@ def build_button_menu_card(title: str, subtitle: str = None, buttons: list = Non
     body_contents.append(_create_header(title, subtitle))
 
     if buttons:
+        contents = []
+        for btn_label, btn_text in buttons:
+            if btn_label is None:
+                contents.append({
+                    "type": "separator",
+                    "margin": "md",
+                    "color": "#EAEAEA"
+                })
+                continue
+
+            if btn_text and btn_text.strip():
+                action = {
+                    "type": "message",
+                    "label": btn_label,
+                    "text": btn_text
+                }
+            else:
+                action = {
+                    "type": "postback",
+                    "label": btn_label,
+                    "data": "action=ignore"
+                }
+            contents.append({
+                "type": "button",
+                "style": "secondary",
+                "height": "sm",
+                "action": action
+            })
+        
         buttons_box = {
             "type": "box",
             "layout": "vertical",
             "spacing": "sm",
-            "contents": [
-                {
-                    "type": "button",
-                    "style": "secondary",
-                    "height": "sm",
-                    "action": {
-                        "type": "message",
-                        "label": btn_label,
-                        "text": btn_text
-                    }
-                }
-                for btn_label, btn_text in buttons
-            ]
+            "contents": contents
         }
         body_contents.append(buttons_box)
 

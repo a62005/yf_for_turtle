@@ -1,9 +1,20 @@
 import logging
 import re
+import os
+import json
+import time
 from linebot.v3.webhooks import MessageEvent
 from linebot.v3.messaging import Configuration, ApiClient, MessagingApi, ReplyMessageRequest, TextMessage
 from src.handlers.dispatcher import CommandDispatcher
 from src.llm.llm_agent import LLMAgent
+from src.config import load_config
+from src.utils.session_manager import (
+    get_nickname_session, 
+    clear_nickname_session,
+    get_draft_time_session,
+    clear_draft_time_session
+)
+from src.utils.path_utils import get_league_team_mapping_path
 
 class IntentRouter:
     def __init__(self, dispatcher: CommandDispatcher):
@@ -38,7 +49,13 @@ class IntentRouter:
         if event.source.type == "user":
             return True
 
-        # 3. 群聊中必須被提及 (@提及)
+        # 3. 活動中 Session 優先（在群組也不需要被 @提及）
+        user_id = getattr(event.source, "user_id", None)
+        if user_id:
+            if get_nickname_session(user_id) or get_draft_time_session(user_id):
+                return True
+
+        # 4. 群聊中必須被提及 (@提及)
         if event.source.type in ["group", "room"]:
             # 檢查官方 mention 物件
             if hasattr(event.message, "mention") and event.message.mention:
@@ -58,6 +75,41 @@ class IntentRouter:
             return
 
         user_text = event.message.text.strip()
+        
+        user_id = getattr(event.source, "user_id", None)
+        if user_id:
+            # 1. 攔截選秀時間會話
+            draft_session = get_draft_time_session(user_id)
+            if draft_session:
+                if user_text.startswith("#"):
+                    clear_draft_time_session(user_id)
+                else:
+                    parsed = self.llm_agent.parse_draft_date(user_text)
+                    if parsed.get("success") and parsed.get("date"):
+                        date_val = parsed["date"]
+                        self._update_league_settings({"DRAFT_DATE": date_val})
+                        clear_draft_time_session(user_id)
+                        self.reply_text(event, configuration, f"✅ 成功將選秀時間修改為：{date_val}")
+                    else:
+                        self.reply_text(
+                            event, 
+                            configuration, 
+                            "⚠️ 無法解析您輸入的時間格式，請重新輸入（例如：2026-10-15 19:30），或輸入 # 取消"
+                        )
+                    return
+
+            # 2. 攔截暱稱設定會話
+            session = get_nickname_session(user_id)
+            if session:
+                # 用戶發送標準指令 (# 開頭) 則主動重置會話，不進行攔截
+                if user_text.startswith("#"):
+                    clear_nickname_session(user_id)
+                else:
+                    team_id = session["team_id"]
+                    self._update_team_nickname(team_id, user_text)
+                    clear_nickname_session(user_id)
+                    self.reply_text(event, configuration, f"✅ 成功將暱稱修改為：{user_text}")
+                    return
         
         # 1. 優先處理標準指令
         if user_text.startswith("#"):
@@ -139,9 +191,8 @@ class IntentRouter:
         """Load and return the team mapping from json config file."""
         import os
         import json
-        from src.config import load_config
-        config = load_config()
-        mapping_file = config.get("TEAM_MAPPING_FILE", "team_mapping.json")
+        from src.utils.path_utils import get_league_team_mapping_path
+        mapping_file = get_league_team_mapping_path()
         if os.path.exists(mapping_file):
             try:
                 with open(mapping_file, "r", encoding="utf-8") as f:
@@ -150,3 +201,66 @@ class IntentRouter:
                 import logging
                 logging.error(f"Failed to load team mapping in IntentRouter: {e}")
         return {}
+
+    def reply_text(self, event: MessageEvent, configuration: Configuration, text: str) -> None:
+        """Reply to the event with a text message."""
+        with ApiClient(configuration) as api_client:
+            MessagingApi(api_client).reply_message(
+                ReplyMessageRequest(
+                    reply_token=event.reply_token,
+                    messages=[TextMessage(text=text)]
+                )
+            )
+
+    def _update_team_nickname(self, team_id: str, new_nickname: str) -> None:
+        config = load_config()
+        league_id = config.get("LEAGUE_ID")
+        if not league_id:
+            return
+        mapping_path = get_league_team_mapping_path(league_id)
+        
+        mapping = {}
+        if os.path.exists(mapping_path):
+            try:
+                with open(mapping_path, "r", encoding="utf-8") as f:
+                    mapping = json.load(f)
+            except Exception:
+                mapping = {}
+                
+        mapping[str(team_id)] = new_nickname
+        
+        try:
+            os.makedirs(os.path.dirname(mapping_path), exist_ok=True)
+            with open(mapping_path, "w", encoding="utf-8") as f:
+                json.dump(mapping, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            import logging
+            logging.error(f"[IntentRouter] 寫入暱稱對應檔失敗: {e}")
+
+    def _update_league_settings(self, new_settings: dict) -> None:
+        config = load_config()
+        league_id = config.get("LEAGUE_ID")
+        if not league_id:
+            return
+            
+        from src.utils.path_utils import get_league_dir
+        league_dir = get_league_dir(league_id)
+        settings_path = os.path.join(league_dir, "settings.json")
+        
+        settings = {}
+        if os.path.exists(settings_path):
+            try:
+                with open(settings_path, "r", encoding="utf-8") as f:
+                    settings = json.load(f)
+            except Exception:
+                settings = {}
+                
+        settings.update(new_settings)
+        
+        try:
+            os.makedirs(os.path.dirname(settings_path), exist_ok=True)
+            with open(settings_path, "w", encoding="utf-8") as f:
+                json.dump(settings, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            import logging
+            logging.error(f"[IntentRouter] 寫入設定檔 settings.json 失敗: {e}")

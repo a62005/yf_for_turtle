@@ -16,7 +16,8 @@ def test_sync_season_metadata_incomplete_base(mock_save, mock_load):
     sync_season_metadata(fetcher, "123")
     
     # Should save what it got and return early
-    mock_save.assert_called_once_with({"league_id": "nba.l.123"})
+    mock_load.assert_called_once_with("123")
+    mock_save.assert_called_once_with({"league_id": "nba.l.123"}, "123")
     assert fetcher.fetch_week_end_date.call_count == 0
 
 @patch("src.utils.season_utils.load_league_metadata")
@@ -36,8 +37,9 @@ def test_sync_season_metadata_needs_update(mock_save, mock_load):
     
     sync_season_metadata(fetcher, "123")
     
+    mock_load.assert_called_once_with("123")
     assert fetcher.fetch_week_end_date.call_count == 2
-    mock_save.assert_called_once()
+    mock_save.assert_called_once_with(mock_save.call_args[0][0], "123")
     
     saved_meta = mock_save.call_args[0][0]
     assert saved_meta["week_dates"] == {"1": "2025-10-27", "2": "2025-11-03"}
@@ -70,5 +72,6 @@ def test_sync_season_metadata_no_update_needed(mock_save, mock_load):
     sync_season_metadata(fetcher, "123")
     
     # Should not fetch week end dates again
+    mock_load.assert_called_once_with("123")
     assert fetcher.fetch_week_end_date.call_count == 0
-    mock_save.assert_called_once()
+    mock_save.assert_called_once_with(mock_save.call_args[0][0], "123")

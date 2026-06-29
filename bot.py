@@ -28,6 +28,9 @@ from src.handlers.injury_handler import InjuryHandler
 from src.handlers.id_handler import IdHandler
 from src.handlers.super_admin_handler import SuperAdminHandler
 from src.handlers.settings_handler import SettingsHandler
+from src.handlers.set_league_id_handler import SetLeagueIdHandler
+from src.handlers.set_nickname_handler import SetNicknameHandler
+from src.handlers.set_draft_time_handler import SetDraftTimeHandler
 
 def cleanup_port(port):
     for proc in psutil.process_iter(['pid', 'name']):
@@ -85,6 +88,9 @@ dispatcher.register(FootballHandler())
 dispatcher.register(InjuryHandler())
 dispatcher.register(SuperAdminHandler())
 dispatcher.register(SettingsHandler())
+dispatcher.register(SetLeagueIdHandler())
+dispatcher.register(SetNicknameHandler())
+dispatcher.register(SetDraftTimeHandler())
 
 # Initialize IntentRouter
 intent_router = IntentRouter(dispatcher)
@@ -104,7 +110,8 @@ def callback():
 
 @app.route("/images/<path:filename>")
 def serve_image(filename):
-    image_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "images")
+    from src.utils.path_utils import get_league_image_dir
+    image_dir = get_league_image_dir()
     return send_from_directory(image_dir, filename)
 
 @handler.add(MessageEvent, message=TextMessageContent)
@@ -121,11 +128,7 @@ def handle_message(event):
     event_time_ms = getattr(event, "timestamp", None)
     if event_time_ms:
         delay_sec = (now_ms - event_time_ms) / 1000.0
-        config = load_config()
-        try:
-            max_delay = float(config.get("MAX_EVENT_DELAY_SECONDS", 10.0))
-        except ValueError:
-            max_delay = 10.0
+        max_delay = 10.0
             
         if delay_sec > max_delay:
             logging.warning(
@@ -139,15 +142,12 @@ def handle_message(event):
 if __name__ == "__main__":
     cleanup_port(5001)
     config = load_config()
-
-
-
-    fetcher = YahooFantasyFetcher(client_id=config.get("YAHOO_CLIENT_ID"), client_secret=config.get("YAHOO_CLIENT_SECRET"))
-    try:
-        from src.utils.season_utils import sync_season_metadata
-        sync_season_metadata(fetcher, config["LEAGUE_ID"])
-    except Exception as e:
-        logging.error(f"[SYSTEM] 賽季資料同步失敗: {e}")
+    
+    league_id = config.get("LEAGUE_ID")
+    if not league_id:
+        logging.warning("[SYSTEM] 聯賽 ID (LEAGUE_ID) 尚未配置，請透過 LINE 執行 `#設置聯盟ID` 進行設定。")
+    else:
+        logging.info(f"[SYSTEM] 目前配置的聯賽 ID 為: {league_id}")
 
     port = 5001
 

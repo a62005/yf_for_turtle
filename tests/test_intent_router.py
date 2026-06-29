@@ -165,6 +165,18 @@ def test_should_process_logic(mock_get_bot_id):
     event_group_chat = create_mock_event("我不行了", chat_type="group")
     assert router.should_process(event_group_chat, config) is False
 
+    # 6. 群聊無 mention 但該用戶有活動中的選秀/暱稱會話 -> True
+    event_group_session = create_mock_event("2026-10-15 20:00", chat_type="group")
+    event_group_session.source.user_id = "U12345_session"
+    
+    with patch("src.handlers.intent_router.get_draft_time_session", return_value={"type": "draft_time"}), \
+         patch("src.handlers.intent_router.get_nickname_session", return_value=None):
+        assert router.should_process(event_group_session, config) is True
+        
+    with patch("src.handlers.intent_router.get_draft_time_session", return_value=None), \
+         patch("src.handlers.intent_router.get_nickname_session", return_value={"type": "nickname"}):
+        assert router.should_process(event_group_session, config) is True
+
 
 @patch('src.llm.llm_agent.LLMAgent.analyze_intent')
 def test_router_converts_injury_command_and_dispatches(mock_analyze):
@@ -183,3 +195,138 @@ def test_router_converts_injury_command_and_dispatches(mock_analyze):
     # 確保成功轉交 dispatcher 處理，且其內容被置換為 "#傷兵 韋哥"
     dispatcher.handle.assert_called_once_with(event, config)
     assert event.message.text == "#傷兵 韋哥"
+
+
+def test_intent_router_nickname_session_interception():
+    import json
+    from unittest.mock import mock_open
+    from src.handlers.dispatcher import CommandDispatcher
+    from src.handlers.intent_router import IntentRouter
+    from src.utils.session_manager import set_nickname_session, get_nickname_session
+    
+    dispatcher = CommandDispatcher()
+    router = IntentRouter(dispatcher)
+    
+    event = MagicMock()
+    event.source.user_id = "user_test_intercept"
+    event.source.type = "user"
+    event.message.text = "韋哥的新暱稱"
+    config = MagicMock()
+    
+    # 設置 60 秒的有效會話
+    set_nickname_session("user_test_intercept", "1", duration_sec=60)
+    
+    mock_mapping = {"1": "小明"}
+    
+    with patch("src.handlers.intent_router.load_config", return_value={"LEAGUE_ID": "123"}), \
+         patch("src.handlers.intent_router.get_league_team_mapping_path", return_value="dummy_dir/team_mapping.json"), \
+         patch("src.handlers.intent_router.os.path.exists", return_value=True), \
+         patch("src.handlers.intent_router.os.makedirs") as mock_makedirs, \
+         patch("src.handlers.intent_router.open", mock_open(read_data=json.dumps(mock_mapping))) as m_file, \
+         patch.object(router, "reply_text") as mock_reply:
+        
+        router.route(event, config)
+        
+        # 驗證會話被清空
+        assert get_nickname_session("user_test_intercept") is None
+        # 驗證寫入新暱稱
+        assert m_file().write.called
+        # 驗證回覆
+        mock_reply.assert_called_once_with(event, config, "✅ 成功將暱稱修改為：韋哥的新暱稱")
+
+def test_intent_router_nickname_session_reset_by_command():
+    from src.handlers.dispatcher import CommandDispatcher
+    from src.handlers.intent_router import IntentRouter
+    from src.utils.session_manager import set_nickname_session, get_nickname_session
+    
+    dispatcher = CommandDispatcher()
+    dispatcher.handle = MagicMock()
+    router = IntentRouter(dispatcher)
+    
+    event = MagicMock()
+    event.source.user_id = "user_test_reset"
+    event.message.text = "#對戰"
+    config = MagicMock()
+    
+    set_nickname_session("user_test_reset", "1", duration_sec=60)
+    
+    with patch.object(router, "should_process", return_value=True):
+        router.route(event, config)
+        # 標準指令將會話清除
+        assert get_nickname_session("user_test_reset") is None
+        # 正常分發指令
+        dispatcher.handle.assert_called_once()
+
+def test_intent_router_intercept_draft_session_success():
+    import json
+    from unittest.mock import mock_open
+    from src.handlers.dispatcher import CommandDispatcher
+    from src.handlers.intent_router import IntentRouter
+    from src.utils.session_manager import set_draft_time_session, get_draft_time_session
+    from linebot.v3.messaging import Configuration
+    
+    dispatcher = CommandDispatcher()
+    router = IntentRouter(dispatcher)
+    
+    event = MagicMock()
+    event.source.user_id = "user_test_draft"
+    event.source.type = "user"
+    event.message.text = "10月15號晚上8點"
+    
+    config = Configuration()
+    config.access_token = "dummy_access_token"
+    
+    # 設置 60 秒的有效會話 (draft_time session)
+    set_draft_time_session("user_test_draft", True, duration_sec=60)
+    
+    mock_settings = {"DRAFT_DATE": "2025-01-01"}
+    
+    # Mock LLMAgent.parse_draft_date 讓它成功解析出時間
+    with patch("src.handlers.intent_router.load_config", return_value={"LEAGUE_ID": "123"}), \
+         patch("src.handlers.intent_router.os.path.exists", return_value=True), \
+         patch("src.handlers.intent_router.os.makedirs") as mock_makedirs, \
+         patch("src.handlers.intent_router.open", mock_open(read_data=json.dumps(mock_settings))) as m_file, \
+         patch.object(router.llm_agent, "parse_draft_date", return_value={"success": True, "date": "2026-10-15 20:00"}), \
+         patch.object(router, "reply_text") as mock_reply:
+         
+        router.route(event, config)
+        
+        # 驗證會話被清空
+        assert get_draft_time_session("user_test_draft") is None
+        # 驗證寫入新設定到 settings.json
+        assert m_file().write.called
+        # 驗證回覆包含標準成功字串
+        mock_reply.assert_called_once_with(event, config, "✅ 成功將選秀時間修改為：2026-10-15 20:00")
+
+def test_intent_router_intercept_draft_session_failure():
+    from src.handlers.dispatcher import CommandDispatcher
+    from src.handlers.intent_router import IntentRouter
+    from src.utils.session_manager import set_draft_time_session, get_draft_time_session
+    from linebot.v3.messaging import Configuration
+    
+    dispatcher = CommandDispatcher()
+    router = IntentRouter(dispatcher)
+    
+    event = MagicMock()
+    event.source.user_id = "user_test_draft_fail"
+    event.source.type = "user"
+    event.message.text = "忘記了"
+    
+    config = Configuration()
+    config.access_token = "dummy_access_token"
+    
+    set_draft_time_session("user_test_draft_fail", True, duration_sec=60)
+    
+    with patch("src.handlers.intent_router.load_config", return_value={"LEAGUE_ID": "123"}), \
+         patch.object(router.llm_agent, "parse_draft_date", return_value={"success": False, "date": None}), \
+         patch.object(router, "reply_text") as mock_reply:
+         
+        router.route(event, config)
+        
+        # 驗證會話依然存在 (解析失敗不清除會話)
+        assert get_draft_time_session("user_test_draft_fail") is not None
+        # 驗證回覆警告字串
+        mock_reply.assert_called_once()
+        args, kwargs = mock_reply.call_args
+        assert "無法解析" in args[2] or "格式" in args[2] or "請重新輸入" in args[2]
+

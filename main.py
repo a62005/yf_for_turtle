@@ -29,7 +29,9 @@ def main():
         league_id = config["LEAGUE_ID"]
         logging.info(f"[CONFIG] 載入聯盟設定，League ID: {league_id}")
         
-        mapping_file = config.get("TEAM_MAPPING_FILE", "team_mapping.json")
+        from src.utils.path_utils import get_league_dir, get_league_image_dir, get_league_team_mapping_path
+        
+        mapping_file = get_league_team_mapping_path(league_id)
         team_mapping = {}
         if os.path.exists(mapping_file):
             try:
@@ -43,7 +45,7 @@ def main():
             client_id=config.get("YAHOO_CLIENT_ID"),
             client_secret=config.get("YAHOO_CLIENT_SECRET")
         )
-        storage = JsonStorage()
+        storage = JsonStorage(data_dir=get_league_dir(league_id))
 
         # 2. Season Stats
         logging.info("[YAHOO] 正在抓取賽季總戰績 (Season Standings)...")
@@ -98,7 +100,7 @@ def main():
             daily_processed = process_stats_for_visual(daily_stats)
             weekly_processed = process_stats_for_visual(weekly_stats)
             
-            image_dir = os.path.join("data", "images")
+            image_dir = get_league_image_dir(league_id)
             os.makedirs(image_dir, exist_ok=True)
             
             # Combined image

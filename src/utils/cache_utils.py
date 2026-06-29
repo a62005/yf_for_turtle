@@ -2,48 +2,45 @@ import os
 import json
 from datetime import datetime
 from filelock import FileLock
+from src.utils.path_utils import get_league_metadata_path, get_league_empty_records_path
 
-# 使用相對於本檔案所在 src 目錄的絕對路徑，確保不同工作目錄 (CWD) 啟動時仍能精確存取根目錄的快取
-BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-CACHE_FILE = os.path.join(BASE_DIR, "data", "empty_records.json")
-LOCK_FILE = CACHE_FILE + ".lock"
-METADATA_FILE = os.path.join(BASE_DIR, "data", "league_metadata.json")
-METADATA_LOCK = METADATA_FILE + ".lock"
-
-def _load_cache(file_path=CACHE_FILE):
+def _load_cache(file_path):
     if not os.path.exists(file_path):
         return {}
     try:
-        with open(file_path, "r") as f:
+        with open(file_path, "r", encoding="utf-8") as f:
             return json.load(f)
     except (OSError, json.JSONDecodeError):
         return {}
 
-def _save_cache(data, file_path=CACHE_FILE):
+def _save_cache(data, file_path):
     os.makedirs(os.path.dirname(file_path), exist_ok=True)
     temp_file = file_path + '.tmp'
-    with open(temp_file, "w") as f:
-        json.dump(data, f)
+    with open(temp_file, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False)
     os.replace(temp_file, file_path)
 
 def is_empty_data(key: str) -> bool:
-    cache = _load_cache()
+    path = get_league_empty_records_path()
+    cache = _load_cache(path)
     return cache.get(key, False)
 
 def mark_empty_data(key: str):
-    os.makedirs(os.path.dirname(CACHE_FILE), exist_ok=True)
-    with FileLock(LOCK_FILE):
-        cache = _load_cache()
+    path = get_league_empty_records_path()
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with FileLock(path + ".lock"):
+        cache = _load_cache(path)
         cache[key] = True
-        _save_cache(cache)
+        _save_cache(cache, path)
 
-def save_league_metadata(data: dict):
+def save_league_metadata(data: dict, league_id: str = None):
     """Save league metadata with a timestamp."""
-    os.makedirs(os.path.dirname(METADATA_FILE), exist_ok=True)
-    with FileLock(METADATA_LOCK):
+    path = get_league_metadata_path(league_id)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with FileLock(path + ".lock"):
         data["last_updated"] = datetime.now().isoformat()
-        _save_cache(data, METADATA_FILE)
+        _save_cache(data, path)
 
-def load_league_metadata() -> dict:
+def load_league_metadata(league_id: str = None) -> dict:
     """Load league metadata from cache."""
-    return _load_cache(METADATA_FILE)
+    return _load_cache(get_league_metadata_path(league_id))

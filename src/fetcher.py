@@ -1,9 +1,13 @@
 import yahoofantasy
 import logging
 import xml.etree.ElementTree as ET
+import os
+import json
+from src.utils.path_utils import get_league_weekly_dir, get_league_daily_dir
 from src.constants.stat_map import translate_stat_id
 from yahoofantasy.api.parse import as_list, from_response_object
 from yahoofantasy.resources.team import Team
+
 
 YAHOO_NS = {'ns': 'http://fantasysports.yahooapis.com/fantasy/v2/base.rng'}
 
@@ -201,19 +205,54 @@ class YahooFantasyFetcher:
 
     def fetch_weekly_stats(self, league_id: str, week: int) -> dict:
         league_id = self._normalize_league_id(league_id)
-        league = yahoofantasy.League(self.ctx, league_id)
-        # Using teams/stats;type=week;week=N to get all 12 teams instead of scoreboard (which only shows matchups)
-        url = f"teams/stats;type=week;week={week}"
-        data = self.ctx._load_or_fetch(f"weekly_teams_stats.{league_id}.{week}", url, league=league_id)
+        raw_id = league_id.split(".")[-1]
+        
+        cache_dir = get_league_weekly_dir(raw_id)
+        cache_path = os.path.join(cache_dir, f"week_{week}.json")
+        
+        if os.path.exists(cache_path):
+            logging.info(f"[CACHE] 命中週數據快取: {cache_path}")
+            try:
+                with open(cache_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                if data:
+                    return self._parse_teams_from_content(data)
+            except Exception as e:
+                logging.warning(f"[CACHE] 讀取週數據快取失敗: {e}")
+                
+        url = f"league/{league_id}/scoreboard;week={week}"
+        data = self.ctx.make_request(url)
+        
+        os.makedirs(cache_dir, exist_ok=True)
+        with open(cache_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
         return self._parse_teams_from_content(data)
 
     def fetch_daily_stats(self, league_id: str, date_str: str) -> dict:
         league_id = self._normalize_league_id(league_id)
-        league = yahoofantasy.League(self.ctx, league_id)
-        # Using teams/stats;type=date;date=YYYY-MM-DD for true daily totals
-        url = f"teams/stats;type=date;date={date_str}"
-        data = self.ctx._load_or_fetch(f"daily_stats.{league_id}.{date_str}", url, league=league_id)
+        raw_id = league_id.split(".")[-1]
+        
+        cache_dir = get_league_daily_dir(raw_id)
+        cache_path = os.path.join(cache_dir, f"date_{date_str}.json")
+        
+        if os.path.exists(cache_path):
+            logging.info(f"[CACHE] 命中日數據快取: {cache_path}")
+            try:
+                with open(cache_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                if data:
+                    return self._parse_teams_from_content(data)
+            except Exception as e:
+                logging.warning(f"[CACHE] 讀取日數據快取失敗: {e}")
+                
+        url = f"league/{league_id}/teams/stats;type=date;date={date_str}"
+        data = self.ctx.make_request(url)
+        
+        os.makedirs(cache_dir, exist_ok=True)
+        with open(cache_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
         return self._parse_teams_from_content(data)
+
 
     def _parse_teams_from_content(self, data) -> dict:
         """Common parser for responses containing a list of teams (standings or teams/stats)."""

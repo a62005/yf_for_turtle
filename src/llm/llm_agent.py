@@ -73,3 +73,66 @@ class LLMAgent:
                 "reply_text": "我的大腦暫時離線了，請稍後再試！",
                 "error": True
             }
+
+    def search_nba_season_start(self, year: int) -> dict:
+        """使用 LLM 搭配 Google 搜尋，查詢特定年份/賽季的 NBA 開季日期。"""
+        if not self.provider or not hasattr(self.provider, "generate_json_with_search"):
+            return {"success": False, "start_date": None}
+            
+        prompt = (
+            f"請搜尋網路，找出 NBA {year}-{str(year+1)[2:]} 新賽季（或下一個即將開始的賽季）官方公佈的開季日期與時間。"
+            "請嚴格回傳 JSON 格式，欄位包含：\n"
+            "- 'start_date': 字串，格式必須為 'YYYY-MM-DD HH:MM:SS' (例如 '2026-10-20 08:00:00'，時間若無精確公佈請使用上午8點 '08:00:00')。\n"
+            "- 'success': 布林值，代表是否找到該球季精確的官方開季日期。"
+        )
+        
+        try:
+            result = self.provider.generate_json_with_search(prompt)
+            return result
+        except Exception as e:
+            import logging
+            logging.warning(f"[LLM] 搜尋開季日期失敗 (可能為搜尋工具配額限制): {e}。嘗試啟用不含搜尋的備用推估方案...")
+            try:
+                fallback_prompt = (
+                    f"請推估或提供 NBA {year}-{str(year+1)[2:]} 新賽季官方公佈或預計的開季日期與時間（通常在 {year} 年 10 月中下旬的某個星期二，例如 10 月 20 日、21 日或 22 日等）。\n"
+                    "請嚴格回傳 JSON 格式，欄位包含：\n"
+                    "- 'start_date': 字串，格式必須為 'YYYY-MM-DD HH:MM:SS' (例如 '2026-10-20 08:00:00'，時間請使用上午8點 '08:00:00')。\n"
+                    "- 'success': 布林值，代表是否成功產生此日期。"
+                )
+                result = self.provider.generate_json(fallback_prompt)
+                logging.info(f"[LLM] 備用方案成功推估開季日期: {result}")
+                return result
+            except Exception as fe:
+                logging.error(f"[LLM] 備用推估方案也失敗: {fe}")
+                return {"success": False, "start_date": None}
+
+    def parse_draft_date(self, text: str) -> dict:
+        """將自然語言的時間描述解析為標準格式 YYYY-MM-DD HH:MM。"""
+        if not self.provider:
+            return {"success": False, "date": None}
+            
+        import datetime
+        current_year = datetime.datetime.now().year
+        
+        prompt = (
+            f"請將以下這段中文所描述的時間，轉換成標準的日期與時間格式 'YYYY-MM-DD HH:MM'。\n"
+            f"當前年份是 {current_year} 年。如果使用者描述中未指明年份，請合理推估為當前或下一個最接近的年份。\n"
+            f"待解析字串：'{text}'\n\n"
+            "請嚴格以 JSON 格式回傳，包含以下兩個欄位：\n"
+            "- 'success': 布林值，代表是否能成功解析出明確的日期與時間（包含時與分，最小為分鐘，不包含秒數）。\n"
+            "- 'date': 字串，格式為 'YYYY-MM-DD HH:MM'（例如 '2026-10-15 20:30'）。若 success 為 false，此欄位必須為 null。"
+        )
+        
+        try:
+            result = self.provider.generate_json(prompt, temperature=0.1)
+            success = result.get("success") is True
+            date_str = result.get("date")
+            if success and date_str:
+                return {"success": True, "date": date_str}
+            return {"success": False, "date": None}
+        except Exception as e:
+            import logging
+            logging.error(f"[LLM] 解析選秀時間失敗: {e}")
+            return {"success": False, "date": None}
+
+

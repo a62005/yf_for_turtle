@@ -3,6 +3,11 @@ import json
 import pytest
 from src.fetcher import YahooFantasyFetcher
 
+@pytest.fixture(autouse=True)
+def mock_fetcher_fs(monkeypatch, tmp_path):
+    monkeypatch.setattr("src.fetcher.get_league_weekly_dir", lambda *args: str(tmp_path / "weekly"))
+    monkeypatch.setattr("src.fetcher.get_league_daily_dir", lambda *args: str(tmp_path / "daily"))
+
 class MockPlayer:
     def __init__(self, name):
         self.name = name
@@ -94,7 +99,7 @@ def test_fetch_weekly_stats(mocker):
             }
         }
     }
-    mock_ctx._load_or_fetch.return_value = teams_data
+    mock_ctx.make_request.return_value = teams_data
     
     # Mock Team and as_list/from_response_object
     mocker.patch("yahoofantasy.resources.team.Team")
@@ -132,7 +137,8 @@ def test_fetch_daily_stats(mocker):
             }
         }
     }
-    mock_ctx._load_or_fetch.return_value = teams_data
+    mock_ctx.make_request.return_value = teams_data
+
     
     mocker.patch("yahoofantasy.resources.team.Team")
     mocker.patch("yahoofantasy.api.parse.as_list", side_effect=lambda x: x if isinstance(x, list) else [x])

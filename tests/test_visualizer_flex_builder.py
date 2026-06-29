@@ -215,3 +215,57 @@ def test_all_cards_schema_validation():
     card4 = build_button_menu_card("Matchup Menu", "Select", buttons)
     FlexContainer.from_json(json.dumps(card4))
 
+
+def test_build_button_menu_card_with_empty_text():
+    buttons = [
+        ("設置選秀時間 (即將推出)", ""),
+        ("更換聯盟ID (即將推出)", None)
+    ]
+    card = build_button_menu_card("Settings Menu", "Select Option", buttons)
+    body_contents = card["body"]["contents"]
+    buttons_box = body_contents[1]
+    assert len(buttons_box["contents"]) == 2
+    
+    btn0 = buttons_box["contents"][0]
+    assert btn0["type"] == "button"
+    assert btn0["action"]["type"] == "postback"
+    assert btn0["action"]["label"] == "設置選秀時間 (即將推出)"
+    assert btn0["action"]["data"] == "action=ignore"
+    
+    btn1 = buttons_box["contents"][1]
+    assert btn1["type"] == "button"
+    assert btn1["action"]["type"] == "postback"
+    assert btn1["action"]["label"] == "更換聯盟ID (即將推出)"
+    assert btn1["action"]["data"] == "action=ignore"
+
+
+def test_build_button_menu_card_with_separator():
+    buttons = [
+        ("設置選秀時間 (即將推出)", ""),
+        (None, None),
+        ("更換聯盟ID (即將推出)", "")
+    ]
+    card = build_button_menu_card("Settings Menu", None, buttons)
+    body_contents = card["body"]["contents"]
+    
+    # Header should not contain a subtitle since we passed None
+    header = body_contents[0]
+    assert len(header["contents"]) == 1
+    assert header["contents"][0]["text"] == "Settings Menu"
+    
+    buttons_box = body_contents[1]
+    assert len(buttons_box["contents"]) == 3
+    
+    # Index 0: Button
+    assert buttons_box["contents"][0]["type"] == "button"
+    
+    # Index 1: Separator
+    assert buttons_box["contents"][1]["type"] == "separator"
+    assert buttons_box["contents"][1]["margin"] == "md"
+    assert buttons_box["contents"][1]["color"] == "#EAEAEA"
+    
+    # Index 2: Button
+    assert buttons_box["contents"][2]["type"] == "button"
+
+
+

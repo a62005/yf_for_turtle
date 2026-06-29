@@ -153,7 +153,8 @@ class StatsHandler(BaseHandler):
 
         # The rest is the same standard cache checking/execution
         project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        img_path = os.path.join(project_root, "data", "images", img_filename)
+        from src.utils.path_utils import get_league_dir, get_league_image_dir
+        img_path = os.path.join(get_league_image_dir(), img_filename)
         
         if os.path.exists(img_path):
             logging.info(f"[CACHE] 命中圖片快取: {img_filename}")
@@ -190,7 +191,7 @@ class StatsHandler(BaseHandler):
                     )
                 return
             
-        lock_file = os.path.join(project_root, "data", f"{cache_key}_fetch.lock")
+        lock_file = os.path.join(get_league_dir(), f"{cache_key}_fetch.lock")
         os.makedirs(os.path.dirname(lock_file), exist_ok=True)
         try:
             fd = os.open(lock_file, os.O_CREAT | os.O_EXCL | os.O_WRONLY)

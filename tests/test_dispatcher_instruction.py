@@ -15,3 +15,22 @@ def test_dispatcher_gets_all_instructions():
     dispatcher = CommandDispatcher()
     dispatcher.register(DummyHandler())
     assert dispatcher.get_all_instruction_descs() == "- #測試指令: 測試用"
+
+class ExcludedDummyHandler(BaseHandler):
+    def __init__(self):
+        super().__init__()
+        self.exclude_from_llm = True
+
+    @property
+    def instruction_desc(self) -> str:
+        return "- #排除指令: 測試用"
+    def can_handle(self, user_text: str) -> bool:
+        return False
+    def execute(self, event, configuration) -> None:
+        pass
+
+def test_dispatcher_excludes_llm_instructions():
+    dispatcher = CommandDispatcher()
+    dispatcher.register(DummyHandler())
+    dispatcher.register(ExcludedDummyHandler())
+    assert dispatcher.get_all_instruction_descs() == "- #測試指令: 測試用"

@@ -60,40 +60,75 @@ def test_calculate_countdown():
         res_reached = handler._calculate_countdown("2026-05-29 07:00:00")
         assert res_reached == "已經到達！"
 
+@patch("src.handlers.misc_handler.save_league_metadata")
+@patch("src.handlers.misc_handler.LLMAgent")
 @patch("src.handlers.misc_handler.load_league_metadata")
 @patch("src.handlers.misc_handler.get_pacific_date")
 @patch("src.handlers.misc_handler.load_config")
 @patch("src.handlers.misc_handler.ApiClient")
 @patch("src.handlers.misc_handler.MessagingApi")
-def test_execute_season_start(mock_messaging_api, mock_api_client, mock_load_config, mock_get_pacific, mock_load_meta, mock_event, mock_config):
+def test_execute_season_start(mock_messaging_api, mock_api_client, mock_load_config, mock_get_pacific, mock_load_meta, mock_llm_agent_class, mock_save_meta, mock_event, mock_config):
     handler = MiscHandler()
-    
-    # 1. Not offseason -> silently ignore
-    mock_load_meta.return_value = {"end_date": "2026-04-12"}
-    mock_get_pacific.return_value = "2026-04-10" # before end_date
     mock_event.message.text = "#開季"
-    
-    handler.execute(mock_event, mock_config)
-    mock_api_client.assert_not_called()
-    
-    # 2. Offseason, but NEXT_SEASON_START_DATE not set -> silently ignore
-    mock_get_pacific.return_value = "2026-05-29" # after end_date
-    mock_load_config.return_value = {"NEXT_SEASON_START_DATE": None}
-    
-    handler.execute(mock_event, mock_config)
-    mock_api_client.assert_not_called()
-    
-    # 3. Offseason and NEXT_SEASON_START_DATE set -> reply countdown
-    mock_load_config.return_value = {"NEXT_SEASON_START_DATE": "2026-10-20 08:00:00"}
-    
-    # Mock _calculate_countdown to return stable string
+    mock_get_pacific.return_value = "2026-05-29"
+
+    # 1. 優先檢查快取中是否有 next_season_start_date (且為休賽季)
+    mock_load_meta.return_value = {"next_season_start_date": "2026-10-20 08:00:00", "end_date": "2026-04-12"}
     with patch.object(handler, "_calculate_countdown", return_value="140 天 5 小時 20 分鐘") as mock_calc:
         handler.execute(mock_event, mock_config)
         mock_calc.assert_called_with("2026-10-20 08:00:00")
-        
         reply_req = mock_messaging_api.return_value.reply_message.call_args[0][0]
         assert reply_req.reply_token == "dummy_reply_token"
-        assert reply_req.messages[0].text == "🏀 距離 2026-27 新賽季開季還有：\n👉 140 天 5 小時 20 分鐘"
+        assert reply_req.messages[0].text == "🏀 新賽季即將開始以下時間開打：\n👉 2026年10月20日\n🏀 距離新賽季開季還有：\n👉 140 天 5 小時 20 分鐘"
+
+    # 重設 mock 以供下一階段測試
+    mock_messaging_api.reset_mock()
+    mock_api_client.reset_mock()
+
+    # 2. 快取中無 next_season_start_date，但 start_date 在未來
+    mock_load_meta.return_value = {"start_date": "2026-10-25", "end_date": "2026-04-12"}
+    mock_get_pacific.return_value = "2026-05-29"
+    with patch.object(handler, "_calculate_countdown", return_value="145 天 5 小時 20 分鐘") as mock_calc:
+        handler.execute(mock_event, mock_config)
+        mock_calc.assert_called_with("2026-10-25 08:00:00")
+        reply_req = mock_messaging_api.return_value.reply_message.call_args[0][0]
+        assert reply_req.messages[0].text == "🏀 新賽季即將開始以下時間開打：\n👉 2026年10月25日\n🏀 距離新賽季開季還有：\n👉 145 天 5 小時 20 分鐘"
+
+    mock_messaging_api.reset_mock()
+    mock_api_client.reset_mock()
+
+    # 3. 快取中皆無，使用 LLMAgent 搜尋成功
+    mock_load_meta.return_value = {"end_date": "2026-04-12"}
+    mock_agent_instance = mock_llm_agent_class.return_value
+    mock_agent_instance.search_nba_season_start.return_value = {"success": True, "start_date": "2026-10-22 08:00:00"}
+
+    with patch.object(handler, "_calculate_countdown", return_value="142 天 5 小時 20 分鐘") as mock_calc, \
+         patch.object(handler, "_update_settings_file") as mock_update:
+        handler.execute(mock_event, mock_config)
+        mock_calc.assert_called_with("2026-10-22 08:00:00")
+        reply_req = mock_messaging_api.return_value.reply_message.call_args[0][0]
+        assert reply_req.messages[0].text == "🏀 新賽季即將開始以下時間開打：\n👉 2026年10月22日\n🏀 距離新賽季開季還有：\n👉 142 天 5 小時 20 分鐘"
+        mock_update.assert_called_with({"next_season_start_date": "2026-10-22 08:00:00"})
+
+    mock_messaging_api.reset_mock()
+    mock_api_client.reset_mock()
+    mock_save_meta.reset_mock()
+
+    # 4. LLMAgent 搜尋失敗
+    mock_load_meta.return_value = {"end_date": "2026-04-12"}
+    mock_agent_instance.search_nba_season_start.return_value = {"success": False}
+    handler.execute(mock_event, mock_config)
+    reply_req = mock_messaging_api.return_value.reply_message.call_args[0][0]
+    assert reply_req.messages[0].text == "🏀 無法獲取新賽季開季時間"
+
+    mock_messaging_api.reset_mock()
+    mock_api_client.reset_mock()
+
+    # 5. 非休賽季 (in-season) -> 保持靜默不回覆
+    mock_load_meta.return_value = {"end_date": "2026-04-12"}
+    mock_get_pacific.return_value = "2026-04-10"
+    handler.execute(mock_event, mock_config)
+    mock_api_client.assert_not_called()
 
 @patch("src.handlers.misc_handler.load_league_metadata")
 @patch("src.handlers.misc_handler.get_pacific_date")
@@ -113,14 +148,20 @@ def test_execute_draft(mock_messaging_api, mock_api_client, mock_load_config, mo
     
     # 2. Offseason, and DRAFT_DATE set -> reply countdown
     mock_get_pacific.return_value = "2026-05-29"
-    mock_load_config.return_value = {"DRAFT_DATE": "2026-10-15 10:00:00"}
+    mock_load_config.return_value = {"DRAFT_DATE": "2026-10-15 10:00"}
     
     with patch.object(handler, "_calculate_countdown", return_value="135 天 7 小時 0 分鐘") as mock_calc:
         handler.execute(mock_event, mock_config)
-        mock_calc.assert_called_with("2026-10-15 10:00:00")
+        mock_calc.assert_called_with("2026-10-15 10:00")
         
         reply_req = mock_messaging_api.return_value.reply_message.call_args[0][0]
-        assert reply_req.messages[0].text == "⚔️ 距離 2026-27 聯盟選秀還有：\n👉 135 天 7 小時 0 分鐘"
+        expected_reply = (
+            "⚔️ 聯盟選秀即將開始以下時間舉行：\n"
+            "👉 2026年10月15日 10:00\n"
+            "⚔️ 距離聯盟選秀還有：\n"
+            "👉 135 天 7 小時 0 分鐘"
+        )
+        assert reply_req.messages[0].text == expected_reply
 
 @patch("src.handlers.misc_handler.load_league_metadata")
 @patch("src.handlers.misc_handler.get_pacific_date")
@@ -135,14 +176,22 @@ def test_execute_prize(mock_messaging_api, mock_api_client, mock_load_config, mo
     mock_get_pacific.return_value = "2026-05-29"
     
     # 1. Missing PRIZE_IMAGE_PATH or SERVER_URL -> silently ignore
-    mock_load_config.return_value = {"PRIZE_IMAGE_PATH": None, "SERVER_URL": "http://localhost:5000"}
-    handler.execute(mock_event, mock_config)
-    mock_api_client.assert_not_called()
+    with patch("os.path.exists", return_value=False):
+        mock_load_config.return_value = {"PRIZE_IMAGE_PATH": None, "SERVER_URL": "http://localhost:5000"}
+        handler.execute(mock_event, mock_config)
+        mock_api_client.assert_not_called()
+    
+    # Reset mock for the next case
+    mock_api_client.reset_mock()
     
     # 2. Path not existing -> silently ignore
-    mock_load_config.return_value = {"PRIZE_IMAGE_PATH": "non_existent.png", "SERVER_URL": "http://localhost:5000"}
-    handler.execute(mock_event, mock_config)
-    mock_api_client.assert_not_called()
+    with patch("os.path.exists", return_value=False):
+        mock_load_config.return_value = {"PRIZE_IMAGE_PATH": "non_existent.png", "SERVER_URL": "http://localhost:5000"}
+        handler.execute(mock_event, mock_config)
+        mock_api_client.assert_not_called()
+    
+    # Reset mock for the next case
+    mock_api_client.reset_mock()
     
     # 3. Path exists -> Reply ImageMessage
     with patch("os.path.exists", return_value=True):
