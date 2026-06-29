@@ -27,6 +27,28 @@ def load_config() -> dict:
     mapping_file = os.getenv("TEAM_MAPPING_FILE", "team_mapping.json")
     season_start = os.getenv("SEASON_START_DATE")
     
+    draft_date = os.getenv("DRAFT_DATE")
+    next_season_start_date = os.getenv("NEXT_SEASON_START_DATE")
+    
+    # 讀取聯盟目錄下的 settings.json 來覆寫 DRAFT_DATE 與 next_season_start_date
+    lid = league_id or "default"
+    base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    settings_file = os.path.join(base_dir, "data", "league", lid, "settings.json")
+    if os.path.exists(settings_file):
+        try:
+            with open(settings_file, "r", encoding="utf-8") as f:
+                settings_data = json.load(f)
+                s_draft = settings_data.get("DRAFT_DATE") or settings_data.get("draft_date")
+                if s_draft:
+                    draft_date = s_draft
+                    os.environ["DRAFT_DATE"] = s_draft
+                s_next_season = settings_data.get("NEXT_SEASON_START_DATE") or settings_data.get("next_season_start_date")
+                if s_next_season:
+                    next_season_start_date = s_next_season
+                    os.environ["NEXT_SEASON_START_DATE"] = s_next_season
+        except Exception:
+            pass
+    
     return {
         "LEAGUE_ID": league_id, # 可以為 None
         "TEAM_MAPPING_FILE": mapping_file,
@@ -39,8 +61,8 @@ def load_config() -> dict:
         "SERVER_URL": os.getenv("SERVER_URL"),
         "LLM_API_KEY": os.getenv("LLM_API_KEY"),
         "LLM_MODEL": os.getenv("LLM_MODEL"),
-        "NEXT_SEASON_START_DATE": os.getenv("NEXT_SEASON_START_DATE"),
-        "DRAFT_DATE": os.getenv("DRAFT_DATE"),
+        "NEXT_SEASON_START_DATE": next_season_start_date,
+        "DRAFT_DATE": draft_date,
         "PRIZE_IMAGE_PATH": os.getenv("PRIZE_IMAGE_PATH"),
         "ENABLE_FOOTBALL_ANALYSIS": os.getenv("ENABLE_FOOTBALL_ANALYSIS", "False").lower() in ("true", "1", "yes")
     }
