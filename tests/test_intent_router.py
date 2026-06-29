@@ -165,6 +165,18 @@ def test_should_process_logic(mock_get_bot_id):
     event_group_chat = create_mock_event("我不行了", chat_type="group")
     assert router.should_process(event_group_chat, config) is False
 
+    # 6. 群聊無 mention 但該用戶有活動中的選秀/暱稱會話 -> True
+    event_group_session = create_mock_event("2026-10-15 20:00", chat_type="group")
+    event_group_session.source.user_id = "U12345_session"
+    
+    with patch("src.handlers.intent_router.get_draft_time_session", return_value={"type": "draft_time"}), \
+         patch("src.handlers.intent_router.get_nickname_session", return_value=None):
+        assert router.should_process(event_group_session, config) is True
+        
+    with patch("src.handlers.intent_router.get_draft_time_session", return_value=None), \
+         patch("src.handlers.intent_router.get_nickname_session", return_value={"type": "nickname"}):
+        assert router.should_process(event_group_session, config) is True
+
 
 @patch('src.llm.llm_agent.LLMAgent.analyze_intent')
 def test_router_converts_injury_command_and_dispatches(mock_analyze):

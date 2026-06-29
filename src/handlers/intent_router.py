@@ -49,7 +49,13 @@ class IntentRouter:
         if event.source.type == "user":
             return True
 
-        # 3. 群聊中必須被提及 (@提及)
+        # 3. 活動中 Session 優先（在群組也不需要被 @提及）
+        user_id = getattr(event.source, "user_id", None)
+        if user_id:
+            if get_nickname_session(user_id) or get_draft_time_session(user_id):
+                return True
+
+        # 4. 群聊中必須被提及 (@提及)
         if event.source.type in ["group", "room"]:
             # 檢查官方 mention 物件
             if hasattr(event.message, "mention") and event.message.mention:
