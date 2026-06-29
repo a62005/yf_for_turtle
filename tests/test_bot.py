@@ -3,7 +3,13 @@ from unittest.mock import MagicMock, patch
 from linebot.v3.webhooks import MessageEvent
 from linebot.v3.messaging import Configuration
 
+@pytest.fixture(autouse=True)
+def mock_bound_league():
+    with patch("src.handlers.intent_router.load_config", return_value={"LEAGUE_ID": "mock_league_123"}):
+        yield
+
 @pytest.fixture
+
 def mock_event():
     event = MagicMock(spec=MessageEvent)
     event.reply_token = "dummy_token"

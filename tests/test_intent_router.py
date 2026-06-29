@@ -3,6 +3,11 @@ from unittest.mock import MagicMock, patch
 from src.handlers.intent_router import IntentRouter
 from linebot.v3.messaging import Configuration
 
+@pytest.fixture(autouse=True)
+def mock_bound_league():
+    with patch("src.handlers.intent_router.load_config", return_value={"LEAGUE_ID": "mock_league_123"}):
+        yield
+
 def create_mock_event(text, chat_type="user", mentionees=None):
     event = MagicMock()
     event.reply_token = "dummy_reply_token"
@@ -329,4 +334,48 @@ def test_intent_router_intercept_draft_session_failure():
         mock_reply.assert_called_once()
         args, kwargs = mock_reply.call_args
         assert "無法解析" in args[2] or "格式" in args[2] or "請重新輸入" in args[2]
+
+
+def test_should_process_unbound_silence():
+    from src.handlers.dispatcher import CommandDispatcher
+    from src.handlers.intent_router import IntentRouter
+    from src.utils.session_manager import set_nickname_session, clear_nickname_session
+    from linebot.v3.messaging import Configuration
+    
+    dispatcher = CommandDispatcher()
+    router = IntentRouter(dispatcher)
+    config = Configuration()
+    
+    # 模擬為未綁定聯賽 ID
+    with patch("src.handlers.intent_router.load_config", return_value={"LEAGUE_ID": None}):
+        # 1. 驗證放行指令
+        event_setup = create_mock_event("#設置")
+        assert router.should_process(event_setup, config) is True
+        
+        event_my_id = create_mock_event("#我的ID")
+        assert router.should_process(event_my_id, config) is True
+        
+        event_setup_league = create_mock_event("#設置聯盟ID 12345")
+        assert router.should_process(event_setup_league, config) is True
+        
+        # 2. 驗證活動中的會話
+        event_session = create_mock_event("我的暱稱", chat_type="user")
+        event_session.source.user_id = "user_test_unbound"
+        set_nickname_session("user_test_unbound", "team_1", duration_sec=60)
+        try:
+            assert router.should_process(event_session, config) is True
+        finally:
+            clear_nickname_session("user_test_unbound")
+            
+        # 3. 驗證攔截指令
+        event_start = create_mock_event("#開季")
+        assert router.should_process(event_start, config) is False
+        
+        event_standing = create_mock_event("#戰績")
+        assert router.should_process(event_standing, config) is False
+        
+        # 4. 驗證普通自然語言閒聊
+        event_chat = create_mock_event("今天天氣真好", chat_type="user")
+        assert router.should_process(event_chat, config) is False
+
 

@@ -41,6 +41,20 @@ class IntentRouter:
         if not user_text:
             return False
 
+        # 多聯盟未綁定防護：若 league_id 未設定，僅放行指定設定指令或活動會話
+        config = load_config()
+        league_id = config.get("LEAGUE_ID")
+        if not league_id:
+            user_id = getattr(event.source, "user_id", None)
+            is_active_session = False
+            if user_id:
+                if get_nickname_session(user_id) or get_draft_time_session(user_id):
+                    is_active_session = True
+            
+            is_allowed_cmd = (user_text == "#設置" or user_text == "#我的ID" or user_text.startswith("#設置聯盟ID"))
+            if not (is_allowed_cmd or is_active_session):
+                return False
+
         # 1. 指令優先
         if user_text.startswith("#"):
             return True
