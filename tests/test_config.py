@@ -31,13 +31,23 @@ def test_load_config_success(monkeypatch):
 def test_load_config_from_dynamic_json(monkeypatch):
     monkeypatch.setattr("src.config.load_dotenv", lambda *args, **kwargs: None)
     
-    # 使用 mock_open 模擬讀取 data/security/league_config.json
+    from src.config import current_chat_id
     from unittest.mock import patch, mock_open
     import json
     
-    fake_json = json.dumps({"LEAGUE_ID": "88888"})
+    fake_json = json.dumps({"test_chat_id": "88888"})
     
-    with patch("os.path.exists", return_value=True), \
+    def mock_exists(path):
+        if "chat_league_mapping.json" in path:
+            return True
+        return False
+    
+    with patch("os.path.exists", side_effect=mock_exists), \
          patch("builtins.open", mock_open(read_data=fake_json)):
-        config = load_config()
-        assert config["LEAGUE_ID"] == "88888"
+        token = current_chat_id.set("test_chat_id")
+        try:
+            config = load_config()
+            assert config["LEAGUE_ID"] == "88888"
+        finally:
+            current_chat_id.reset(token)
+
