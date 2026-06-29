@@ -43,6 +43,80 @@ def test_set_league_id_handler_success():
         handler.reply_text.assert_called_once_with(
             event, 
             config, 
-            "✅ 聯盟 ID 設置成功，並已完成賽季資訊同步！"
+            "✅ 成功將此聊天室綁定至聯賽 ID：12345"
         )
+
+
+def test_set_league_id_handler_multi_league_binding():
+    from src.config import current_chat_id
+    import json
+    
+    handler = SetLeagueIdHandler()
+    handler.reply_text = MagicMock()
+    
+    event = MagicMock()
+    event.message.text = "#設置聯盟ID 99999"
+    config = MagicMock()
+    
+    mock_team = MagicMock()
+    mock_team.team_id = "1"
+    mock_team.name = "官方測試隊伍"
+    
+    mock_league = MagicMock()
+    mock_league.teams.return_value = [mock_team]
+    
+    # 紀錄 open 寫入的資料
+    written_data = {}
+    
+    import builtins
+    import io
+    original_open = builtins.open
+    
+    class MockFile(io.StringIO):
+        def __enter__(self):
+            return self
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            val = self.getvalue()
+            if val:
+                try:
+                    nonlocal written_data
+                    written_data = json.loads(val)
+                except Exception:
+                    pass
+        def close(self):
+            val = self.getvalue()
+            if val:
+                try:
+                    nonlocal written_data
+                    written_data = json.loads(val)
+                except Exception:
+                    pass
+            super().close()
+
+    def custom_open(path, mode="r", *args, **kwargs):
+        if "chat_league_mapping.json" in str(path).replace("\\", "/"):
+            if "r" in mode:
+                return MockFile("{}")
+            return MockFile()
+        return original_open(path, mode, *args, **kwargs)
+        
+    token = current_chat_id.set("group_abc")
+    try:
+        with patch("src.handlers.set_league_id_handler.sync_season_metadata") as mock_sync, \
+             patch("src.handlers.set_league_id_handler.open", side_effect=custom_open), \
+             patch("src.handlers.set_league_id_handler.os.path.exists", return_value=False), \
+             patch("yahoofantasy.League", return_value=mock_league) as mock_league_cls:
+             
+            handler.execute(event, config)
+            
+            mock_sync.assert_called_once()
+            assert written_data.get("group_abc") == "99999"
+            handler.reply_text.assert_called_once_with(
+                event, 
+                config, 
+                "✅ 成功將此聊天室綁定至聯賽 ID：99999"
+            )
+    finally:
+        current_chat_id.reset(token)
+
 

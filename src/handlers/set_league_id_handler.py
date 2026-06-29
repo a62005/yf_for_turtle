@@ -42,15 +42,9 @@ class SetLeagueIdHandler(BaseHandler):
             self.reply_text(event, configuration, "⚠️ 設置失敗，無法從 Yahoo 獲取該聯盟資訊，請確認 ID 是否正確。")
             return
             
-        # 同步成功，寫入設定檔 data/security/league_config.json
-        from src.utils.path_utils import BASE_DIR
-        security_dir = os.path.join(BASE_DIR, "data", "security")
-        os.makedirs(security_dir, exist_ok=True)
-        config_path = os.path.join(security_dir, "league_config.json")
-        
+        # 同步成功，寫入對應關係
         try:
-            with open(config_path, "w", encoding="utf-8") as f:
-                json.dump({"LEAGUE_ID": target_id}, f, indent=2)
+            self._update_league_id(target_id)
                 
             # 初始化該聯賽的空對應檔
             mapping_path = get_league_team_mapping_path(target_id)
@@ -74,10 +68,32 @@ class SetLeagueIdHandler(BaseHandler):
                 with open(mapping_path, "w", encoding="utf-8") as mf:
                     json.dump(default_mapping, mf, ensure_ascii=False, indent=2)
                     
-            self.reply_text(event, configuration, "✅ 聯盟 ID 設置成功，並已完成賽季資訊同步！")
+            self.reply_text(event, configuration, f"✅ 成功將此聊天室綁定至聯賽 ID：{target_id}")
         except Exception as fe:
             logging.error(f"[SetLeagueIdHandler] 寫入設定檔失敗: {fe}")
             self.reply_text(event, configuration, "⚠️ 設置成功但儲存設定時發生內部錯誤。")
+
+    def _update_league_id(self, league_id: str) -> None:
+        from src.config import current_chat_id
+        from src.utils.path_utils import BASE_DIR
+        
+        chat_id = current_chat_id.get() or "default"
+        security_dir = os.path.join(BASE_DIR, "data", "security")
+        os.makedirs(security_dir, exist_ok=True)
+        config_path = os.path.join(security_dir, "chat_league_mapping.json")
+        
+        mapping = {}
+        if os.path.exists(config_path):
+            try:
+                with open(config_path, "r", encoding="utf-8") as f:
+                    mapping = json.load(f)
+            except Exception:
+                mapping = {}
+                
+        mapping[str(chat_id)] = str(league_id)
+        
+        with open(config_path, "w", encoding="utf-8") as f:
+            json.dump(mapping, f, indent=2, ensure_ascii=False)
 
     @property
     def instruction_desc(self) -> str:
