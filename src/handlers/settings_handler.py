@@ -24,8 +24,20 @@ class SettingsHandler(BaseHandler):
         else:
             title = f"聯盟設置 (ID: {league_id})"
             subtitle = None
+            
+            # 判斷是否為休賽季
+            from src.utils.cache_utils import load_league_metadata
+            from src.utils.time_utils import get_pacific_date
+            meta = load_league_metadata() or {}
+            end_date = meta.get("end_date")
+            today_pacific = get_pacific_date()
+            is_offseason = bool(end_date and today_pacific > end_date)
+            
+            draft_button_label = "設置選秀時間" if is_offseason else "設置選秀時間 (限休賽季)"
+            draft_button_action = "#設置選秀時間" if is_offseason else ""
+            
             buttons = [
-                ("設置選秀時間", "#設置選秀時間"),
+                (draft_button_label, draft_button_action),
                 ("設置玩家暱稱", "#設置玩家暱稱"),
                 (None, None),
                 ("更換聯盟ID (即將推出)", ""),

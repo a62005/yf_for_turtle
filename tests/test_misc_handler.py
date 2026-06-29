@@ -72,8 +72,8 @@ def test_execute_season_start(mock_messaging_api, mock_api_client, mock_load_con
     mock_event.message.text = "#開季"
     mock_get_pacific.return_value = "2026-05-29"
 
-    # 1. 優先檢查快取中是否有 next_season_start_date
-    mock_load_meta.return_value = {"next_season_start_date": "2026-10-20 08:00:00"}
+    # 1. 優先檢查快取中是否有 next_season_start_date (且為休賽季)
+    mock_load_meta.return_value = {"next_season_start_date": "2026-10-20 08:00:00", "end_date": "2026-04-12"}
     with patch.object(handler, "_calculate_countdown", return_value="140 天 5 小時 20 分鐘") as mock_calc:
         handler.execute(mock_event, mock_config)
         mock_calc.assert_called_with("2026-10-20 08:00:00")
@@ -86,7 +86,7 @@ def test_execute_season_start(mock_messaging_api, mock_api_client, mock_load_con
     mock_api_client.reset_mock()
 
     # 2. 快取中無 next_season_start_date，但 start_date 在未來
-    mock_load_meta.return_value = {"start_date": "2026-10-25"}
+    mock_load_meta.return_value = {"start_date": "2026-10-25", "end_date": "2026-04-12"}
     mock_get_pacific.return_value = "2026-05-29"
     with patch.object(handler, "_calculate_countdown", return_value="145 天 5 小時 20 分鐘") as mock_calc:
         handler.execute(mock_event, mock_config)
@@ -98,7 +98,7 @@ def test_execute_season_start(mock_messaging_api, mock_api_client, mock_load_con
     mock_api_client.reset_mock()
 
     # 3. 快取中皆無，使用 LLMAgent 搜尋成功
-    mock_load_meta.return_value = {}
+    mock_load_meta.return_value = {"end_date": "2026-04-12"}
     mock_agent_instance = mock_llm_agent_class.return_value
     mock_agent_instance.search_nba_season_start.return_value = {"success": True, "start_date": "2026-10-22 08:00:00"}
 
@@ -115,11 +115,20 @@ def test_execute_season_start(mock_messaging_api, mock_api_client, mock_load_con
     mock_save_meta.reset_mock()
 
     # 4. LLMAgent 搜尋失敗
-    mock_load_meta.return_value = {}
+    mock_load_meta.return_value = {"end_date": "2026-04-12"}
     mock_agent_instance.search_nba_season_start.return_value = {"success": False}
     handler.execute(mock_event, mock_config)
     reply_req = mock_messaging_api.return_value.reply_message.call_args[0][0]
     assert reply_req.messages[0].text == "🏀 無法獲取新賽季開季時間"
+
+    mock_messaging_api.reset_mock()
+    mock_api_client.reset_mock()
+
+    # 5. 非休賽季 (in-season) -> 保持靜默不回覆
+    mock_load_meta.return_value = {"end_date": "2026-04-12"}
+    mock_get_pacific.return_value = "2026-04-10"
+    handler.execute(mock_event, mock_config)
+    mock_api_client.assert_not_called()
 
 @patch("src.handlers.misc_handler.load_league_metadata")
 @patch("src.handlers.misc_handler.get_pacific_date")

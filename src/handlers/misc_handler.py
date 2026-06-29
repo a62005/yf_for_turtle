@@ -45,14 +45,15 @@ class MiscHandler(BaseHandler):
         today_pacific = get_pacific_date()
         is_offseason = bool(end_date and today_pacific > end_date)
 
+        if user_text in ("#開季", "#選秀"):
+            if not is_offseason:
+                logging.info(f"Not offseason, ignoring {user_text}")
+                return
+
         if user_text == "#開季":
             self._handle_season_start(event, configuration)
         elif user_text == "#選秀":
-            if is_offseason:
-                self._handle_draft_countdown(event, configuration)
-            else:
-                logging.info("Not offseason, ignoring #選秀")
-                return
+            self._handle_draft_countdown(event, configuration)
         elif user_text == "#獎金":
             self._handle_prize(event, configuration)
         elif user_text.startswith("#") and user_text[1:].lower() in ("幫助", "help"):
