@@ -256,6 +256,9 @@ def handle_message(event):
 
 if __name__ == "__main__":
     cleanup_port(5001)
+    from src.utils.path_utils import migrate_old_league_directories
+    migrate_old_league_directories()
+
     config = load_config()
     
     league_id = config.get("LEAGUE_ID")
