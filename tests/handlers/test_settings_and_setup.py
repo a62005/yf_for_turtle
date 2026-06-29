@@ -191,4 +191,31 @@ def test_set_league_id_handler_interactive_session_digit(mocker):
     mock_update.assert_called_once_with("nba.l.18457")
 
 
+def test_set_league_id_handler_permission_denied_pre_saves_mapping(mocker):
+    from src.handlers.set_league_id_handler import SetLeagueIdHandler
+    from src.fetcher import LeaguePermissionError
+    from src.config import current_chat_id
+    
+    handler = SetLeagueIdHandler()
+    handler.reply_text = MagicMock()
+    
+    event = MagicMock()
+    event.message.text = "#設置聯盟ID 12345"
+    config = MagicMock()
+    
+    # Mock sync_season_metadata to raise LeaguePermissionError
+    mocker.patch("src.handlers.set_league_id_handler.sync_season_metadata", side_effect=LeaguePermissionError("Permission Denied"))
+    mock_update = mocker.patch.object(handler, "_update_league_id")
+    
+    token = current_chat_id.set("group_xyz")
+    try:
+        handler.execute(event, config)
+            
+        # Verify that _update_league_id was called with "nba.l.12345" even though it raised LeaguePermissionError
+        mock_update.assert_called_once_with("nba.l.12345")
+    finally:
+        current_chat_id.reset(token)
+
+
+
 

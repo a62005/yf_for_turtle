@@ -83,6 +83,11 @@ class SetLeagueIdHandler(BaseHandler):
         try:
             sync_season_metadata(fetcher, target_id)
         except LeaguePermissionError:
+            # 即使授權尚未完成，仍先記錄綁定關係，這樣接下來的 OAuth Callback 才能找到對應的聯賽 ID
+            try:
+                self._update_league_id(target_id)
+            except Exception as fe:
+                logging.error(f"[SetLeagueIdHandler] 寫入設定檔失敗 (LeaguePermissionError 期間): {fe}")
             raise
         except Exception as e:
             logging.error(f"[SetLeagueIdHandler] 驗證聯盟同步失敗 {target_id}: {e}")
