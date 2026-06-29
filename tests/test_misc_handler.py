@@ -139,14 +139,20 @@ def test_execute_draft(mock_messaging_api, mock_api_client, mock_load_config, mo
     
     # 2. Offseason, and DRAFT_DATE set -> reply countdown
     mock_get_pacific.return_value = "2026-05-29"
-    mock_load_config.return_value = {"DRAFT_DATE": "2026-10-15 10:00:00"}
+    mock_load_config.return_value = {"DRAFT_DATE": "2026-10-15 10:00"}
     
     with patch.object(handler, "_calculate_countdown", return_value="135 天 7 小時 0 分鐘") as mock_calc:
         handler.execute(mock_event, mock_config)
-        mock_calc.assert_called_with("2026-10-15 10:00:00")
+        mock_calc.assert_called_with("2026-10-15 10:00")
         
         reply_req = mock_messaging_api.return_value.reply_message.call_args[0][0]
-        assert reply_req.messages[0].text == "⚔️ 距離 2026-27 聯盟選秀還有：\n👉 135 天 7 小時 0 分鐘"
+        expected_reply = (
+            "⚔️ 聯盟選秀即將開始以下時間舉行：\n"
+            "👉 2026年10月15日 10:00\n"
+            "⚔️ 距離聯盟選秀還有：\n"
+            "👉 135 天 7 小時 0 分鐘"
+        )
+        assert reply_req.messages[0].text == expected_reply
 
 @patch("src.handlers.misc_handler.load_league_metadata")
 @patch("src.handlers.misc_handler.get_pacific_date")

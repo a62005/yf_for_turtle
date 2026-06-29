@@ -176,12 +176,33 @@ class MiscHandler(BaseHandler):
     def _handle_draft_countdown(self, event: MessageEvent, configuration: Configuration) -> None:
         config = load_config()
         target_time_str = config.get("DRAFT_DATE")
-        if not target_time_str:
+        if not target_time_str or not isinstance(target_time_str, str) or target_time_str.strip() == "":
             logging.info("DRAFT_DATE not configured, ignoring")
             return
         
+        target_time_str = target_time_str.strip()
         countdown_text = self._calculate_countdown(target_time_str)
-        reply_content = f"⚔️ 距離 2026-27 聯盟選秀還有：\n👉 {countdown_text}"
+        if countdown_text == "已經到達！":
+            self.reply_text(event, configuration, "⚔️ 聯盟選秀已經結束囉！")
+            return
+            
+        formatted_date = target_time_str
+        try:
+            dt = datetime.strptime(target_time_str, "%Y-%m-%d %H:%M:%S")
+            formatted_date = f"{dt.year}年{dt.month}月{dt.day}日 {dt.hour:02d}:{dt.minute:02d}"
+        except ValueError:
+            try:
+                dt = datetime.strptime(target_time_str, "%Y-%m-%d %H:%M")
+                formatted_date = f"{dt.year}年{dt.month}月{dt.day}日 {dt.hour:02d}:{dt.minute:02d}"
+            except Exception:
+                pass
+                
+        reply_content = (
+            "⚔️ 聯盟選秀即將開始以下時間舉行：\n"
+            f"👉 {formatted_date}\n"
+            "⚔️ 距離聯盟選秀還有：\n"
+            f"👉 {countdown_text}"
+        )
         self.reply_text(event, configuration, reply_content)
 
     def _handle_prize(self, event: MessageEvent, configuration: Configuration) -> None:
