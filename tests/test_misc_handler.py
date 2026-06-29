@@ -102,12 +102,13 @@ def test_execute_season_start(mock_messaging_api, mock_api_client, mock_load_con
     mock_agent_instance = mock_llm_agent_class.return_value
     mock_agent_instance.search_nba_season_start.return_value = {"success": True, "start_date": "2026-10-22 08:00:00"}
 
-    with patch.object(handler, "_calculate_countdown", return_value="142 天 5 小時 20 分鐘") as mock_calc:
+    with patch.object(handler, "_calculate_countdown", return_value="142 天 5 小時 20 分鐘") as mock_calc, \
+         patch.object(handler, "_update_settings_file") as mock_update:
         handler.execute(mock_event, mock_config)
         mock_calc.assert_called_with("2026-10-22 08:00:00")
         reply_req = mock_messaging_api.return_value.reply_message.call_args[0][0]
         assert reply_req.messages[0].text == "🏀 新賽季即將開始以下時間開打：\n👉 2026年10月22日\n🏀 距離新賽季開季還有：\n👉 142 天 5 小時 20 分鐘"
-        mock_save_meta.assert_called_with({"next_season_start_date": "2026-10-22 08:00:00"})
+        mock_update.assert_called_with({"next_season_start_date": "2026-10-22 08:00:00"})
 
     mock_messaging_api.reset_mock()
     mock_api_client.reset_mock()

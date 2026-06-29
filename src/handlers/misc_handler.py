@@ -62,7 +62,11 @@ class MiscHandler(BaseHandler):
         taipei_tz = pytz.timezone("Asia/Taipei")
         now_taipei = datetime.now(taipei_tz)
         
-        target_dt_naive = datetime.strptime(target_time_str, "%Y-%m-%d %H:%M:%S")
+        try:
+            target_dt_naive = datetime.strptime(target_time_str, "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            target_dt_naive = datetime.strptime(target_time_str, "%Y-%m-%d %H:%M")
+            
         target_dt = taipei_tz.localize(target_dt_naive)
         
         if now_taipei >= target_dt:
@@ -77,23 +81,27 @@ class MiscHandler(BaseHandler):
         return f"{days} 天 {hours} 小時 {minutes} 分鐘"
 
     def _handle_season_start(self, event: MessageEvent, configuration: Configuration) -> None:
-        meta = load_league_metadata()
-        if meta is None:
-            meta = {}
+        config = load_config()
         today_pacific = get_pacific_date()
         target_time_str = None
         
-        # 1. 優先檢查快取中是否有 next_season_start_date
-        if "next_season_start_date" in meta:
-            target_time_str = meta["next_season_start_date"]
+        # a. 優先讀取自訂的開季日期 NEXT_SEASON_START_DATE (來自 settings.json)
+        next_season_val = config.get("NEXT_SEASON_START_DATE")
+        if next_season_val and isinstance(next_season_val, str) and next_season_val.strip() != "":
+            target_time_str = next_season_val
             
-        # 2. 檢查目前中繼資料的 start_date 是否為未來的日期（代表已配置新賽季的 LEAGUE_ID）
+        # b. 若無，則退回讀取 metadata.json 中的 next_season_start_date 或 start_date
+        meta = None
         if not target_time_str:
-            meta_start = meta.get("start_date")
-            if meta_start and meta_start > today_pacific:
-                target_time_str = f"{meta_start} 08:00:00"
+            meta = load_league_metadata() or {}
+            if "next_season_start_date" in meta:
+                target_time_str = meta["next_season_start_date"]
+            else:
+                meta_start = meta.get("start_date")
+                if meta_start and meta_start > today_pacific:
+                    target_time_str = f"{meta_start} 08:00:00"
                 
-        # 3. 啟動 LLM 網路搜尋
+        # c. 若都無，啟動 LLM 網路搜尋，搜尋成功後將開季日期以 {"next_season_start_date": start_date} 寫入 settings.json
         if not target_time_str:
             logging.info("[MiscHandler] 啟動 LLM 搜尋新賽季開始時間...")
             agent = LLMAgent()
@@ -105,9 +113,8 @@ class MiscHandler(BaseHandler):
             res = agent.search_nba_season_start(nba_year)
             if res.get("success") and res.get("start_date"):
                 target_time_str = res["start_date"]
-                meta["next_season_start_date"] = target_time_str
-                save_league_metadata(meta)
-                logging.info(f"[MiscHandler] 成功將 LLM 搜尋到的開季時間寫入快取: {target_time_str}")
+                self._update_settings_file({"next_season_start_date": target_time_str})
+                logging.info(f"[MiscHandler] 成功將 LLM 搜尋到的開季時間寫入 settings.json: {target_time_str}")
                 
         # 4. 回覆或倒數
         if not target_time_str:
@@ -136,6 +143,35 @@ class MiscHandler(BaseHandler):
                 f"👉 {countdown_text}"
             )
             self.reply_text(event, configuration, reply_content)
+
+    def _update_settings_file(self, new_data: dict) -> None:
+        config = load_config()
+        league_id = config.get("LEAGUE_ID")
+        if not league_id:
+            return
+            
+        from src.utils.path_utils import get_league_dir
+        import json
+        
+        league_dir = get_league_dir(league_id)
+        settings_path = os.path.join(league_dir, "settings.json")
+        
+        settings = {}
+        if os.path.exists(settings_path):
+            try:
+                with open(settings_path, "r", encoding="utf-8") as f:
+                    settings = json.load(f)
+            except Exception:
+                settings = {}
+                
+        settings.update(new_data)
+        
+        try:
+            os.makedirs(os.path.dirname(settings_path), exist_ok=True)
+            with open(settings_path, "w", encoding="utf-8") as f:
+                json.dump(settings, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            logging.error(f"[MiscHandler] 寫入設定檔 settings.json 失敗: {e}")
 
     def _handle_draft_countdown(self, event: MessageEvent, configuration: Configuration) -> None:
         config = load_config()
