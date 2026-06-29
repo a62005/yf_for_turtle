@@ -396,6 +396,11 @@ def test_intent_router_league_id_session():
     from linebot.v3.messaging import Configuration
     
     dispatcher = MagicMock()
+    def side_effect(*args, **kwargs):
+        from src.utils.session_manager import clear_league_id_session
+        clear_league_id_session("user_test_league_session")
+    dispatcher.handle.side_effect = side_effect
+
     router = IntentRouter(dispatcher)
     config = Configuration()
     

@@ -17,6 +17,6 @@ def test_path_utils_dynamic_routing():
     # 測試 B: 當 config 中有 LEAGUE_ID 時，返回正確物理隔離路徑
     with patch("src.utils.path_utils.load_config", return_value={"LEAGUE_ID": "99999"}):
         assert get_league_id() == "99999"
-        assert get_league_dir().replace("\\", "/").endswith("data/league/99999")
-        assert get_league_metadata_path().replace("\\", "/").endswith("data/league/99999/metadata.json")
-        assert get_league_team_mapping_path().replace("\\", "/").endswith("data/league/99999/team_mapping.json")
+        assert get_league_dir().replace("\\", "/").endswith("data/league/nba.l.99999")
+        assert get_league_metadata_path().replace("\\", "/").endswith("data/league/nba.l.99999/metadata.json")
+        assert get_league_team_mapping_path().replace("\\", "/").endswith("data/league/nba.l.99999/team_mapping.json")
