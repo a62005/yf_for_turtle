@@ -30,6 +30,7 @@ from src.handlers.super_admin_handler import SuperAdminHandler
 from src.handlers.settings_handler import SettingsHandler
 from src.handlers.set_league_id_handler import SetLeagueIdHandler
 from src.handlers.set_nickname_handler import SetNicknameHandler
+from src.handlers.set_draft_time_handler import SetDraftTimeHandler
 
 def cleanup_port(port):
     for proc in psutil.process_iter(['pid', 'name']):
@@ -89,6 +90,7 @@ dispatcher.register(SuperAdminHandler())
 dispatcher.register(SettingsHandler())
 dispatcher.register(SetLeagueIdHandler())
 dispatcher.register(SetNicknameHandler())
+dispatcher.register(SetDraftTimeHandler())
 
 # Initialize IntentRouter
 intent_router = IntentRouter(dispatcher)
