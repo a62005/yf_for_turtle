@@ -18,10 +18,10 @@ Upon selecting, the Bot initiates a 60-second interactive rewrite session:
 * User inputs the numeric ID (e.g. `18457`).
 * Bot normalizes the value to the fully qualified league key: `nba.l.18457` or `mlb.l.18457`.
 
-### 2-2. Conflicted Directory Resolution (Full League Key Name)
+### 2-2. Conflicted Directory Resolution (Nested Sport Directory)
 To prevent conflicts if an NBA league and an MLB league share the same numeric ID, the directory naming convention is updated:
 * Old Directory Name: `data/league/<numeric_id>/`
-* **New Directory Name**: `data/league/<full_league_key>/` (e.g., `data/league/nba.l.18457/` and `data/league/mlb.l.18457/`).
+* **New Directory Name**: `data/league/<sport>/<numeric_id>/` (e.g., `data/league/nba/18457/` and `data/league/mlb/18457/`).
 
 The database mapping in [chat_league_mapping.json](file:///C:/Users/HsiehLink/Python/yf_for_turtle/data/security/chat_league_mapping.json) will store the full league key instead of the raw number:
 ```json
@@ -89,6 +89,6 @@ Features involving external custom scrapers or non-standard APIs are limited to 
 
 ## 6. Migration Plan
 To seamlessly migrate the current user environment without losing history:
-* At server startup or path lookup, the system checks if the old directory name `data/league/18457` exists.
-* If it exists and the new folder `data/league/nba.l.18457` does not, it renames the directory from `18457` to `nba.l.18457` automatically (using `os.rename`).
+* At server startup or path lookup, the system checks if the old directory name `data/league/18457` or `data/league/nba.l.18457` exists.
+* If any exist and the new folder `data/league/nba/18457` does not, it automatically creates the parent directories and renames/moves the folders to `data/league/nba/18457`.
 * It updates the local `chat_league_mapping.json` keys to map to the new prefixed values.

@@ -49,7 +49,7 @@ def test_fetch_and_cache_settings(mocker):
     assert stats_list[1]["sort_order"] == 0
     
     # Check cached metadata file contains categories
-    meta_file = os.path.join(temp_dir, "league", "nba.l.18457", "metadata.json")
+    meta_file = os.path.join(temp_dir, "league", "nba", "18457", "metadata.json")
     assert os.path.exists(meta_file)
     with open(meta_file, "r") as f:
         meta = json.load(f)

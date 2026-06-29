@@ -5,11 +5,10 @@ import json
 from src.utils.path_utils import get_league_dir, migrate_old_league_directories
 
 def test_get_league_dir_preserves_prefix():
-    # Full keys should keep their names
-    assert "nba.l.18457" in get_league_dir("nba.l.18457")
-    assert "mlb.l.12345" in get_league_dir("mlb.l.12345")
-    # Raw numeric keys default to nba.l. prefix
-    assert "nba.l.999" in get_league_dir("999")
+    # Full keys should resolve to nested sport directories
+    assert "nba/18457" in get_league_dir("nba.l.18457").replace("\\", "/")
+    assert "mlb/12345" in get_league_dir("mlb.l.12345").replace("\\", "/")
+    assert "nba/999" in get_league_dir("999").replace("\\", "/")
 
 def test_migrate_old_league_directories(mocker):
     temp_data_dir = tempfile.mkdtemp()
@@ -22,6 +21,13 @@ def test_migrate_old_league_directories(mocker):
     with open(test_file, "w") as f:
         f.write("{}")
         
+    # Setup old dot-prefixed folder (from previous setup)
+    old_dot_folder = os.path.join(temp_data_dir, "league", "nba.l.9999")
+    os.makedirs(old_dot_folder, exist_ok=True)
+    test_dot_file = os.path.join(old_dot_folder, "test_dot.json")
+    with open(test_dot_file, "w") as f:
+        f.write("{}")
+        
     # Setup old mapping file
     sec_dir = os.path.join(temp_data_dir, "security")
     os.makedirs(sec_dir, exist_ok=True)
@@ -31,10 +37,14 @@ def test_migrate_old_league_directories(mocker):
         
     migrate_old_league_directories()
     
-    # Old folder should be renamed to nba.l.18457
-    new_folder = os.path.join(temp_data_dir, "league", "nba.l.18457")
+    # Old folders should be migrated to nba/18457 and nba/9999
+    new_folder = os.path.join(temp_data_dir, "league", "nba", "18457")
+    new_dot_folder = os.path.join(temp_data_dir, "league", "nba", "9999")
+    
     assert os.path.exists(new_folder)
+    assert os.path.exists(new_dot_folder)
     assert not os.path.exists(old_folder)
+    assert not os.path.exists(old_dot_folder)
     
     # Mapping file should be updated
     with open(mapping_file, "r") as f:

@@ -16,18 +16,22 @@ def get_league_dir(league_id: str = None) -> str:
     if not lid:
         return os.path.join(DATA_DIR, "league", "default")
     
-    # Normalize key to full league key (e.g. nba.l.18457)
     lid_str = str(lid).strip()
-    if not lid_str.startswith("nba.l.") and not lid_str.startswith("mlb.l."):
-        # Check if there's any prefix
-        if "." in lid_str:
-            normalized_id = lid_str
-        else:
-            normalized_id = f"nba.l.{lid_str}"
+    if lid_str.startswith("nba.l."):
+        sport = "nba"
+        raw_id = lid_str.split(".")[-1]
+    elif lid_str.startswith("mlb.l."):
+        sport = "mlb"
+        raw_id = lid_str.split(".")[-1]
+    elif "." in lid_str:
+        parts = lid_str.split(".")
+        sport = parts[0]
+        raw_id = parts[-1]
     else:
-        normalized_id = lid_str
+        sport = "nba"
+        raw_id = lid_str
         
-    return os.path.join(DATA_DIR, "league", normalized_id)
+    return os.path.join(DATA_DIR, "league", sport, raw_id)
 
 def get_league_metadata_path(league_id: str = None) -> str:
     return os.path.join(get_league_dir(league_id), "metadata.json")
@@ -48,22 +52,50 @@ def get_league_weekly_dir(league_id: str = None) -> str:
     return os.path.join(get_league_dir(league_id), "weekly")
 
 def migrate_old_league_directories():
+    import shutil
     league_base = os.path.join(DATA_DIR, "league")
     if not os.path.exists(league_base):
         return
         
-    # Rename folder from raw numeric to nba.l.<number>
+    # 遷移老舊的單純數字目錄 (如 18457) 以及上一版帶點的目錄 (如 nba.l.18457)
     for name in os.listdir(league_base):
         full_path = os.path.join(league_base, name)
-        if os.path.isdir(full_path) and name.isdigit():
-            new_name = f"nba.l.{name}"
-            new_path = os.path.join(league_base, new_name)
+        if not os.path.isdir(full_path):
+            continue
+            
+        # 排除已是分類層級的 nba 與 mlb
+        if name in ["nba", "mlb", "default"]:
+            continue
+            
+        sport = None
+        raw_id = None
+        
+        if name.isdigit():
+            sport = "nba"
+            raw_id = name
+        elif name.startswith("nba.l."):
+            sport = "nba"
+            raw_id = name.split(".")[-1]
+        elif name.startswith("mlb.l."):
+            sport = "mlb"
+            raw_id = name.split(".")[-1]
+            
+        if sport and raw_id:
+            sport_dir = os.path.join(league_base, sport)
+            os.makedirs(sport_dir, exist_ok=True)
+            new_path = os.path.join(sport_dir, raw_id)
+            
             if not os.path.exists(new_path):
                 try:
-                    os.rename(full_path, new_path)
-                    logging.info(f"[SYSTEM] 已將歷史目錄 {name} 重新命名為 {new_name}")
+                    shutil.move(full_path, new_path)
+                    logging.info(f"[SYSTEM] 已將舊目錄 {name} 遷移至新結構 {sport}/{raw_id}")
                 except Exception as e:
-                    logging.error(f"重命名目錄失敗: {e}")
+                    logging.error(f"遷移目錄 {name} 失敗: {e}")
+            else:
+                try:
+                    shutil.rmtree(full_path)
+                except Exception:
+                    pass
                     
     # Upgrade chat_league_mapping.json keys
     mapping_file = os.path.join(DATA_DIR, "security", "chat_league_mapping.json")

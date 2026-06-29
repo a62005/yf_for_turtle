@@ -42,9 +42,8 @@ class YahooFantasyFetcher:
 
         persist_key = "credentials/"
         if league_id:
-            from src.utils.path_utils import BASE_DIR
-            # 使用絕對路徑進行物理操作，以相容各平台
-            league_dir = os.path.join(BASE_DIR, "data", "league", str(league_id))
+            from src.utils.path_utils import BASE_DIR, get_league_dir
+            league_dir = get_league_dir(league_id)
             
             # 1. 處理憑證的複製繼承
             spec_oauth_path = os.path.join(league_dir, "oauth2.json")
@@ -59,7 +58,21 @@ class YahooFantasyFetcher:
                 os.makedirs(league_dir, exist_ok=True)
                 shutil.copy2(global_yf_path, spec_yf_path)
                 
-            persist_key = f"data/league/{league_id}/"
+            lid_str = str(league_id)
+            if lid_str.startswith("nba.l."):
+                sport = "nba"
+                raw_id = lid_str.split(".")[-1]
+            elif lid_str.startswith("mlb.l."):
+                sport = "mlb"
+                raw_id = lid_str.split(".")[-1]
+            elif "." in lid_str:
+                parts = lid_str.split(".")
+                sport = parts[0]
+                raw_id = parts[-1]
+            else:
+                sport = "nba"
+                raw_id = lid_str
+            persist_key = f"data/league/{sport}/{raw_id}/"
 
         self.ctx = yahoofantasy.Context(
             persist_key=persist_key,
@@ -124,6 +137,12 @@ class YahooFantasyFetcher:
         return stats
 
     def _get_stat_map(self, league_id: str = None) -> dict:
+        if not league_id:
+            pk = getattr(self.ctx, "_persist_key", "")
+            parts = [p for p in pk.split("/") if p]
+            if len(parts) >= 4 and parts[1] == "league":
+                league_id = f"{parts[2]}.l.{parts[3]}"
+                
         if not league_id:
             league_id = getattr(self, "league_id", None)
         if not league_id:
