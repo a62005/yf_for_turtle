@@ -21,6 +21,17 @@ class SetLeagueIdHandler(BaseHandler):
         
     def execute(self, event: MessageEvent, configuration: Configuration) -> None:
         user_text = event.message.text.strip()
+        
+        if user_text == "#設置聯盟ID":
+            user_id = getattr(event.source, "user_id", None)
+            if user_id:
+                from src.utils.session_manager import set_league_id_session
+                set_league_id_session(user_id, duration_sec=60)
+                self.reply_text(event, configuration, "👉 請在 60 秒內直接輸入新的 Yahoo 聯盟 ID：")
+            else:
+                self.reply_text(event, configuration, "⚠️ 無法獲取您的 User ID，請重新嘗試。")
+            return
+            
         match = re.match(r"^#設置聯盟ID\s+(\d+)$", user_text)
         if not match:
             self.reply_text(event, configuration, "格式錯誤，請使用：#設置聯盟ID <純數字_ID>")

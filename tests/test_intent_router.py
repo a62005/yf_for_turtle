@@ -366,6 +366,16 @@ def test_should_process_unbound_silence():
             assert router.should_process(event_session, config) is True
         finally:
             clear_nickname_session("user_test_unbound")
+
+        # 驗證活動中的聯盟 ID 會話
+        from src.utils.session_manager import set_league_id_session, clear_league_id_session
+        event_league_session = create_mock_event("12345", chat_type="user")
+        event_league_session.source.user_id = "user_test_unbound"
+        set_league_id_session("user_test_unbound", duration_sec=60)
+        try:
+            assert router.should_process(event_league_session, config) is True
+        finally:
+            clear_league_id_session("user_test_unbound")
             
         # 3. 驗證攔截指令
         event_start = create_mock_event("#開季")
@@ -377,5 +387,34 @@ def test_should_process_unbound_silence():
         # 4. 驗證普通自然語言閒聊
         event_chat = create_mock_event("今天天氣真好", chat_type="user")
         assert router.should_process(event_chat, config) is False
+
+
+def test_intent_router_league_id_session():
+    from src.handlers.dispatcher import CommandDispatcher
+    from src.handlers.intent_router import IntentRouter
+    from src.utils.session_manager import set_league_id_session, get_league_id_session
+    from linebot.v3.messaging import Configuration
+    
+    dispatcher = MagicMock()
+    router = IntentRouter(dispatcher)
+    config = Configuration()
+    
+    event = create_mock_event("18457", chat_type="user")
+    event.source.user_id = "user_test_league_session"
+    
+    # 設定 active league session
+    set_league_id_session("user_test_league_session", duration_sec=60)
+    
+    try:
+        router.route(event, config)
+        # 驗證 session 被清除
+        assert get_league_id_session("user_test_league_session") is None
+        # 驗證 dispatcher 被呼叫，且 event.message.text 被重寫為 #設置聯盟ID 18457
+        dispatcher.handle.assert_called_once_with(event, config)
+        assert event.message.text == "#設置聯盟ID 18457"
+    finally:
+        from src.utils.session_manager import clear_league_id_session
+        clear_league_id_session("user_test_league_session")
+
 
 

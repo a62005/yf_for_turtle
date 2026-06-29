@@ -12,7 +12,9 @@ from src.utils.session_manager import (
     get_nickname_session, 
     clear_nickname_session,
     get_draft_time_session,
-    clear_draft_time_session
+    clear_draft_time_session,
+    get_league_id_session,
+    clear_league_id_session
 )
 from src.utils.path_utils import get_league_team_mapping_path
 
@@ -48,7 +50,7 @@ class IntentRouter:
             user_id = getattr(event.source, "user_id", None)
             is_active_session = False
             if user_id:
-                if get_nickname_session(user_id) or get_draft_time_session(user_id):
+                if get_nickname_session(user_id) or get_draft_time_session(user_id) or get_league_id_session(user_id):
                     is_active_session = True
             
             is_allowed_cmd = (user_text == "#設置" or user_text == "#我的ID" or user_text.startswith("#設置聯盟ID"))
@@ -66,7 +68,7 @@ class IntentRouter:
         # 3. 活動中 Session 優先（在群組也不需要被 @提及）
         user_id = getattr(event.source, "user_id", None)
         if user_id:
-            if get_nickname_session(user_id) or get_draft_time_session(user_id):
+            if get_nickname_session(user_id) or get_draft_time_session(user_id) or get_league_id_session(user_id):
                 return True
 
         # 4. 群聊中必須被提及 (@提及)
@@ -123,6 +125,17 @@ class IntentRouter:
                     self._update_team_nickname(team_id, user_text)
                     clear_nickname_session(user_id)
                     self.reply_text(event, configuration, f"✅ 成功將暱稱修改為：{user_text}")
+                    return
+
+            # 3. 攔截聯盟 ID 設定會話
+            league_session = get_league_id_session(user_id)
+            if league_session:
+                if user_text.startswith("#"):
+                    clear_league_id_session(user_id)
+                else:
+                    clear_league_id_session(user_id)
+                    event.message.text = f"#設置聯盟ID {user_text}"
+                    self.dispatcher.handle(event, configuration)
                     return
         
         # 1. 優先處理標準指令
