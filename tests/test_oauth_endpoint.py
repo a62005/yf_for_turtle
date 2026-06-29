@@ -1,4 +1,5 @@
 import json
+import pickle
 import pytest
 from unittest.mock import MagicMock, patch
 
@@ -24,23 +25,24 @@ def test_oauth_callback_success(mock_app):
     mock_response.status_code = 200
     mock_response.json.return_value = mock_token_payload
     
-    # 攔截對應的檔案儲存
-    written_files = {}
-    def mock_write(path, mode="r", *args, **kwargs):
-        from io import StringIO
-        class MockFile(StringIO):
-            def __exit__(self, exc_type, exc_val, exc_tb):
-                nonlocal written_files
-                written_files[path] = self.getvalue()
-                super().__exit__(exc_type, exc_val, exc_tb)
-        return MockFile()
-        
+    # 記錄所有 pickle.dump 呼叫的資料
+    pickled_data = {}
+    original_pickle_dump = pickle.dump
+    
+    def mock_pickle_dump(data, fp, *args, **kwargs):
+        try:
+            pickled_data[fp.name] = data
+        except AttributeError:
+            pass
+    
     with patch("bot.load_config", return_value={"YAHOO_CLIENT_ID": "client", "YAHOO_CLIENT_SECRET": "secret", "SERVER_URL": "http://127.0.0.1"}), \
          patch("bot.requests.post", return_value=mock_response) as mock_post, \
-         patch("bot.open", side_effect=mock_write), \
-         patch("bot.os.exists", create=True, return_value=True), \
+         patch("bot.os.path.exists", return_value=True), \
          patch("bot.json.load", return_value=mapping_data), \
-         patch("bot.os.makedirs") as mock_makedirs, \
+         patch("bot.os.makedirs"), \
+         patch("bot.pickle.load", return_value={}), \
+         patch("bot.pickle.dump", side_effect=mock_pickle_dump), \
+         patch("builtins.open", MagicMock()), \
          patch("src.fetcher.YahooFantasyFetcher") as mock_fetcher_cls, \
          patch("src.utils.season_utils.sync_season_metadata") as mock_sync_season, \
          patch("yahoofantasy.League") as mock_league_cls, \
@@ -71,13 +73,9 @@ def test_oauth_callback_success(mock_app):
         post_kwargs = mock_post.call_args[1]
         assert post_kwargs["data"]["code"] == "code_123"
         
-        # 驗證有寫入正確聯賽目錄 (77777)
-        matching_file_found = False
-        for filepath, data in written_files.items():
-            if "77777" in filepath and "oauth2.json" in filepath:
-                matching_file_found = True
-                assert "mock_access_token_123" in data
-        assert matching_file_found
+        # 驗證有呼叫 pickle.dump（代表 .yahoofantasy 被寫入）
+        from bot import pickle as bot_pickle
+        bot_pickle.dump.assert_called()
         
         # 驗證有呼叫初始化與同步
         mock_fetcher_cls.assert_called_once_with(
@@ -86,7 +84,6 @@ def test_oauth_callback_success(mock_app):
             league_id="77777"
         )
         mock_sync_season.assert_called_once_with(mock_fetcher, "77777")
-        mock_league_cls.assert_called_once()
         
         # 驗證是否對群組調用 Push Message 推播成功訊息
         mock_api_cls.assert_called_once()

@@ -1,11 +1,13 @@
 import os
 import sys
 import json
+import pickle
 import psutil
 import time
 import logging
 import subprocess
 import requests
+from pydash import set_ as pydash_set
 from flask import Flask, request, abort, send_from_directory, render_template_string
 from linebot.v3 import WebhookHandler
 from linebot.v3.exceptions import InvalidSignatureError
@@ -77,6 +79,8 @@ configuration = Configuration(access_token=LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+# 抑制 Flask/Werkzeug 的 HTTP 存取 log（如 "POST /callback 200"），只保留應用程式 log
+logging.getLogger("werkzeug").setLevel(logging.WARNING)
 
 # Initialize Dispatcher
 dispatcher = CommandDispatcher()
@@ -164,16 +168,44 @@ def oauth_callback():
     if not league_id:
         return f"⚠️ 找不到此聊天室 ({chat_id}) 所綁定的聯賽，請先執行 #設置 以確認綁定關係。", 400
         
-    # 3. 寫入專屬聯賽隔離憑證（使用 get_league_dir 正確解析 mlb.l.62358 -> data/league/mlb/62358）
-    league_cred_dir = get_league_dir(league_id)
-    os.makedirs(league_cred_dir, exist_ok=True)
-    league_cred_file = os.path.join(league_cred_dir, "oauth2.json")
-    
     try:
-        import time
-        token_data["expires_at"] = time.time() + float(token_data.get("expires_in", 3600))
-        with open(league_cred_file, "w", encoding="utf-8") as f:
-            json.dump(token_data, f, indent=2, ensure_ascii=False)
+        league_cred_dir = get_league_dir(league_id)
+        persist_key = league_cred_dir.replace("\\", "/").rstrip("/") + "/"
+        yf_filename = f"{persist_key}.yahoofantasy"
+
+        # 讀取現有 .yahoofantasy（若存在），在其基礎上覆寫 auth 欄位
+        existing_data = {}
+        if os.path.exists(yf_filename):
+            try:
+                with open(yf_filename, "rb") as fp:
+                    existing_data = pickle.load(fp)
+            except Exception:
+                existing_data = {}
+
+        access_token = token_data.get("access_token", "")
+        refresh_token = token_data.get("refresh_token", "")
+        expires_in = float(token_data.get("expires_in", 3600))
+        access_token_expires = time.time() + expires_in
+
+        auth_payload = {
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "refresh_token": refresh_token,
+            "access_token": access_token,
+            "access_token_expires": access_token_expires,
+        }
+
+        # 使用 pydash set_ 寫入 auth 欄位（與 yahoofantasy 的 save() 相同格式）
+        now = time.time()
+        for k, v in auth_payload.items():
+            existing_data = pydash_set(existing_data, f"auth.{k}", v)
+            existing_data = pydash_set(existing_data, f"auth.{k}__time", now)
+        existing_data = pydash_set(existing_data, "auth__time", now)
+
+        with open(yf_filename, "wb") as fp:
+            pickle.dump(existing_data, fp)
+
+        logging.info(f"[OAUTH] 憑證已成功寫入: {yf_filename}")
     except Exception as e:
         return f"⚠️ 儲存聯賽憑證失敗: {e}", 500
         
