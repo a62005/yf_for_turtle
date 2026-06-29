@@ -35,6 +35,17 @@ class MiscHandler(BaseHandler):
         return bool(self.pattern.match(user_text))
 
     def execute(self, event: MessageEvent, configuration: Configuration) -> None:
+        league_id = None
+        if configuration:
+            if hasattr(configuration, "get"):
+                league_id = configuration.get("LEAGUE_ID")
+            else:
+                league_id = getattr(configuration, "LEAGUE_ID", None)
+        
+        if league_id and str(league_id).startswith("mlb.l."):
+            self.reply_text(event, configuration, "⚠️ 此功能目前僅支援 NBA 聯賽。")
+            return
+
         user_text = event.message.text.strip()
         match = self.pattern.match(user_text)
         if not match:
@@ -290,3 +301,7 @@ class MiscHandler(BaseHandler):
                     messages=[TextMessage(text=text)]
                 )
             )
+
+
+SeasonCountdownHandler = MiscHandler
+
