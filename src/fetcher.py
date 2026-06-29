@@ -82,9 +82,13 @@ class YahooFantasyFetcher:
         self.team_mapping = team_mapping or {}
 
     def _normalize_league_id(self, league_id: str) -> str:
-        if league_id and not str(league_id).startswith('nba.l.'):
-            return f"nba.l.{league_id}"
-        return str(league_id)
+        lid_str = str(league_id).strip()
+        if lid_str.startswith("nba.l.") or lid_str.startswith("mlb.l."):
+            return lid_str
+        elif "." in lid_str:
+            return lid_str
+        else:
+            return f"nba.l.{lid_str}"
         
     def _find_node(self, parent, path):
         return parent.find(path, YAHOO_NS)
