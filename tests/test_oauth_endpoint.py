@@ -38,11 +38,27 @@ def test_oauth_callback_success(mock_app):
     with patch("bot.load_config", return_value={"YAHOO_CLIENT_ID": "client", "YAHOO_CLIENT_SECRET": "secret", "SERVER_URL": "http://127.0.0.1"}), \
          patch("bot.requests.post", return_value=mock_response) as mock_post, \
          patch("bot.open", side_effect=mock_write), \
-         patch("bot.os.path.exists", return_value=True), \
+         patch("bot.os.exists", create=True, return_value=True), \
          patch("bot.json.load", return_value=mapping_data), \
          patch("bot.os.makedirs") as mock_makedirs, \
+         patch("src.fetcher.YahooFantasyFetcher") as mock_fetcher_cls, \
+         patch("src.utils.season_utils.sync_season_metadata") as mock_sync_season, \
+         patch("yahoofantasy.League") as mock_league_cls, \
          patch("linebot.v3.messaging.MessagingApi") as mock_api_cls:
          
+        # Mock fetcher instance and its methods
+        mock_fetcher = MagicMock()
+        mock_fetcher._normalize_league_id.return_value = "77777"
+        mock_fetcher_cls.return_value = mock_fetcher
+        
+        # Mock league.teams() return values
+        mock_team = MagicMock()
+        mock_team.team_id = "1"
+        mock_team.name = "Test Team"
+        mock_league = MagicMock()
+        mock_league.teams.return_value = [mock_team]
+        mock_league_cls.return_value = mock_league
+
         # 發送 GET 請求
         res = mock_app.get("/oauth/callback?code=code_123&state=C_test_group")
         
@@ -62,6 +78,15 @@ def test_oauth_callback_success(mock_app):
                 matching_file_found = True
                 assert "mock_access_token_123" in data
         assert matching_file_found
+        
+        # 驗證有呼叫初始化與同步
+        mock_fetcher_cls.assert_called_once_with(
+            client_id="client",
+            client_secret="secret",
+            league_id="77777"
+        )
+        mock_sync_season.assert_called_once_with(mock_fetcher, "77777")
+        mock_league_cls.assert_called_once()
         
         # 驗證是否對群組調用 Push Message 推播成功訊息
         mock_api_cls.assert_called_once()

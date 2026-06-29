@@ -177,7 +177,44 @@ def oauth_callback():
     except Exception as e:
         return f"⚠️ 儲存聯賽憑證失敗: {e}", 500
         
-    # 4. 主動推播 LINE 通知使用者授權成功
+    # 4. 初始化聯賽資料與隊伍名稱對照表
+    try:
+        from src.fetcher import YahooFantasyFetcher
+        from src.utils.season_utils import sync_season_metadata
+        from src.utils.path_utils import get_league_team_mapping_path
+        
+        fetcher = YahooFantasyFetcher(
+            client_id=client_id,
+            client_secret=client_secret,
+            league_id=league_id
+        )
+        
+        # 同步賽季資訊
+        sync_season_metadata(fetcher, league_id)
+        
+        # 建立/初始化隊伍名稱對照表
+        mapping_path = get_league_team_mapping_path(league_id)
+        if not os.path.exists(mapping_path):
+            os.makedirs(os.path.dirname(mapping_path), exist_ok=True)
+            default_mapping = {}
+            try:
+                import yahoofantasy
+                normalized_id = fetcher._normalize_league_id(league_id)
+                league = yahoofantasy.League(fetcher.ctx, normalized_id)
+                for team in league.teams():
+                    team_id = str(getattr(team, "team_id", ""))
+                    team_name = str(getattr(team, "name", ""))
+                    if team_id and team_name:
+                        default_mapping[team_id] = team_name
+            except Exception as ex:
+                logging.error(f"[OAUTH] 無法取得官方暱稱，將初始化為空對應: {ex}")
+            
+            with open(mapping_path, "w", encoding="utf-8") as mf:
+                json.dump(default_mapping, mf, ensure_ascii=False, indent=2)
+    except Exception as e:
+        logging.error(f"[OAUTH] 初始化聯賽資料與對照表失敗: {e}")
+        
+    # 5. 主動推播 LINE 通知使用者授權成功
     try:
         from linebot.v3.messaging import ApiClient, MessagingApi, PushMessageRequest, TextMessage
         with ApiClient(configuration) as api_client:
