@@ -18,7 +18,7 @@ def load_config() -> dict:
     
     # 從 current_chat_id 取得 chat_id，讀取 data/security/chat_league_mapping.json 對應的 league_id
     league_id = None
-    chat_id = current_chat_id.get()
+    chat_id = current_chat_id.get() or os.environ.get("LINE_REPLY_TO")
     if chat_id:
         mapping_file = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "security", "chat_league_mapping.json"))
         if os.path.exists(mapping_file):
