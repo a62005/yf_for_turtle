@@ -15,6 +15,23 @@ class BaseHandler(ABC):
         self.requires_whitelist: bool = False
         self.exclude_from_llm: bool = False
         
+        # 動態包裝子類別的 execute 方法以統一處理 LeaguePermissionError
+        original_execute = self.execute
+        def wrapped_execute(event, configuration):
+            try:
+                original_execute(event, configuration)
+            except Exception as e:
+                from src.fetcher import LeaguePermissionError
+                if isinstance(e, LeaguePermissionError) or e.__class__.__name__ == "LeaguePermissionError":
+                    self.reply_text(
+                        event,
+                        configuration,
+                        "⚠️ 機器人 Yahoo 帳號目前無權限存取此聯盟。請確保已將機器人的 Yahoo 帳號邀請為該聯盟的成員或 Co-manager。"
+                    )
+                else:
+                    raise
+        self.execute = wrapped_execute
+        
     @abstractmethod
     def can_handle(self, user_text: str) -> bool:
         """Return True if this handler can process the given text."""

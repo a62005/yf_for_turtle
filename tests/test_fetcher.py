@@ -269,3 +269,23 @@ def test_fetch_week_end_date(mocker):
     mock_ctx.return_value.make_request.return_value = mock_error_xml
     end_date_err = fetcher.fetch_week_end_date("12345", 16)
     assert end_date_err is None
+
+
+def test_fetch_league_metadata_permission_denied(mocker):
+    from src.fetcher import LeaguePermissionError
+    
+    mock_ctx = mocker.patch("src.fetcher.yahoofantasy.Context")
+    mock_ctx.return_value.make_request.side_effect = Exception("HTTP Error 403 Forbidden")
+    
+    fetcher = YahooFantasyFetcher()
+    fetcher.ctx = mock_ctx.return_value
+    
+    with pytest.raises(LeaguePermissionError):
+        fetcher.fetch_league_metadata("12345")
+
+    mock_league = mocker.patch("src.fetcher.yahoofantasy.League")
+    mock_league.return_value.teams.side_effect = Exception("HTTP Error 401 Unauthorized")
+    
+    with pytest.raises(LeaguePermissionError):
+        fetcher.fetch_league_data("12345")
+

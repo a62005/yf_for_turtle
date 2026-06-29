@@ -11,6 +11,23 @@ from yahoofantasy.resources.team import Team
 
 YAHOO_NS = {'ns': 'http://fantasysports.yahooapis.com/fantasy/v2/base.rng'}
 
+class LeaguePermissionError(Exception):
+    """Raised when the robot has no permission to access the Yahoo league."""
+    pass
+
+def handle_permission_errors(func):
+    from functools import wraps
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            err_str = str(e)
+            if "401" in err_str or "403" in err_str:
+                raise LeaguePermissionError(f"Yahoo API Permission Denied (401/403): {e}") from e
+            raise
+    return wrapper
+
 class YahooFantasyFetcher:
     NON_STARTING_POSITIONS = ['BN', 'IL', 'IL+', 'NA']
 
@@ -33,6 +50,7 @@ class YahooFantasyFetcher:
     def _find_all_nodes(self, parent, path):
         return parent.findall(path, YAHOO_NS)
 
+    @handle_permission_errors
     def fetch_league_metadata(self, league_id: str) -> dict:
         """Fetch basic league metadata including season start and end dates."""
         league_id = self._normalize_league_id(league_id)
@@ -63,6 +81,10 @@ class YahooFantasyFetcher:
                 start_date, end_date, season, name, end_week = None, None, None, "Unknown League", None
                 
         except Exception as e:
+            # 權限不足的錯誤應立即拋出，不進行 fallback
+            err_str = str(e)
+            if "401" in err_str or "403" in err_str:
+                raise
             # Fallback if XML parsing fails
             import logging
             logging.error(f"Failed to parse league metadata XML: {e}")
@@ -103,6 +125,7 @@ class YahooFantasyFetcher:
             logging.error(f"Failed to fetch week end date for week {week}: {e}")
             return None
 
+    @handle_permission_errors
     def fetch_league_data(self, league_id: str) -> dict:
         # Ensure league_id has the correct prefix for NBA
         league_id = self._normalize_league_id(league_id)
@@ -178,6 +201,7 @@ class YahooFantasyFetcher:
                     pass
         return stats_dict
 
+    @handle_permission_errors
     def fetch_team_stats(self, league_id: str) -> dict:
         league_id = self._normalize_league_id(league_id)
             
@@ -203,6 +227,7 @@ class YahooFantasyFetcher:
             
         return {"team_stats": team_stats_data}
 
+    @handle_permission_errors
     def fetch_weekly_stats(self, league_id: str, week: int) -> dict:
         league_id = self._normalize_league_id(league_id)
         raw_id = league_id.split(".")[-1]
@@ -228,6 +253,7 @@ class YahooFantasyFetcher:
             json.dump(data, f, ensure_ascii=False, indent=2)
         return self._parse_teams_from_content(data)
 
+    @handle_permission_errors
     def fetch_daily_stats(self, league_id: str, date_str: str) -> dict:
         league_id = self._normalize_league_id(league_id)
         raw_id = league_id.split(".")[-1]
@@ -407,12 +433,14 @@ class YahooFantasyFetcher:
             "stats": stats_dict
         }
 
+    @handle_permission_errors
     def fetch_single_team_stats_by_url(self, team_key: str, stat_type: str, type_val: str) -> dict:
         """實時且無快取地抓取單一隊伍在指定日期/週數的 9-Cat 數據"""
         url = f"team/{team_key}/stats;type={stat_type};{stat_type}={type_val}"
         xml_data = self.ctx.make_request(url)
         return self._parse_team_stats_xml(xml_data)
 
+    @handle_permission_errors
     def fetch_matchups(self, league_id: str, week: int) -> list:
         """Fetch matchups with detailed team stats for a specific week from the scoreboard."""
         league_id = self._normalize_league_id(league_id)
