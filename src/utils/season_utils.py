@@ -88,4 +88,11 @@ def sync_season_metadata(fetcher: YahooFantasyFetcher, league_id: str):
     meta["week_dates"] = week_dates
     meta["date_to_week"] = date_to_week
     
+    # 同步聯賽設定並寫入 stat_categories
+    try:
+        stats = fetcher.sync_league_settings(league_id)
+        meta["stat_categories"] = stats
+    except Exception as e:
+        logging.error(f"[SYSTEM] 同步聯賽設定失敗: {e}")
+        
     save_league_metadata(meta, league_id)

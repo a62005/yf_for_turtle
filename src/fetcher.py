@@ -38,6 +38,7 @@ class YahooFantasyFetcher:
         if league_id is None:
             from src.config import load_config
             league_id = load_config().get("LEAGUE_ID")
+        self.league_id = league_id
 
         persist_key = "credentials/"
         if league_id:
@@ -77,6 +78,79 @@ class YahooFantasyFetcher:
 
     def _find_all_nodes(self, parent, path):
         return parent.findall(path, YAHOO_NS)
+
+    @handle_permission_errors
+    def sync_league_settings(self, league_id: str) -> list:
+        """Fetch league settings and parse all stats categories with sort orders."""
+        league_id = self._normalize_league_id(league_id)
+        url = f"league/{league_id}/settings"
+        xml_data = self.ctx.make_request(url)
+        root = ET.fromstring(xml_data)
+        
+        stats = []
+        stat_nodes = root.findall('.//ns:stat_categories/ns:stats/ns:stat', YAHOO_NS)
+        for node in stat_nodes:
+            s_id_node = node.find('ns:stat_id', YAHOO_NS)
+            name_node = node.find('ns:name', YAHOO_NS)
+            disp_node = node.find('ns:display_name', YAHOO_NS)
+            sort_node = node.find('ns:sort_order', YAHOO_NS)
+            
+            s_id = s_id_node.text if s_id_node is not None else None
+            disp = disp_node.text if disp_node is not None else (name_node.text if name_node is not None else "")
+            sort_val = int(sort_node.text) if (sort_node is not None and sort_node.text is not None) else 1
+            
+            if s_id:
+                stats.append({
+                    "stat_id": str(s_id),
+                    "display_name": str(disp),
+                    "sort_order": sort_val
+                })
+                
+        # Cache it in metadata.json
+        from src.utils.path_utils import get_league_dir
+        meta_path = os.path.join(get_league_dir(league_id), "metadata.json")
+        meta = {}
+        if os.path.exists(meta_path):
+            try:
+                with open(meta_path, "r", encoding="utf-8") as f:
+                    meta = json.load(f)
+            except Exception:
+                pass
+        meta["stat_categories"] = stats
+        os.makedirs(os.path.dirname(meta_path), exist_ok=True)
+        with open(meta_path, "w", encoding="utf-8") as f:
+            json.dump(meta, f, ensure_ascii=False, indent=2)
+            
+        return stats
+
+    def _get_stat_map(self, league_id: str = None) -> dict:
+        if not league_id:
+            league_id = getattr(self, "league_id", None)
+        if not league_id:
+            from src.config import load_config
+            league_id = load_config().get("LEAGUE_ID")
+            
+        from src.utils.path_utils import get_league_dir
+        meta_path = os.path.join(get_league_dir(league_id), "metadata.json")
+        stat_map = {}
+        if os.path.exists(meta_path):
+            try:
+                with open(meta_path, "r", encoding="utf-8") as f:
+                    meta = json.load(f)
+                    for cat in meta.get("stat_categories", []):
+                        stat_map[str(cat["stat_id"])] = cat["display_name"]
+            except Exception:
+                pass
+        
+        if not stat_map:
+            from src.constants.stat_map import STAT_MAP
+            stat_map = STAT_MAP
+        return stat_map
+
+    def _translate_stat(self, s_id, league_id=None) -> str:
+        stat_map = self._get_stat_map(league_id)
+        s_id_str = str(s_id)
+        return stat_map.get(s_id_str, f"stat_{s_id_str}")
 
     @handle_permission_errors
     def fetch_league_metadata(self, league_id: str) -> dict:
@@ -223,7 +297,7 @@ class YahooFantasyFetcher:
                         s_id = getattr(s, 'stat_id', None)
                         s_val = getattr(s, 'value', None)
                         if s_id is not None:
-                            label = translate_stat_id(s_id)
+                            label = self._translate_stat(s_id)
                             stats_dict[label] = self._get_val(s_val)
                 except Exception:
                     pass
@@ -454,8 +528,7 @@ class YahooFantasyFetcher:
             s_id = node.find('ns:stat_id', YAHOO_NS).text
             s_val = node.find('ns:value', YAHOO_NS).text
             
-            # 使用我們原有的翻譯邏輯
-            label = translate_stat_id(s_id)
+            label = self._translate_stat(s_id)
             stats_dict[label] = s_val if s_val is not None else "0"
             
         return {
@@ -503,7 +576,7 @@ class YahooFantasyFetcher:
                         if s_id_node is not None and s_id_node.text:
                             s_id = s_id_node.text
                             s_val = s_val_node.text if s_val_node is not None else "0"
-                            label = translate_stat_id(s_id)
+                            label = self._translate_stat(s_id, league_id)
                             stats_dict[label] = s_val if s_val is not None else "0"
                     
                     # 拼接出手數與分母輔助項
