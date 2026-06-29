@@ -95,4 +95,6 @@ def sync_season_metadata(fetcher: YahooFantasyFetcher, league_id: str):
     except Exception as e:
         logging.error(f"[SYSTEM] 同步聯賽設定失敗: {e}")
         
+    meta["sport"] = league_id.split(".")[0]
     save_league_metadata(meta, league_id)
+

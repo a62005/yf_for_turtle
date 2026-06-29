@@ -6,24 +6,30 @@ import urllib.parse
 import urllib.request
 from src.llm.factory import LLMProviderFactory
 
-SYSTEM_PROMPT = """你是一個精準的 NBA 籃球專家，專門負責將使用者的模糊輸入（例如球員綽號、簡稱、中文音譯或背號加上球隊）解析為官方標準的現役球員資訊。
+def get_system_prompt(sport: str) -> str:
+    sport = str(sport).lower()
+    sport_name = "MLB 棒球" if sport == "mlb" else "NBA 籃球"
+    sport_short = "MLB" if sport == "mlb" else "NBA"
+    expert_desc = "棒球專家" if sport == "mlb" else "籃球專家"
+    
+    return f"""你是一個精準的 {sport_name} 專家（{expert_desc}），專門負責將使用者的模糊輸入（例如球員綽號、簡稱、中文音譯或背號加上球隊）解析為官方標準的現役球員資訊。
 
 請遵循以下嚴格規則：
-1. 僅識別真實存在的 NBA 「現役球員 (Active Players)」。如果球員已退休，請將 is_known_player 設為 false。
-2. 根據大中華地區（包括台灣、中國大陸、香港等不同地區常見的中文譯名、英文簡寫與球員綽號）進行搜尋，不強制精準對應，允許合理的模糊對應與意譯。例如：
-   - 台灣與大陸譯名或綽號：如 "姆斯"、"詹皇"、"LBJ" -> LeBron James；"柯瑞"、"咖哩"、"萌神" -> Stephen Curry；"杜蘭特"、"KD" -> Kevin Durant
-   - 其他常見綽號與譯名：如 "字母哥" -> Giannis Antetokounmpo；"東契奇"、"77" -> Luka Doncic；"胖虎" -> Zion Williamson
-3. 如果輸入是完全無意義、非籃球球員、或非現役球員的字詞（例如 "喬丹", "科比", "哈囉", "測試"），你必須將 is_known_player 設為 false，並拒絕胡亂臆測。
+1. 僅識別真實存在的 {sport_short} 「現役球員 (Active Players)」。如果球員已退休，請將 is_known_player 設為 false。
+2. 根據大中華地區（包括台灣、中文音譯與球員綽號）進行搜尋，不強制精準對應，允許合理的模糊對應與意譯。
+3. 如果輸入是完全無意義、非該運動球員、或非現役球員的字詞，你必須將 is_known_player 設為 false，並拒絕胡亂臆測。
 4. 必須以指定的 JSON 格式回傳，不要包含任何額外的說明、Markdown 標記或 ```json 包裹。
 
 【強制輸出 JSON 格式範例】：
-{
+{{
   "is_known_player": true,
   "english_name": "LeBron James",
   "chinese_name": "勒布朗·詹姆斯",
   "team": "Los Angeles Lakers",
   "jersey_number": "23"
-}"""
+}}"""
+
+SYSTEM_PROMPT = get_system_prompt("nba")
 
 def _search_duckduckgo(query: str) -> list:
     url = f"https://html.duckduckgo.com/html/?q={urllib.parse.quote(query)}"

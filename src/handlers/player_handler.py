@@ -101,6 +101,7 @@ class PlayerHandler(BaseHandler):
         config = load_config()
         league_id = config["LEAGUE_ID"]
         meta = load_league_metadata()
+        sport = meta.get("sport") or league_id.split(".")[0]
         today_pacific = datetime.now(pytz.timezone("US/Pacific")).strftime("%Y-%m-%d")
         is_offseason = meta.get('end_date') and today_pacific > meta['end_date']
 
@@ -109,11 +110,9 @@ class PlayerHandler(BaseHandler):
         
         # 2. Cache Miss: LLM parse + Yahoo Search
         if not player_info:
-            llm_res = parse_player_nickname(
-                nickname, 
-                api_key=config.get("LLM_API_KEY"),
-                model_name=config.get("LLM_MODEL")
-            )
+            from src.llm.llm_agent import LLMAgent
+            agent = LLMAgent()
+            llm_res = agent.player_fuzzy_search(nickname, sport=sport)
             if not llm_res.get("is_known_player"):
                 self.reply_text(event, configuration, f"找不到現役球員「{nickname}」，請嘗試輸入更清晰的名字或別稱。")
                 return
@@ -122,7 +121,8 @@ class PlayerHandler(BaseHandler):
             
             # Retrieve player key from Yahoo search
             fetcher = YahooFantasyFetcher(client_id=config.get("YAHOO_CLIENT_ID"), client_secret=config.get("YAHOO_CLIENT_SECRET"))
-            url = f"league/nba.l.{league_id}/players;search={english_name}"
+            full_league_id = league_id if ("." in league_id) else f"nba.l.{league_id}"
+            url = f"league/{full_league_id}/players;search={english_name}"
             try:
                 xml_data = fetcher.ctx.make_request(url)
                 root = ET.fromstring(xml_data)
