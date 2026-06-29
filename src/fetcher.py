@@ -6,7 +6,7 @@ import json
 import shutil
 from src.utils.path_utils import get_league_weekly_dir, get_league_daily_dir
 from src.constants.stat_map import translate_stat_id
-from yahoofantasy.api.parse import as_list, from_response_object
+from yahoofantasy.api.parse import as_list, from_response_object, parse_response
 from yahoofantasy.resources.team import Team
 
 
@@ -274,7 +274,8 @@ class YahooFantasyFetcher:
                 logging.warning(f"[CACHE] 讀取週數據快取失敗: {e}")
                 
         url = f"league/{league_id}/scoreboard;week={week}"
-        data = self.ctx.make_request(url)
+        data_raw = self.ctx.make_request(url)
+        data = parse_response(data_raw) if isinstance(data_raw, str) else data_raw
         
         os.makedirs(cache_dir, exist_ok=True)
         with open(cache_path, "w", encoding="utf-8") as f:
@@ -300,7 +301,8 @@ class YahooFantasyFetcher:
                 logging.warning(f"[CACHE] 讀取日數據快取失敗: {e}")
                 
         url = f"league/{league_id}/teams/stats;type=date;date={date_str}"
-        data = self.ctx.make_request(url)
+        data_raw = self.ctx.make_request(url)
+        data = parse_response(data_raw) if isinstance(data_raw, str) else data_raw
         
         os.makedirs(cache_dir, exist_ok=True)
         with open(cache_path, "w", encoding="utf-8") as f:
