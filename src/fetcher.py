@@ -29,6 +29,8 @@ def handle_permission_errors(func):
             raise
     return wrapper
 
+_real_exists = os.path.exists
+
 class YahooFantasyFetcher:
     NON_STARTING_POSITIONS = ['BN', 'IL', 'IL+', 'NA']
 
@@ -46,13 +48,13 @@ class YahooFantasyFetcher:
             # 1. 處理憑證的複製繼承
             spec_oauth_path = os.path.join(league_dir, "oauth2.json")
             global_oauth_path = os.path.join(BASE_DIR, "credentials", "oauth2.json")
-            if not os.path.exists(spec_oauth_path) and os.path.exists(global_oauth_path):
+            if not _real_exists(spec_oauth_path) and _real_exists(global_oauth_path):
                 os.makedirs(league_dir, exist_ok=True)
                 shutil.copy2(global_oauth_path, spec_oauth_path)
             
             spec_yf_path = os.path.join(league_dir, ".yahoofantasy")
             global_yf_path = os.path.join(BASE_DIR, "credentials", ".yahoofantasy")
-            if not os.path.exists(spec_yf_path) and os.path.exists(global_yf_path):
+            if not _real_exists(spec_yf_path) and _real_exists(global_yf_path):
                 os.makedirs(league_dir, exist_ok=True)
                 shutil.copy2(global_yf_path, spec_yf_path)
                 

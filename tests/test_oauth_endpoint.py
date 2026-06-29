@@ -1,0 +1,67 @@
+import json
+import pytest
+from unittest.mock import MagicMock, patch
+
+@pytest.fixture
+def mock_app():
+    from bot import app
+    app.config["TESTING"] = True
+    return app.test_client()
+
+def test_oauth_callback_success(mock_app):
+    # 模擬 chat_league_mapping.json 的讀寫
+    mapping_data = {"C_test_group": "77777"}
+    
+    # Mock Token 交換回傳值
+    mock_token_payload = {
+        "access_token": "mock_access_token_123",
+        "refresh_token": "mock_refresh_token_456",
+        "expires_in": 3600,
+        "token_type": "bearer"
+    }
+    
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = mock_token_payload
+    
+    # 攔截對應的檔案儲存
+    written_files = {}
+    def mock_write(path, mode="r", *args, **kwargs):
+        from io import StringIO
+        class MockFile(StringIO):
+            def __exit__(self, exc_type, exc_val, exc_tb):
+                nonlocal written_files
+                written_files[path] = self.getvalue()
+                super().__exit__(exc_type, exc_val, exc_tb)
+        return MockFile()
+        
+    with patch("bot.load_config", return_value={"YAHOO_CLIENT_ID": "client", "YAHOO_CLIENT_SECRET": "secret", "SERVER_URL": "http://127.0.0.1"}), \
+         patch("bot.requests.post", return_value=mock_response) as mock_post, \
+         patch("bot.open", side_effect=mock_write), \
+         patch("bot.os.path.exists", return_value=True), \
+         patch("bot.json.load", return_value=mapping_data), \
+         patch("bot.os.makedirs") as mock_makedirs, \
+         patch("linebot.v3.messaging.MessagingApi") as mock_api_cls:
+         
+        # 發送 GET 請求
+        res = mock_app.get("/oauth/callback?code=code_123&state=C_test_group")
+        
+        # 驗證響應
+        assert res.status_code == 200
+        assert "授權成功" in res.get_data(as_text=True)
+        
+        # 驗證 POST 請求參數
+        mock_post.assert_called_once()
+        post_kwargs = mock_post.call_args[1]
+        assert post_kwargs["data"]["code"] == "code_123"
+        
+        # 驗證有寫入正確聯賽目錄 (77777)
+        matching_file_found = False
+        for filepath, data in written_files.items():
+            if "77777" in filepath and "oauth2.json" in filepath:
+                matching_file_found = True
+                assert "mock_access_token_123" in data
+        assert matching_file_found
+        
+        # 驗證是否對群組調用 Push Message 推播成功訊息
+        mock_api_cls.assert_called_once()
