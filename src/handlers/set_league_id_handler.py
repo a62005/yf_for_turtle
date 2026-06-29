@@ -43,7 +43,8 @@ class SetLeagueIdHandler(BaseHandler):
         # 建立 Fetcher 並嘗試同步賽季資訊以驗證 ID 效力
         fetcher = YahooFantasyFetcher(
             client_id=config.get("YAHOO_CLIENT_ID"),
-            client_secret=config.get("YAHOO_CLIENT_SECRET")
+            client_secret=config.get("YAHOO_CLIENT_SECRET"),
+            league_id=target_id
         )
         
         try:

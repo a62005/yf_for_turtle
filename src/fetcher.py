@@ -3,6 +3,7 @@ import logging
 import xml.etree.ElementTree as ET
 import os
 import json
+import shutil
 from src.utils.path_utils import get_league_weekly_dir, get_league_daily_dir
 from src.constants.stat_map import translate_stat_id
 from yahoofantasy.api.parse import as_list, from_response_object
@@ -31,9 +32,34 @@ def handle_permission_errors(func):
 class YahooFantasyFetcher:
     NON_STARTING_POSITIONS = ['BN', 'IL', 'IL+', 'NA']
 
-    def __init__(self, team_mapping: dict = None, client_id: str = None, client_secret: str = None):
+    def __init__(self, team_mapping: dict = None, client_id: str = None, client_secret: str = None, league_id: str = None):
+        if league_id is None:
+            from src.config import load_config
+            league_id = load_config().get("LEAGUE_ID")
+
+        persist_key = "credentials/"
+        if league_id:
+            from src.utils.path_utils import BASE_DIR
+            # 使用絕對路徑進行物理操作，以相容各平台
+            league_dir = os.path.join(BASE_DIR, "data", "league", str(league_id))
+            
+            # 1. 處理憑證的複製繼承
+            spec_oauth_path = os.path.join(league_dir, "oauth2.json")
+            global_oauth_path = os.path.join(BASE_DIR, "credentials", "oauth2.json")
+            if not os.path.exists(spec_oauth_path) and os.path.exists(global_oauth_path):
+                os.makedirs(league_dir, exist_ok=True)
+                shutil.copy2(global_oauth_path, spec_oauth_path)
+            
+            spec_yf_path = os.path.join(league_dir, ".yahoofantasy")
+            global_yf_path = os.path.join(BASE_DIR, "credentials", ".yahoofantasy")
+            if not os.path.exists(spec_yf_path) and os.path.exists(global_yf_path):
+                os.makedirs(league_dir, exist_ok=True)
+                shutil.copy2(global_yf_path, spec_yf_path)
+                
+            persist_key = f"data/league/{league_id}/"
+
         self.ctx = yahoofantasy.Context(
-            persist_key="credentials/",
+            persist_key=persist_key,
             client_id=client_id,
             client_secret=client_secret
         )
