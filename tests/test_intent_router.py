@@ -244,3 +244,77 @@ def test_intent_router_nickname_session_reset_by_command():
         assert get_nickname_session("user_test_reset") is None
         # 正常分發指令
         dispatcher.handle.assert_called_once()
+
+def test_intent_router_intercept_draft_session_success():
+    import json
+    from unittest.mock import mock_open
+    from src.handlers.dispatcher import CommandDispatcher
+    from src.handlers.intent_router import IntentRouter
+    from src.utils.session_manager import set_draft_time_session, get_draft_time_session
+    from linebot.v3.messaging import Configuration
+    
+    dispatcher = CommandDispatcher()
+    router = IntentRouter(dispatcher)
+    
+    event = MagicMock()
+    event.source.user_id = "user_test_draft"
+    event.source.type = "user"
+    event.message.text = "10月15號晚上8點"
+    
+    config = Configuration()
+    config.access_token = "dummy_access_token"
+    
+    # 設置 60 秒的有效會話 (draft_time session)
+    set_draft_time_session("user_test_draft", True, duration_sec=60)
+    
+    mock_settings = {"DRAFT_DATE": "2025-01-01"}
+    
+    # Mock LLMAgent.parse_draft_date 讓它成功解析出時間
+    with patch("src.handlers.intent_router.load_config", return_value={"LEAGUE_ID": "123"}), \
+         patch("src.handlers.intent_router.os.path.exists", return_value=True), \
+         patch("src.handlers.intent_router.os.makedirs") as mock_makedirs, \
+         patch("src.handlers.intent_router.open", mock_open(read_data=json.dumps(mock_settings))) as m_file, \
+         patch.object(router.llm_agent, "parse_draft_date", return_value={"success": True, "date": "2026-10-15 20:00"}), \
+         patch.object(router, "reply_text") as mock_reply:
+         
+        router.route(event, config)
+        
+        # 驗證會話被清空
+        assert get_draft_time_session("user_test_draft") is None
+        # 驗證寫入新設定到 settings.json
+        assert m_file().write.called
+        # 驗證回覆包含標準成功字串
+        mock_reply.assert_called_once_with(event, config, "✅ 成功將選秀時間修改為：2026-10-15 20:00")
+
+def test_intent_router_intercept_draft_session_failure():
+    from src.handlers.dispatcher import CommandDispatcher
+    from src.handlers.intent_router import IntentRouter
+    from src.utils.session_manager import set_draft_time_session, get_draft_time_session
+    from linebot.v3.messaging import Configuration
+    
+    dispatcher = CommandDispatcher()
+    router = IntentRouter(dispatcher)
+    
+    event = MagicMock()
+    event.source.user_id = "user_test_draft_fail"
+    event.source.type = "user"
+    event.message.text = "忘記了"
+    
+    config = Configuration()
+    config.access_token = "dummy_access_token"
+    
+    set_draft_time_session("user_test_draft_fail", True, duration_sec=60)
+    
+    with patch("src.handlers.intent_router.load_config", return_value={"LEAGUE_ID": "123"}), \
+         patch.object(router.llm_agent, "parse_draft_date", return_value={"success": False, "date": None}), \
+         patch.object(router, "reply_text") as mock_reply:
+         
+        router.route(event, config)
+        
+        # 驗證會話依然存在 (解析失敗不清除會話)
+        assert get_draft_time_session("user_test_draft_fail") is not None
+        # 驗證回覆警告字串
+        mock_reply.assert_called_once()
+        args, kwargs = mock_reply.call_args
+        assert "無法解析" in args[2] or "格式" in args[2] or "請重新輸入" in args[2]
+

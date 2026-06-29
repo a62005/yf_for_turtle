@@ -8,7 +8,12 @@ from linebot.v3.messaging import Configuration, ApiClient, MessagingApi, ReplyMe
 from src.handlers.dispatcher import CommandDispatcher
 from src.llm.llm_agent import LLMAgent
 from src.config import load_config
-from src.utils.session_manager import get_nickname_session, clear_nickname_session
+from src.utils.session_manager import (
+    get_nickname_session, 
+    clear_nickname_session,
+    get_draft_time_session,
+    clear_draft_time_session
+)
 from src.utils.path_utils import get_league_team_mapping_path
 
 class IntentRouter:
@@ -67,6 +72,27 @@ class IntentRouter:
         
         user_id = getattr(event.source, "user_id", None)
         if user_id:
+            # 1. 攔截選秀時間會話
+            draft_session = get_draft_time_session(user_id)
+            if draft_session:
+                if user_text.startswith("#"):
+                    clear_draft_time_session(user_id)
+                else:
+                    parsed = self.llm_agent.parse_draft_date(user_text)
+                    if parsed.get("success") and parsed.get("date"):
+                        date_val = parsed["date"]
+                        self._update_league_settings({"DRAFT_DATE": date_val})
+                        clear_draft_time_session(user_id)
+                        self.reply_text(event, configuration, f"✅ 成功將選秀時間修改為：{date_val}")
+                    else:
+                        self.reply_text(
+                            event, 
+                            configuration, 
+                            "⚠️ 無法解析您輸入的時間格式，請重新輸入（例如：2026-10-15 19:30），或輸入 # 取消"
+                        )
+                    return
+
+            # 2. 攔截暱稱設定會話
             session = get_nickname_session(user_id)
             if session:
                 # 用戶發送標準指令 (# 開頭) 則主動重置會話，不進行攔截
@@ -204,3 +230,31 @@ class IntentRouter:
         except Exception as e:
             import logging
             logging.error(f"[IntentRouter] 寫入暱稱對應檔失敗: {e}")
+
+    def _update_league_settings(self, new_settings: dict) -> None:
+        config = load_config()
+        league_id = config.get("LEAGUE_ID")
+        if not league_id:
+            return
+            
+        from src.utils.path_utils import get_league_dir
+        league_dir = get_league_dir(league_id)
+        settings_path = os.path.join(league_dir, "settings.json")
+        
+        settings = {}
+        if os.path.exists(settings_path):
+            try:
+                with open(settings_path, "r", encoding="utf-8") as f:
+                    settings = json.load(f)
+            except Exception:
+                settings = {}
+                
+        settings.update(new_settings)
+        
+        try:
+            os.makedirs(os.path.dirname(settings_path), exist_ok=True)
+            with open(settings_path, "w", encoding="utf-8") as f:
+                json.dump(settings, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            import logging
+            logging.error(f"[IntentRouter] 寫入設定檔 settings.json 失敗: {e}")
