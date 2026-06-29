@@ -20,6 +20,8 @@ def sync_season_metadata(fetcher: YahooFantasyFetcher, league_id: str):
         meta = fetcher.fetch_league_metadata(league_id)
     except Exception as e:
         logging.error(f"[SYSTEM] 取得賽季基礎資料時發生異常: {e}")
+        if not (isinstance(old_meta, dict) and old_meta.get("end_week") and old_meta.get("start_date")):
+            raise e
         meta = {}
     
     if not meta.get("end_week") or not meta.get("start_date"):

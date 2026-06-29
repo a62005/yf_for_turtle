@@ -6,7 +6,7 @@ from linebot.v3.webhooks import MessageEvent
 from linebot.v3.messaging import Configuration
 from src.handlers.base_handler import BaseHandler
 from src.config import load_config
-from src.fetcher import YahooFantasyFetcher
+from src.fetcher import YahooFantasyFetcher, LeaguePermissionError
 from src.utils.season_utils import sync_season_metadata
 from src.utils.path_utils import get_league_team_mapping_path
 
@@ -37,6 +37,13 @@ class SetLeagueIdHandler(BaseHandler):
         
         try:
             sync_season_metadata(fetcher, target_id)
+        except LeaguePermissionError:
+            self.reply_text(
+                event,
+                configuration,
+                "⚠️ 設置失敗，機器人 Yahoo 帳號目前無權限存取此聯盟。請確保已將機器人的 Yahoo 帳號邀請為該聯盟的成員或 Co-manager。"
+            )
+            return
         except Exception as e:
             logging.error(f"[SetLeagueIdHandler] 驗證聯盟同步失敗 {target_id}: {e}")
             self.reply_text(event, configuration, "⚠️ 設置失敗，無法從 Yahoo 獲取該聯盟資訊，請確認 ID 是否正確。")
