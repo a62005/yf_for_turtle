@@ -19,7 +19,7 @@ def test_countdown_handler_restricts_mlb(mocker):
     mock_reply.assert_called_with(mock_event, mocker.ANY, "⚠️ 此功能目前僅支援 NBA 聯賽。")
 
 def test_injury_handler_restricts_mlb(mocker):
-    handler = InjuryHandler()
+    handler = SeasonCountdownHandler()
     mock_event = mocker.MagicMock()
     mock_event.message.text = "#傷兵"
     mock_reply = mocker.patch.object(handler, "reply_text")

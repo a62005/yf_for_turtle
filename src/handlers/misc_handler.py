@@ -32,6 +32,12 @@ class MiscHandler(BaseHandler):
 
     def can_handle(self, user_text: str) -> bool:
         user_text = user_text.strip()
+        if user_text.startswith("#傷兵"):
+            config = load_config()
+            league_id = config.get("LEAGUE_ID")
+            if league_id and str(league_id).startswith("mlb.l."):
+                return True
+            return False
         return bool(self.pattern.match(user_text))
 
     def execute(self, event: MessageEvent, configuration: Configuration) -> None:
@@ -51,15 +57,16 @@ class MiscHandler(BaseHandler):
             return
 
         user_text = event.message.text.strip()
-        match = self.pattern.match(user_text)
-        if not match:
-            return
 
         # 僅限制 NBA 聯賽的指令
-        if user_text == "#開季":
+        if user_text == "#開季" or user_text.startswith("#傷兵"):
             if str(league_id).startswith("mlb.l."):
                 self.reply_text(event, configuration, "⚠️ 此功能目前僅支援 NBA 聯賽。")
                 return
+
+        match = self.pattern.match(user_text)
+        if not match:
+            return
 
         meta = load_league_metadata(league_id) or {}
         end_date = meta.get("end_date")
