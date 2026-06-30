@@ -1,24 +1,18 @@
 import os
 import sys
-import json
-import pickle
-import psutil
 import time
 import logging
-import subprocess
-import requests
-from pydash import set_ as pydash_set
-from flask import Flask, request, abort, send_from_directory, render_template_string
+from flask import Flask, request, abort, send_from_directory
 from linebot.v3 import WebhookHandler
 from linebot.v3.exceptions import InvalidSignatureError
-from linebot.v3.messaging import Configuration, ApiClient, MessagingApi, SetWebhookEndpointRequest
+from linebot.v3.messaging import Configuration
 from linebot.v3.webhooks import MessageEvent, TextMessageContent
 from dotenv import load_dotenv
-from pyngrok import ngrok
+
 from src.config import load_config, current_chat_id
-from src.fetcher import YahooFantasyFetcher
-from src.utils.cache_utils import save_league_metadata
 from src.utils.token_utils import is_token_processed
+from src.utils.bot_utils import cleanup_port, setup_ngrok, update_line_webhook
+from src.utils.oauth_handler import handle_oauth_callback
 
 from src.handlers.dispatcher import CommandDispatcher
 from src.handlers.stats_handler import StatsHandler
@@ -36,38 +30,6 @@ from src.handlers.set_league_id_handler import SetLeagueIdHandler
 from src.handlers.set_nickname_handler import SetNicknameHandler
 from src.handlers.set_draft_time_handler import SetDraftTimeHandler
 
-def cleanup_port(port):
-    for proc in psutil.process_iter(['pid', 'name']):
-        try:
-            for conns in proc.connections(kind='inet'):
-                if conns.laddr.port == port:
-                    logging.info(f"[SYSTEM] 發現佔用 Port {port} 的進程 (PID: {proc.pid})，正在關閉...")
-                    proc.terminate()
-                    proc.wait(timeout=3)
-        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.TimeoutExpired):
-            pass
-
-
-
-def setup_ngrok(authtoken: str, port: int) -> str:
-    """Start ngrok tunnel and return the public URL."""
-    ngrok.set_auth_token(authtoken)
-    tunnel = ngrok.connect(port)
-    return tunnel.public_url
-
-def update_line_webhook(configuration: Configuration, url: str):
-    """Update the LINE Messaging API Webhook URL."""
-    with ApiClient(configuration) as api_client:
-        line_bot_api = MessagingApi(api_client)
-        endpoint = f"{url}/callback"
-        set_webhook_request = SetWebhookEndpointRequest(endpoint=endpoint)
-        try:
-            line_bot_api.set_webhook_endpoint(set_webhook_request)
-            line_bot_api.test_webhook_endpoint()
-            logging.info(f"Successfully updated LINE Webhook URL to: {endpoint}")
-        except Exception as e:
-            logging.error(f"Failed to update LINE Webhook: {e}")
-
 # Load env
 load_dotenv()
 LINE_CHANNEL_SECRET = os.getenv('LINE_CHANNEL_SECRET', 'dummy_secret')
@@ -79,7 +41,7 @@ configuration = Configuration(access_token=LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
-# 抑制 Flask/Werkzeug 的 HTTP 存取 log（如 "POST /callback 200"），只保留應用程式 log
+# 抑制 Flask/Werkzeug 的 HTTP 存取 log，只保留應用程式 log
 logging.getLogger("werkzeug").setLevel(logging.WARNING)
 
 # Initialize Dispatcher
@@ -131,158 +93,16 @@ def oauth_callback():
     config = load_config()
     client_id = config.get("YAHOO_CLIENT_ID")
     client_secret = config.get("YAHOO_CLIENT_SECRET")
-    server_url = config.get("SERVER_URL")
+    server_url = os.environ.get('SERVER_URL') or config.get("SERVER_URL")
     
-    # 1. 向 Yahoo 交換 Token
-    token_url = "https://api.login.yahoo.com/oauth2/get_token"
-    redirect_uri = f"{server_url.rstrip('/')}/oauth/callback"
-    
-    payload = {
-        "client_id": client_id,
-        "client_secret": client_secret,
-        "redirect_uri": redirect_uri,
-        "code": code,
-        "grant_type": "authorization_code"
-    }
-    
-    try:
-        resp = requests.post(token_url, data=payload, headers={"Content-Type": "application/x-www-form-urlencoded"})
-        if resp.status_code != 200:
-            return f"⚠️ Yahoo Token 交換失敗: {resp.text}", 400
-        token_data = resp.json()
-    except Exception as e:
-        return f"⚠️ Yahoo 連線失敗: {e}", 500
-        
-    # 2. 獲取該 chat_id 綁定的 LEAGUE_ID
-    league_id = None
-    from src.utils.path_utils import BASE_DIR, get_league_dir
-    mapping_path = os.path.join(BASE_DIR, "data", "security", "chat_league_mapping.json")
-    if os.path.exists(mapping_path):
-        try:
-            with open(mapping_path, "r", encoding="utf-8") as f:
-                mapping = json.load(f)
-                league_id = mapping.get(chat_id)
-        except Exception:
-            pass
-            
-    if not league_id:
-        return f"⚠️ 找不到此聊天室 ({chat_id}) 所綁定的聯賽，請先執行 #設置 以確認綁定關係。", 400
-        
-    try:
-        league_cred_dir = get_league_dir(league_id)
-        persist_key = league_cred_dir.replace("\\", "/").rstrip("/") + "/"
-        yf_filename = f"{persist_key}.yahoofantasy"
-
-        # 讀取現有 .yahoofantasy（若存在），在其基礎上覆寫 auth 欄位
-        existing_data = {}
-        if os.path.exists(yf_filename):
-            try:
-                with open(yf_filename, "rb") as fp:
-                    existing_data = pickle.load(fp)
-            except Exception:
-                existing_data = {}
-
-        access_token = token_data.get("access_token", "")
-        refresh_token = token_data.get("refresh_token", "")
-        expires_in = float(token_data.get("expires_in", 3600))
-        access_token_expires = time.time() + expires_in
-
-        auth_payload = {
-            "client_id": client_id,
-            "client_secret": client_secret,
-            "refresh_token": refresh_token,
-            "access_token": access_token,
-            "access_token_expires": access_token_expires,
-        }
-
-        # 使用 pydash set_ 寫入 auth 欄位（與 yahoofantasy 的 save() 相同格式）
-        now = time.time()
-        for k, v in auth_payload.items():
-            existing_data = pydash_set(existing_data, f"auth.{k}", v)
-            existing_data = pydash_set(existing_data, f"auth.{k}__time", now)
-        existing_data = pydash_set(existing_data, "auth__time", now)
-
-        with open(yf_filename, "wb") as fp:
-            pickle.dump(existing_data, fp)
-
-        logging.info(f"[OAUTH] 憑證已成功寫入: {yf_filename}")
-    except Exception as e:
-        return f"⚠️ 儲存聯賽憑證失敗: {e}", 500
-        
-    # 4. 初始化聯賽資料與隊伍名稱對照表
-    try:
-        from src.fetcher import YahooFantasyFetcher
-        from src.utils.season_utils import sync_season_metadata
-        from src.utils.path_utils import get_league_team_mapping_path
-        
-        fetcher = YahooFantasyFetcher(
-            client_id=client_id,
-            client_secret=client_secret,
-            league_id=league_id
-        )
-        
-        # 同步賽季資訊
-        sync_season_metadata(fetcher, league_id)
-        
-        # 建立/初始化隊伍名稱對照表
-        mapping_path = get_league_team_mapping_path(league_id)
-        if not os.path.exists(mapping_path):
-            os.makedirs(os.path.dirname(mapping_path), exist_ok=True)
-            default_mapping = {}
-            try:
-                import yahoofantasy
-                normalized_id = fetcher._normalize_league_id(league_id)
-                league = yahoofantasy.League(fetcher.ctx, normalized_id)
-                for team in league.teams():
-                    team_id = str(getattr(team, "team_id", ""))
-                    team_name = str(getattr(team, "name", ""))
-                    if team_id and team_name:
-                        default_mapping[team_id] = team_name
-            except Exception as ex:
-                logging.error(f"[OAUTH] 無法取得官方暱稱，將初始化為空對應: {ex}")
-            
-            with open(mapping_path, "w", encoding="utf-8") as mf:
-                json.dump(default_mapping, mf, ensure_ascii=False, indent=2)
-    except Exception as e:
-        logging.error(f"[OAUTH] 初始化聯賽資料與對照表失敗: {e}")
-        
-    # 5. 主動推播 LINE 通知使用者授權成功
-    try:
-        from linebot.v3.messaging import ApiClient, MessagingApi, PushMessageRequest, TextMessage
-        with ApiClient(configuration) as api_client:
-            line_bot_api = MessagingApi(api_client)
-            msg_text = f"✅ Yahoo 帳號授權成功！已成功啟用此聊天室對聯賽 {league_id} 的資料存取功能。"
-            line_bot_api.push_message(PushMessageRequest(
-                to=chat_id,
-                messages=[TextMessage(text=msg_text)]
-            ))
-    except Exception as e:
-        logging.error(f"[OAUTH] 推送成功通知失敗: {e}")
-        
-    html_page = """
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="UTF-8">
-        <title>Yahoo Fantasy NBA 授權成功</title>
-        <style>
-            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f6f8fa; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
-            .card { background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); text-align: center; max-width: 400px; width: 100%; }
-            h2 { color: #2da44e; margin-bottom: 10px; }
-            p { color: #57606a; line-height: 1.5; }
-            .badge { background-color: #dafbe1; color: #1a7f37; padding: 4px 8px; border-radius: 6px; font-weight: bold; }
-        </style>
-    </head>
-    <body>
-        <div class="card">
-            <h2>🎉 授權成功！</h2>
-            <p>聊天室已順利啟用對聯賽 <span class="badge">{{ league_id }}</span> 的存取。</p>
-            <p>現在您可以回到 LINE 聊天室開始使用所有功能！</p>
-        </div>
-    </body>
-    </html>
-    """
-    return render_template_string(html_page, league_id=league_id)
+    return handle_oauth_callback(
+        code=code,
+        chat_id=chat_id,
+        client_id=client_id,
+        client_secret=client_secret,
+        server_url=server_url,
+        configuration=configuration
+    )
 
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
@@ -329,20 +149,12 @@ if __name__ == "__main__":
     migrate_old_league_directories()
 
     config = load_config()
-    
-    league_id = config.get("LEAGUE_ID")
-    if not league_id:
-        logging.info("[SYSTEM] 多聯盟架構已啟動。聯賽 ID 將在接收到 LINE 指令時依據聊天室 ID 動態載入。")
-    else:
-        logging.info(f"[SYSTEM] 目前配置的預設全域聯賽 ID 為: {league_id}")
-
     port = 5001
 
     if config.get("NGROK_AUTHTOKEN"):
         logging.info("NGROK_AUTHTOKEN found. Starting automated setup...")
         try:
             public_url = setup_ngrok(config["NGROK_AUTHTOKEN"], port)
-            SERVER_URL = public_url
             os.environ['SERVER_URL'] = public_url # Pass down to subprocesses
             logging.info(f"ngrok tunnel opened at: {public_url}")
             update_line_webhook(configuration, public_url)

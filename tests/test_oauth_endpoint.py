@@ -27,7 +27,6 @@ def test_oauth_callback_success(mock_app):
     
     # 記錄所有 pickle.dump 呼叫的資料
     pickled_data = {}
-    original_pickle_dump = pickle.dump
     
     def mock_pickle_dump(data, fp, *args, **kwargs):
         try:
@@ -36,17 +35,17 @@ def test_oauth_callback_success(mock_app):
             pass
     
     with patch("bot.load_config", return_value={"YAHOO_CLIENT_ID": "client", "YAHOO_CLIENT_SECRET": "secret", "SERVER_URL": "http://127.0.0.1"}), \
-         patch("bot.requests.post", return_value=mock_response) as mock_post, \
-         patch("bot.os.path.exists", return_value=True), \
-         patch("bot.json.load", return_value=mapping_data), \
-         patch("bot.os.makedirs"), \
-         patch("bot.pickle.load", return_value={}), \
-         patch("bot.pickle.dump", side_effect=mock_pickle_dump), \
+         patch("src.utils.oauth_handler.requests.post", return_value=mock_response) as mock_post, \
+         patch("src.utils.oauth_handler.os.path.exists", return_value=True), \
+         patch("src.utils.oauth_handler.json.load", return_value=mapping_data), \
+         patch("src.utils.oauth_handler.os.makedirs"), \
+         patch("src.utils.oauth_handler.pickle.load", return_value={}), \
+         patch("src.utils.oauth_handler.pickle.dump", side_effect=mock_pickle_dump) as mock_dump, \
          patch("builtins.open", MagicMock()), \
-         patch("src.fetcher.YahooFantasyFetcher") as mock_fetcher_cls, \
-         patch("src.utils.season_utils.sync_season_metadata") as mock_sync_season, \
+         patch("src.utils.oauth_handler.YahooFantasyFetcher") as mock_fetcher_cls, \
+         patch("src.utils.oauth_handler.sync_season_metadata") as mock_sync_season, \
          patch("yahoofantasy.League") as mock_league_cls, \
-         patch("linebot.v3.messaging.MessagingApi") as mock_api_cls:
+         patch("src.utils.oauth_handler.MessagingApi") as mock_api_cls:
          
         # Mock fetcher instance and its methods
         mock_fetcher = MagicMock()
@@ -74,8 +73,7 @@ def test_oauth_callback_success(mock_app):
         assert post_kwargs["data"]["code"] == "code_123"
         
         # 驗證有呼叫 pickle.dump（代表 .yahoofantasy 被寫入）
-        from bot import pickle as bot_pickle
-        bot_pickle.dump.assert_called()
+        mock_dump.assert_called()
         
         # 驗證有呼叫初始化與同步
         mock_fetcher_cls.assert_called_once_with(
