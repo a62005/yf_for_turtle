@@ -52,3 +52,11 @@ class CommandDispatcher:
                 descs.append(desc.strip())
         return "\n".join(descs)
 
+    def get_handler(self, handler_class):
+        """根據 Class 獲取已註冊的 Handler 實例"""
+        for h in self._handlers:
+            if isinstance(h, handler_class):
+                return h
+        return None
+
+
