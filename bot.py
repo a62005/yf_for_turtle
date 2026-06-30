@@ -8,7 +8,7 @@ from flask import Flask, request, abort, send_from_directory
 from linebot.v3 import WebhookHandler
 from linebot.v3.exceptions import InvalidSignatureError
 from linebot.v3.messaging import Configuration, ApiClient, MessagingApi, SetWebhookEndpointRequest
-from linebot.v3.webhooks import MessageEvent, TextMessageContent
+from linebot.v3.webhooks import MessageEvent, TextMessageContent, ImageMessageContent
 from dotenv import load_dotenv
 from pyngrok import ngrok
 from src.config import load_config
@@ -31,6 +31,7 @@ from src.handlers.settings_handler import SettingsHandler
 from src.handlers.set_league_id_handler import SetLeagueIdHandler
 from src.handlers.set_nickname_handler import SetNicknameHandler
 from src.handlers.set_draft_time_handler import SetDraftTimeHandler
+from src.handlers.set_prize_handler import SetPrizeHandler
 
 def cleanup_port(port):
     for proc in psutil.process_iter(['pid', 'name']):
@@ -91,6 +92,7 @@ dispatcher.register(SettingsHandler())
 dispatcher.register(SetLeagueIdHandler())
 dispatcher.register(SetNicknameHandler())
 dispatcher.register(SetDraftTimeHandler())
+dispatcher.register(SetPrizeHandler())
 
 # Initialize IntentRouter
 intent_router = IntentRouter(dispatcher)
@@ -138,6 +140,28 @@ def handle_message(event):
 
     # 交由 intent_router 進行意圖路由與過濾
     intent_router.route(event, configuration)
+
+
+@handler.add(MessageEvent, message=ImageMessageContent)
+def handle_image_message(event):
+    user_id = None
+    if hasattr(event, "source") and event.source:
+        user_id = getattr(event.source, "user_id", None)
+            
+    if not user_id:
+        return
+        
+    token = current_chat_id.set(user_id)
+    try:
+        if is_token_processed(event.reply_token):
+            return
+    
+        # 僅在處於設置獎金的狀態時進行圖片事件處理
+        from src.utils.session_manager import get_prize_session
+        if get_prize_session(user_id):
+            intent_router.route_image(event, configuration)
+    finally:
+        current_chat_id.reset(token)
 
 if __name__ == "__main__":
     cleanup_port(5001)

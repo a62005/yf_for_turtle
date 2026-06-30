@@ -39,9 +39,10 @@ class SettingsHandler(BaseHandler):
             buttons = [
                 (draft_button_label, draft_button_action),
                 ("設置玩家暱稱", "#設置玩家暱稱"),
+                ("設置獎金", "#設置獎金"),
                 (None, None),
                 ("更換聯盟ID (即將推出)", ""),
-                ("移除聯盟ID (即將推出)", "")
+                ("移除聯盟ID", "#移除聯盟ID")
             ]
             
         flex_dict = build_button_menu_card(title, subtitle, buttons)
