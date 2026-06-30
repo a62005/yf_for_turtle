@@ -29,6 +29,13 @@ class SetLeagueIdHandler(BaseHandler):
         user_id = getattr(event.source, "user_id", None)
         
         if user_text == "#移除聯盟ID":
+            if user_id:
+                from src.utils.session_manager import set_session
+                set_session(user_id, "remove_league_id", {"active": True}, duration_sec=60)
+            else:
+                self.reply_text(event, configuration, "⚠️ 無法獲取您的 User ID，請重新嘗試。")
+                return
+
             from src.visualizer.flex_builder import build_button_menu_card
             title = "確定要移除聯盟綁定嗎？"
             buttons = [
@@ -40,6 +47,18 @@ class SetLeagueIdHandler(BaseHandler):
             return
 
         if user_text == "#確定移除聯盟ID":
+            from src.utils.session_manager import get_session, clear_session
+            session = None
+            if user_id:
+                session = get_session(user_id, "remove_league_id")
+                
+            if not session:
+                self.reply_text(event, configuration, "⚠️ 移除請求已過期或未發起，請重新輸入 #移除聯盟ID。")
+                return
+                
+            if user_id:
+                clear_session(user_id, "remove_league_id")
+
             from src.config import current_chat_id
             from src.utils.path_utils import BASE_DIR
             import shutil

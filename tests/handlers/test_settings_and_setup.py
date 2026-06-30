@@ -248,12 +248,17 @@ def test_set_league_id_handler_shows_remove_confirm_card():
 
 def test_set_league_id_handler_remove_success_with_others():
     from src.config import current_chat_id
+    from src.utils.session_manager import set_session
     import json
     
     handler = SetLeagueIdHandler()
     handler.reply_text = MagicMock()
+    
+    set_session("user_test_remove_1", "remove_league_id", {"active": True}, duration_sec=60)
+    
     event = MagicMock()
     event.message.text = "#確定移除聯盟ID"
+    event.source.user_id = "user_test_remove_1"
     config = MagicMock()
     
     written_data = {}
@@ -298,12 +303,18 @@ def test_set_league_id_handler_remove_success_with_others():
 
 def test_set_league_id_handler_remove_success_and_delete_directory():
     from src.config import current_chat_id
+    from src.utils.session_manager import set_session
     import json
+    import os
     
     handler = SetLeagueIdHandler()
     handler.reply_text = MagicMock()
+    
+    set_session("user_test_remove_2", "remove_league_id", {"active": True}, duration_sec=60)
+    
     event = MagicMock()
     event.message.text = "#確定移除聯盟ID"
+    event.source.user_id = "user_test_remove_2"
     config = MagicMock()
     
     written_data = {}
@@ -341,7 +352,7 @@ def test_set_league_id_handler_remove_success_and_delete_directory():
             handler.execute(event, config)
             
             assert "group_1" not in written_data
-            mock_remove.assert_called_once_with("mock_dir/nba/22222\\metadata.json")
+            mock_remove.assert_called_once_with(os.path.join("mock_dir/nba/22222", "metadata.json"))
             mock_rmtree.assert_not_called()
             handler.reply_text.assert_called_once_with(event, config, "✅ 已成功解除此群組的聯盟綁定。")
     finally:
@@ -349,12 +360,18 @@ def test_set_league_id_handler_remove_success_and_delete_directory():
 
 def test_set_league_id_handler_remove_success_preserves_auth():
     from src.config import current_chat_id
+    from src.utils.session_manager import set_session
     import json
+    import os
     
     handler = SetLeagueIdHandler()
     handler.reply_text = MagicMock()
+    
+    set_session("user_test_remove_3", "remove_league_id", {"active": True}, duration_sec=60)
+    
     event = MagicMock()
     event.message.text = "#確定移除聯盟ID"
+    event.source.user_id = "user_test_remove_3"
     config = MagicMock()
     
     written_data = {}
@@ -393,7 +410,7 @@ def test_set_league_id_handler_remove_success_preserves_auth():
             
             assert "group_1" not in written_data
             mock_listdir.assert_called_once_with("mock_dir/nba/22222")
-            mock_remove.assert_any_call("mock_dir/nba/22222\\metadata.json")
+            mock_remove.assert_any_call(os.path.join("mock_dir/nba/22222", "metadata.json"))
             
             # 確保 .yahoofantasy, oauth2.json 及包含 oauth 的項目皆未被刪除
             for call_args in mock_remove.call_args_list:
@@ -404,10 +421,31 @@ def test_set_league_id_handler_remove_success_preserves_auth():
                 assert ".yahoofantasy" not in call_args[0][0]
                 assert "oauth2.json" not in call_args[0][0]
                 
-            mock_rmtree.assert_any_call("mock_dir/nba/22222\\daily")
+            mock_rmtree.assert_any_call(os.path.join("mock_dir/nba/22222", "daily"))
             handler.reply_text.assert_called_once_with(event, config, "✅ 已成功解除此群組的聯盟綁定。")
     finally:
         current_chat_id.reset(token)
+
+def test_set_league_id_handler_remove_direct_call_without_session_fails():
+    from src.utils.session_manager import clear_session
+    handler = SetLeagueIdHandler()
+    handler.reply_text = MagicMock()
+    
+    # 確保沒有 remove_league_id 的 session
+    clear_session("user_no_session", "remove_league_id")
+    
+    event = MagicMock()
+    event.message.text = "#確定移除聯盟ID"
+    event.source.user_id = "user_no_session"
+    config = MagicMock()
+    
+    handler.execute(event, config)
+    
+    handler.reply_text.assert_called_once_with(
+        event,
+        config,
+        "⚠️ 移除請求已過期或未發起，請重新輸入 #移除聯盟ID。"
+    )
 
 
 
