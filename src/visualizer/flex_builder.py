@@ -122,6 +122,8 @@ def build_stats_list_card(title: str, subtitle: str = None, sections: list = Non
 
     if sections:
         for i, sec in enumerate(sections):
+            if i > 0:
+                body_contents.append(_create_separator())
             section_contents = []
             sec_header = sec.get("header")
             if sec_header:
@@ -175,7 +177,79 @@ def build_stats_list_card(title: str, subtitle: str = None, sections: list = Non
     return _create_bubble(body_contents)
 
 
-def build_matchup_comparison_card(title: str, subtitle: dict | str = None, comparison_rows: list = None) -> dict:
+
+def _build_comparison_row_box(row: list | tuple) -> dict:
+    """Helper to build a single comparison row box.
+
+    Args:
+        row: A tuple or list containing comparison data:
+            (metric_name, my_val, opp_val, status, is_aux, ...)
+
+    Returns:
+        dict: Flex box component.
+    """
+    metric_name = row[0]
+    my_val = row[1]
+    opp_val = row[2]
+    status = row[3] if len(row) > 3 else None
+    is_aux = row[4] if len(row) > 4 else False
+
+    # Translate metric ST -> STL
+    if metric_name == "ST":
+        metric_name = "STL"
+
+    if is_aux:
+        left_style = {"size": "xs", "weight": "regular", "color": "#777777"}
+        right_style = {"size": "xs", "weight": "regular", "color": "#777777"}
+        center_style = {"size": "xs", "weight": "bold", "color": "#999999"}
+    else:
+        center_style = {"size": "sm", "weight": "bold", "color": "#333333"}
+        if status == "my_win":
+            left_style = {"size": "16px", "weight": "bold", "color": "#111111"}
+            right_style = {"size": "14px", "weight": "regular", "color": "#aaaaaa"}
+        elif status == "opp_win":
+            left_style = {"size": "14px", "weight": "regular", "color": "#aaaaaa"}
+            right_style = {"size": "16px", "weight": "bold", "color": "#111111"}
+        else:
+            left_style = {"size": "14px", "weight": "regular", "color": "#555555"}
+            right_style = {"size": "14px", "weight": "regular", "color": "#555555"}
+
+    return {
+        "type": "box",
+        "layout": "horizontal",
+        "alignItems": "center",
+        "contents": [
+            {
+                "type": "text",
+                "text": str(my_val),
+                "size": left_style.get("size", "sm"),
+                "weight": left_style.get("weight", "regular"),
+                "color": left_style.get("color", "#111111"),
+                "flex": 4
+            },
+            {
+                "type": "text",
+                "text": metric_name,
+                "size": center_style.get("size", "sm"),
+                "weight": center_style.get("weight", "regular"),
+                "color": center_style.get("color", "#333333"),
+                "align": "center",
+                "flex": 3
+            },
+            {
+                "type": "text",
+                "text": str(opp_val),
+                "size": right_style.get("size", "sm"),
+                "weight": right_style.get("weight", "regular"),
+                "color": right_style.get("color", "#111111"),
+                "align": "end",
+                "flex": 4
+            }
+        ]
+    }
+
+
+def build_matchup_comparison_card(title: str, subtitle: dict | str = None, comparison_rows: list = None, is_mlb: bool = False) -> dict:
     """Build a matchup comparison card.
 
     Args:
@@ -183,8 +257,9 @@ def build_matchup_comparison_card(title: str, subtitle: dict | str = None, compa
         subtitle: Dict containing nickname, official name and score, or str.
         comparison_rows: List of comparison tuples/lists:
             [
-                (metric_name, my_val, opp_val, status, is_aux)
+                (metric_name, my_val, opp_val, status, is_aux, is_pitcher)
             ]
+        is_mlb: Whether it's an MLB matchup with pitcher/hitter separation.
 
     Returns:
         dict: LINE Flex bubble message.
@@ -255,74 +330,44 @@ def build_matchup_comparison_card(title: str, subtitle: dict | str = None, compa
         body_contents.append(_create_header(title, subtitle))
 
     if comparison_rows:
-        rows_boxes = []
-        for row in comparison_rows:
-            metric_name = row[0]
-            my_val = row[1]
-            opp_val = row[2]
-            status = row[3] if len(row) > 3 else None
-            is_aux = row[4] if len(row) > 4 else False
-
-            # Translate metric ST -> STL
-            if metric_name == "ST":
-                metric_name = "STL"
-
-            if is_aux:
-                left_style = {"size": "xs", "weight": "regular", "color": "#777777"}
-                right_style = {"size": "xs", "weight": "regular", "color": "#777777"}
-                center_style = {"size": "xs", "weight": "bold", "color": "#999999"}
-            else:
-                center_style = {"size": "sm", "weight": "bold", "color": "#333333"}
-                if status == "my_win":
-                    left_style = {"size": "16px", "weight": "bold", "color": "#111111"}
-                    right_style = {"size": "14px", "weight": "regular", "color": "#aaaaaa"}
-                elif status == "opp_win":
-                    left_style = {"size": "14px", "weight": "regular", "color": "#aaaaaa"}
-                    right_style = {"size": "16px", "weight": "bold", "color": "#111111"}
+        if is_mlb:
+            hitter_rows = []
+            pitcher_rows = []
+            for row in comparison_rows:
+                # 6th item in the row tuple: is_pitcher (row[5])
+                is_pitcher = row[5] if len(row) > 5 else False
+                if is_pitcher:
+                    pitcher_rows.append(row)
                 else:
-                    left_style = {"size": "14px", "weight": "regular", "color": "#555555"}
-                    right_style = {"size": "14px", "weight": "regular", "color": "#555555"}
+                    hitter_rows.append(row)
 
-            rows_boxes.append({
+            hitter_boxes = [_build_comparison_row_box(row) for row in hitter_rows]
+            pitcher_boxes = [_build_comparison_row_box(row) for row in pitcher_rows]
+
+            if hitter_boxes:
+                body_contents.append({
+                    "type": "box",
+                    "layout": "vertical",
+                    "spacing": "sm",
+                    "contents": hitter_boxes
+                })
+            if hitter_boxes and pitcher_boxes:
+                body_contents.append(_create_separator())
+            if pitcher_boxes:
+                body_contents.append({
+                    "type": "box",
+                    "layout": "vertical",
+                    "spacing": "sm",
+                    "contents": pitcher_boxes
+                })
+        else:
+            rows_boxes = [_build_comparison_row_box(row) for row in comparison_rows]
+            body_contents.append({
                 "type": "box",
-                "layout": "horizontal",
-                "alignItems": "center",
-                "contents": [
-                    {
-                        "type": "text",
-                        "text": str(my_val),
-                        "size": left_style.get("size", "sm"),
-                        "weight": left_style.get("weight", "regular"),
-                        "color": left_style.get("color", "#111111"),
-                        "flex": 4
-                    },
-                    {
-                        "type": "text",
-                        "text": metric_name,
-                        "size": center_style.get("size", "sm"),
-                        "weight": center_style.get("weight", "regular"),
-                        "color": center_style.get("color", "#333333"),
-                        "align": "center",
-                        "flex": 3
-                    },
-                    {
-                        "type": "text",
-                        "text": str(opp_val),
-                        "size": right_style.get("size", "sm"),
-                        "weight": right_style.get("weight", "regular"),
-                        "color": right_style.get("color", "#111111"),
-                        "align": "end",
-                        "flex": 4
-                    }
-                ]
+                "layout": "vertical",
+                "spacing": "sm",
+                "contents": rows_boxes
             })
-
-        body_contents.append({
-            "type": "box",
-            "layout": "vertical",
-            "spacing": "sm",
-            "contents": rows_boxes
-        })
 
     return _create_bubble(body_contents)
 

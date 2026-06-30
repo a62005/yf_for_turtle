@@ -71,7 +71,7 @@ def get_target_date(is_offseason: bool = False, end_date: str = None, current_tw
         
     return target_dt.strftime("%Y-%m-%d")
 
-def is_stats_query_allowed(is_offseason: bool = False, target_date: str = None) -> tuple[bool, str]:
+def is_stats_query_allowed(sport: str = "nba", is_offseason: bool = False, target_date: str = None) -> tuple[bool, str]:
     """
     今日綜合戰績限制在美西打完比賽後才能查詢。
     優先透過 ESPN Scoreboard API 判斷，若無法判斷則降級退回時段阻擋：
@@ -84,7 +84,10 @@ def is_stats_query_allowed(is_offseason: bool = False, target_date: str = None) 
         target_date = get_target_date(is_offseason=is_offseason)
         
     # 優先嘗試外部即時狀態監控
-    espn_result = check_nba_game_status(target_date)
+    if sport == "nba":
+        espn_result = check_nba_game_status(target_date)
+    else:
+        espn_result = check_game_status(sport, target_date)
     if espn_result is not None:
         return espn_result
         
@@ -99,10 +102,11 @@ def is_stats_query_allowed(is_offseason: bool = False, target_date: str = None) 
     return True, ""
 
 
-def check_nba_game_status(date_str: str) -> tuple[bool, str] | None:
+def check_game_status(sport: str, date_str: str) -> tuple[bool, str] | None:
     """
-    透過 ESPN Scoreboard API 即時檢查指定日期的 NBA 比賽狀態。
+    透過 ESPN Scoreboard API 即時檢查指定日期的 NBA 或 MLB 比賽狀態。
     參數:
+        sport: 'nba' 或 'mlb'
         date_str: 格式為 YYYY-MM-DD 的日期字串
     回傳:
         tuple[bool, str]: (allowed, err_msg)
@@ -113,7 +117,9 @@ def check_nba_game_status(date_str: str) -> tuple[bool, str] | None:
 
     try:
         espn_date = date_str.replace("-", "")
-        url = f"https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard?dates={espn_date}"
+        # 動態決定 ESPN API 的體育項目路徑
+        espn_sport = "basketball/nba" if sport == "nba" else "baseball/mlb"
+        url = f"https://site.api.espn.com/apis/site/v2/sports/{espn_sport}/scoreboard?dates={espn_date}"
         
         response = requests.get(url, timeout=3)
         response.raise_for_status()
@@ -150,21 +156,26 @@ def check_nba_game_status(date_str: str) -> tuple[bool, str] | None:
             return True, ""
             
     except Exception as e:
-        logging.warning(f"ESPN Scoreboard API 請求或解析失敗: {e}，將降級採用靜態時間阻擋規則。")
+        logging.warning(f"ESPN Scoreboard API ({sport}) 請求或解析失敗: {e}，將降級採用靜態時間阻擋規則。")
         return None
 
 
+def check_nba_game_status(date_str: str) -> tuple[bool, str] | None:
+    """向後相容舊測試用之轉接函數"""
+    return check_game_status("nba", date_str)
+
+
 def is_game_day(sport: str = "nba", is_offseason: bool = False, target_date: str = None) -> tuple[bool, str]:
-    if sport != "nba":
+    if sport not in ("nba", "mlb"):
         return True, ""
-    return is_stats_query_allowed(is_offseason=is_offseason, target_date=target_date)
+    return is_stats_query_allowed(sport=sport, is_offseason=is_offseason, target_date=target_date)
 
 
 def check_game_day(date_str: str = None, sport: str = "nba") -> tuple[bool, str] | None:
-    if sport != "nba":
+    if sport not in ("nba", "mlb"):
         return True, ""
     if date_str is None:
         date_str = get_target_date()
-    return check_nba_game_status(date_str)
+    return check_game_status(sport, date_str)
 
 

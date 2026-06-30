@@ -268,4 +268,95 @@ def test_build_button_menu_card_with_separator():
     assert buttons_box["contents"][2]["type"] == "button"
 
 
+def test_build_stats_list_card_with_separator():
+    sections = [
+        {
+            "header": "Section 1",
+            "rows": [("HR", "2")]
+        },
+        {
+            "header": "Section 2",
+            "rows": [("ERA", "3.00")]
+        }
+    ]
+    card = build_stats_list_card("MLB Stats", "Daily Report", sections)
+    assert card["type"] == "bubble"
+    body_contents = card["body"]["contents"]
+    
+    # Header is at index 0
+    assert body_contents[0]["contents"][0]["text"] == "MLB Stats"
+    
+    # Section 1 is at index 1
+    assert body_contents[1]["contents"][0]["text"] == "Section 1"
+    
+    # Separator should be at index 2
+    assert body_contents[2]["type"] == "separator"
+    
+    # Section 2 is at index 3
+    assert body_contents[3]["contents"][0]["text"] == "Section 2"
+
+    # Verify schema with FlexContainer
+    import json
+    from linebot.v3.messaging import FlexContainer
+    FlexContainer.from_json(json.dumps(card))
+
+
+def test_build_matchup_comparison_card_mlb():
+    subtitle_dict = {
+        "my_nickname": "My Team",
+        "my_official": "My Official Co.",
+        "opp_nickname": "Opp Team",
+        "opp_official": "Opp Official Co.",
+        "wins": 5,
+        "losses": 4
+    }
+    # row format: (metric_name, my_val, opp_val, status, is_aux, is_pitcher)
+    comparison_rows = [
+        ("AVG", ".280", ".260", "my_win", False, False),      # hitter
+        ("HR", "15", "10", "my_win", False, False),          # hitter
+        ("ERA", "3.20", "3.50", "my_win", False, True),       # pitcher
+        ("WHIP", "1.10", "1.15", "my_win", False, True)       # pitcher
+    ]
+    
+    card = build_matchup_comparison_card("WEEK 6 MATCHUP", subtitle_dict, comparison_rows, is_mlb=True)
+    assert card["type"] == "bubble"
+    body_contents = card["body"]["contents"]
+    
+    # body_contents:
+    # 0: title_box
+    # 1: nickname_box
+    # 2: team_name_box
+    # 3: score_box
+    # 4: hitter_box (vertical box)
+    # 5: separator
+    # 6: pitcher_box (vertical box)
+    
+    assert body_contents[0]["text"] == "WEEK 6 MATCHUP"
+    
+    # Index 4 should be the hitter box
+    hitter_box = body_contents[4]
+    assert hitter_box["type"] == "box"
+    assert hitter_box["layout"] == "vertical"
+    assert len(hitter_box["contents"]) == 2
+    assert hitter_box["contents"][0]["contents"][1]["text"] == "AVG"
+    assert hitter_box["contents"][1]["contents"][1]["text"] == "HR"
+    
+    # Index 5 should be the separator
+    assert body_contents[5]["type"] == "separator"
+    
+    # Index 6 should be the pitcher box
+    pitcher_box = body_contents[6]
+    assert pitcher_box["type"] == "box"
+    assert pitcher_box["layout"] == "vertical"
+    assert len(pitcher_box["contents"]) == 2
+    assert pitcher_box["contents"][0]["contents"][1]["text"] == "ERA"
+    assert pitcher_box["contents"][1]["contents"][1]["text"] == "WHIP"
+
+    # Verify schema with FlexContainer
+    import json
+    from linebot.v3.messaging import FlexContainer
+    FlexContainer.from_json(json.dumps(card))
+
+
+
 

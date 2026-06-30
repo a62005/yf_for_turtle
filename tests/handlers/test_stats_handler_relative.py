@@ -25,7 +25,8 @@ def mock_config():
 def test_execute_yesterday(mock_fetcher, mock_messaging_api, mock_api_client, mock_get_pacific, mock_load_meta, mock_load_config, mock_event, mock_config):
     mock_load_meta.return_value = {"start_date": "2025-10-21"}
     
-    with patch("os.path.exists", return_value=True):
+    with patch("os.path.exists", return_value=True), \
+         patch("src.handlers.stats_handler.get_target_date", return_value="2025-11-15"):
         handler = StatsHandler()
         mock_event.message.text = "#戰績昨天" 
         handler.execute(mock_event, mock_config)

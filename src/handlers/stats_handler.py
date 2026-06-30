@@ -13,7 +13,7 @@ from .base_handler import BaseHandler
 # Required project imports
 from src.config import load_config
 from src.utils.cache_utils import load_league_metadata, is_empty_data, save_league_metadata
-from src.utils.time_utils import get_pacific_date, get_fantasy_week
+from src.utils.time_utils import get_pacific_date, get_fantasy_week, get_target_date
 from src.fetcher import YahooFantasyFetcher
 
 class StatsHandler(BaseHandler):
@@ -107,7 +107,9 @@ class StatsHandler(BaseHandler):
         elif cmd_type == "specific_week":
             target_week = cmd_val
         elif cmd_type == "yesterday":
-            target_dt = today_dt - timedelta(days=1)
+            base_date = get_target_date(is_offseason=is_offseason, end_date=meta.get('end_date'))
+            base_dt = pytz.timezone("US/Pacific").localize(datetime.strptime(base_date, "%Y-%m-%d"))
+            target_dt = base_dt - timedelta(days=1)
             target_date = target_dt.strftime("%Y-%m-%d")
             target_week = date_to_week.get(target_date) or get_fantasy_week(start_date, target_dt)
         elif cmd_type == "last_week":
@@ -115,10 +117,7 @@ class StatsHandler(BaseHandler):
             target_week = max(1, current_week - 1)
         elif cmd_type == "combined":
             # Default #戰績 logic
-            target_date = today_pacific
-            if is_offseason:
-                logging.info(f"[SYSTEM] 休賽季導向: {today_pacific} > {meta['end_date']}")
-                target_date = meta['end_date']
+            target_date = get_target_date(is_offseason=is_offseason, end_date=meta.get('end_date'))
             target_dt = pytz.timezone("US/Pacific").localize(datetime.strptime(target_date, "%Y-%m-%d"))
             target_week = date_to_week.get(target_date) or get_fantasy_week(start_date, target_dt)
             if meta.get('end_week') and target_week > meta['end_week']:
@@ -161,17 +160,41 @@ class StatsHandler(BaseHandler):
         from src.utils.path_utils import get_league_dir, get_league_image_dir, parse_league_id
         img_path = os.path.join(get_league_image_dir(), img_filename)
         
-        if os.path.exists(img_path):
-            logging.info(f"[CACHE] 命中圖片快取: {img_filename}")
-            SERVER_URL = os.getenv('SERVER_URL', 'http://localhost:5000')
-            https_url = SERVER_URL.replace("http://", "https://")
-            if not https_url.startswith("https://"):
-                https_url = f"https://{https_url.lstrip('https://')}"
-            sport, raw_id = parse_league_id(config.get("LEAGUE_ID"))
-            img_url = f"{https_url}/images/{sport}/{raw_id}/{img_filename}"
-            reply_img = ImageMessage(original_content_url=img_url, preview_image_url=img_url)
+        sport, raw_id = parse_league_id(config.get("LEAGUE_ID"))
+        is_mlb = (sport == "mlb")
+        cache_hit = False
+        img_urls_to_send = []
+        
+        if is_mlb:
+            hitter_name = f"{target_date}_combined_hitter.png"
+            pitcher_name = f"{target_date}_combined_pitcher.png"
+            h_path = os.path.join(get_league_image_dir(), hitter_name)
+            p_path = os.path.join(get_league_image_dir(), pitcher_name)
+            if os.path.exists(h_path) and os.path.exists(p_path):
+                cache_hit = True
+                SERVER_URL = os.getenv('SERVER_URL', 'http://localhost:5000')
+                https_url = SERVER_URL.replace("http://", "https://")
+                if not https_url.startswith("https://"):
+                    https_url = f"https://{https_url.lstrip('https://')}"
+                img_urls_to_send = [
+                    f"{https_url}/images/mlb/{raw_id}/{hitter_name}",
+                    f"{https_url}/images/mlb/{raw_id}/{pitcher_name}"
+                ]
+        else:
+            if os.path.exists(img_path):
+                cache_hit = True
+                SERVER_URL = os.getenv('SERVER_URL', 'http://localhost:5000')
+                https_url = SERVER_URL.replace("http://", "https://")
+                if not https_url.startswith("https://"):
+                    https_url = f"https://{https_url.lstrip('https://')}"
+                img_url = f"{https_url}/images/{sport}/{raw_id}/{img_filename}"
+                img_urls_to_send = [img_url]
+                
+        if cache_hit:
+            logging.info(f"[CACHE] 命中圖片快取")
+            messages_to_send = [ImageMessage(original_content_url=url, preview_image_url=url) for url in img_urls_to_send]
             with ApiClient(configuration) as api_client:
-                MessagingApi(api_client).reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[reply_img]))
+                MessagingApi(api_client).reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=messages_to_send))
             return
 
         if is_empty_data(cache_key):
@@ -188,7 +211,7 @@ class StatsHandler(BaseHandler):
             from src.utils.time_utils import is_game_day
             from src.utils.path_utils import parse_league_id
             sport, _ = parse_league_id(config.get("LEAGUE_ID"))
-            allowed, err_msg = is_game_day(sport=sport, is_offseason=is_offseason, target_date=today_pacific)
+            allowed, err_msg = is_game_day(sport=sport, is_offseason=is_offseason, target_date=target_date)
             if not allowed:
                 with ApiClient(configuration) as api_client:
                     MessagingApi(api_client).reply_message(

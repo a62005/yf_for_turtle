@@ -61,9 +61,9 @@ def test_format_user_stats():
     
     # 3. 第二個 Section Box (包含週數與當週數據)
     # contents[0] 為週數標頭文本
-    assert body_contents[2]["contents"][0]["text"] == "W24"
+    assert body_contents[3]["contents"][0]["text"] == "W24"
     # contents[1] 為當週數據的 vertical box
-    weekly_box = body_contents[2]["contents"][1]["contents"]
+    weekly_box = body_contents[3]["contents"][1]["contents"]
     assert weekly_box[0]["contents"][0]["text"] == "FGM/A"
     assert weekly_box[0]["contents"][1]["text"] == "80/150"
     assert weekly_box[5]["contents"][0]["text"] == "PTS"
@@ -109,8 +109,8 @@ def test_format_user_stats_with_composite_keys():
     assert daily_box[3]["contents"][1]["text"] == "75.0%"
     
     # 驗證第二個 Section Box 中的週數標頭與當週數據
-    assert body_contents[2]["contents"][0]["text"] == "W24"
-    weekly_box = body_contents[2]["contents"][1]["contents"]
+    assert body_contents[3]["contents"][0]["text"] == "W24"
+    weekly_box = body_contents[3]["contents"][1]["contents"]
     assert weekly_box[0]["contents"][0]["text"] == "FGM/A"
     assert weekly_box[0]["contents"][1]["text"] == "35/70"
     assert weekly_box[2]["contents"][0]["text"] == "FTM/A"
@@ -206,3 +206,81 @@ def test_execute_user_stats_success(mocker):
     assert args[2] == "玩家 韋哥 數據統計"
     assert isinstance(args[3], dict)
     assert args[3]["type"] == "bubble"
+
+
+def test_format_user_stats_with_mlb_stats():
+    handler = UserStatsHandler()
+    player_info = {
+        "manager_name": "韋哥",
+        "official_name": "Vigo's MLB Team"
+    }
+    
+    # 模擬 MLB 數據指標類別 (含有打者與投手)
+    stat_categories = [
+        {"stat_id": "7", "display_name": "R", "sort_order": 1},
+        {"stat_id": "8", "display_name": "HR", "sort_order": 1},
+        {"stat_id": "23", "display_name": "AVG", "sort_order": 1},
+        {"stat_id": "26", "display_name": "ERA", "sort_order": 0},
+        {"stat_id": "27", "display_name": "WHIP", "sort_order": 0},
+        {"stat_id": "28", "display_name": "K", "sort_order": 1}
+    ]
+    
+    daily_stats = {
+        "R": "2", "HR": "1", "AVG": "0.333", "ERA": "3.00", "WHIP": "1.00", "K": "5"
+    }
+    weekly_stats = {
+        "R": "10", "HR": "5", "AVG": "0.280", "ERA": "4.50", "WHIP": "1.25", "K": "25"
+    }
+    
+    formatted = handler.format_user_stats(
+        player_info, daily_stats, weekly_stats, "2026-05-28", "24", stat_categories=stat_categories
+    )
+    
+    assert isinstance(formatted, dict)
+    assert formatted["type"] == "bubble"
+    
+    body_contents = formatted["body"]["contents"]
+    
+    # 驗證包含 玩家資訊標頭 (1個) + Section Box (4個) + Separator (3個)
+    assert len(body_contents) == 8
+    
+    # 1. 玩家資訊標頭
+    assert body_contents[0]["contents"][0]["text"] == "韋哥"
+    assert body_contents[0]["contents"][1]["text"] == "Vigo's MLB Team"
+    
+    # 2. Section 0: Daily Hitter
+    assert body_contents[1]["contents"][0]["text"] == "2026-05-28 (Hitter)"
+    daily_hitter_box = body_contents[1]["contents"][1]["contents"]
+    daily_hitter_labels = [row["contents"][0]["text"] for row in daily_hitter_box]
+    assert "R" in daily_hitter_labels
+    assert "HR" in daily_hitter_labels
+    assert "AVG" in daily_hitter_labels
+    assert "ERA" not in daily_hitter_labels
+    
+    # 3. Section 1: Daily Pitcher
+    assert body_contents[3]["contents"][0]["text"] == "2026-05-28 (Pitcher)"
+    daily_pitcher_box = body_contents[3]["contents"][1]["contents"]
+    daily_pitcher_labels = [row["contents"][0]["text"] for row in daily_pitcher_box]
+    assert "ERA" in daily_pitcher_labels
+    assert "WHIP" in daily_pitcher_labels
+    assert "K" in daily_pitcher_labels
+    assert "R" not in daily_pitcher_labels
+    
+    # 4. Section 2: Weekly Hitter
+    assert body_contents[5]["contents"][0]["text"] == "W24 (Hitter)"
+    weekly_hitter_box = body_contents[5]["contents"][1]["contents"]
+    weekly_hitter_labels = [row["contents"][0]["text"] for row in weekly_hitter_box]
+    assert "R" in weekly_hitter_labels
+    assert "HR" in weekly_hitter_labels
+    assert "AVG" in weekly_hitter_labels
+    assert "ERA" not in weekly_hitter_labels
+    
+    # 5. Section 3: Weekly Pitcher
+    assert body_contents[7]["contents"][0]["text"] == "W24 (Pitcher)"
+    weekly_pitcher_box = body_contents[7]["contents"][1]["contents"]
+    weekly_pitcher_labels = [row["contents"][0]["text"] for row in weekly_pitcher_box]
+    assert "ERA" in weekly_pitcher_labels
+    assert "WHIP" in weekly_pitcher_labels
+    assert "K" in weekly_pitcher_labels
+    assert "R" not in weekly_pitcher_labels
+

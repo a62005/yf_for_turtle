@@ -1,4 +1,4 @@
-from src.visualizer.processor import process_stats_for_visual
+from src.visualizer.processor import process_stats_for_visual, is_mlb_pitcher_stat
 
 def test_process_stats_sorting():
     raw_data = {
@@ -119,3 +119,34 @@ def test_process_stats_percentage_formatting():
     # Team C: 0.5 -> 50.0%, 0.00 -> "-"
     assert any(r['name'] == 'Team C' and r['value'] == '50.0%' for r in fg_pct_column['rows'])
     assert any(r['name'] == 'Team C' and r['value'] == '-' for r in ft_pct_column['rows'])
+
+
+def test_is_mlb_pitcher_stat():
+    assert is_mlb_pitcher_stat("26", "ERA") is True
+    assert is_mlb_pitcher_stat("50", "IP") is True
+    assert is_mlb_pitcher_stat("3", "AVG") is False
+    assert is_mlb_pitcher_stat("18", "BB") is False  # 野手 BB
+    assert is_mlb_pitcher_stat("39", "BB") is True   # 投手 BB
+
+
+def test_process_stats_mlb_pitcher_marking():
+    raw_data = {
+        "team_stats": [
+            {"name": "Team A", "stats": {"AVG": 0.280, "ERA": 3.50, "Today Player": 5}}
+        ]
+    }
+    # 透過 patch mock config 與 metadata.json
+    import unittest.mock as mock
+    with mock.patch("src.visualizer.processor.load_config") as mock_config, \
+         mock.patch("os.path.exists", return_value=True), \
+         mock.patch("builtins.open", mock.mock_open(read_data='{"stat_categories": [{"stat_id": "3", "display_name": "AVG", "sort_order": 1}, {"stat_id": "26", "display_name": "ERA", "sort_order": 0}]}')):
+        mock_config.return_value = {"LEAGUE_ID": "mlb.l.62358"}
+        processed = process_stats_for_visual(raw_data)
+        
+    avg_col = next(c for c in processed if c['label'] == 'AVG')
+    era_col = next(c for c in processed if c['label'] == 'ERA')
+    today_col = next(c for c in processed if c['label'] == 'Today Player')
+    
+    assert avg_col.get("is_pitcher") is False
+    assert era_col.get("is_pitcher") is True
+    assert today_col.get("is_common") is True

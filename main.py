@@ -18,6 +18,11 @@ logging.basicConfig(
     handlers=[logging.StreamHandler(sys.stdout)]
 )
 
+def split_mlb_stats(processed_list):
+    hitter_list = [c for c in processed_list if c.get("is_common") or not c.get("is_pitcher")]
+    pitcher_list = [c for c in processed_list if c.get("is_common") or c.get("is_pitcher")]
+    return hitter_list, pitcher_list
+
 def main():
     logging.info("[TASK] 開始執行數據更新任務...")
     
@@ -104,26 +109,56 @@ def main():
             image_dir = get_league_image_dir(league_id)
             os.makedirs(image_dir, exist_ok=True)
             
-            # Combined image
-            logging.info("Capturing combined stats image...")
-            combined_html = render_stats_html(daily_processed, weekly_processed)
-            combined_path = os.path.join(image_dir, f"{today_str}_combined.png")
-            capture_html_to_png(combined_html, combined_path)
-            logging.info(f"[VISUAL] 圖片製作完成並儲存至: {combined_path}")
-            
-            # Daily image
-            logging.info("Capturing daily stats image...")
-            daily_html = render_stats_html(daily_processed)
-            daily_path_img = os.path.join(image_dir, f"{today_str}_daily.png")
-            capture_html_to_png(daily_html, daily_path_img)
-            logging.info(f"[VISUAL] 圖片製作完成並儲存至: {daily_path_img}")
-            
-            # Weekly image
-            logging.info("Capturing weekly stats image...")
-            weekly_html = render_stats_html([], weekly_processed)
-            weekly_path_img = os.path.join(image_dir, f"week_{current_week}_weekly.png")
-            capture_html_to_png(weekly_html, weekly_path_img)
-            logging.info(f"[VISUAL] 圖片製作完成並儲存至: {weekly_path_img}")
+            from src.utils.path_utils import parse_league_id
+            sport, raw_id = parse_league_id(league_id)
+
+            if sport == "mlb":
+                daily_hitter, daily_pitcher = split_mlb_stats(daily_processed)
+                weekly_hitter, weekly_pitcher = split_mlb_stats(weekly_processed)
+                
+                # Combined images
+                logging.info("Capturing combined MLB hitter stats image...")
+                hitter_html = render_stats_html(daily_hitter, weekly_hitter)
+                hitter_path = os.path.join(image_dir, f"{today_str}_combined_hitter.png")
+                capture_html_to_png(hitter_html, hitter_path)
+                
+                logging.info("Capturing combined MLB pitcher stats image...")
+                pitcher_html = render_stats_html(daily_pitcher, weekly_pitcher)
+                pitcher_path = os.path.join(image_dir, f"{today_str}_combined_pitcher.png")
+                capture_html_to_png(pitcher_html, pitcher_path)
+                
+                # Daily images
+                logging.info("Capturing daily MLB hitter stats image...")
+                capture_html_to_png(render_stats_html(daily_hitter), os.path.join(image_dir, f"{today_str}_daily_hitter.png"))
+                logging.info("Capturing daily MLB pitcher stats image...")
+                capture_html_to_png(render_stats_html(daily_pitcher), os.path.join(image_dir, f"{today_str}_daily_pitcher.png"))
+                
+                # Weekly images
+                logging.info("Capturing weekly MLB hitter stats image...")
+                capture_html_to_png(render_stats_html([], weekly_hitter), os.path.join(image_dir, f"week_{current_week}_weekly_hitter.png"))
+                logging.info("Capturing weekly MLB pitcher stats image...")
+                capture_html_to_png(render_stats_html([], weekly_pitcher), os.path.join(image_dir, f"week_{current_week}_weekly_pitcher.png"))
+            else:
+                # Combined image
+                logging.info("Capturing combined stats image...")
+                combined_html = render_stats_html(daily_processed, weekly_processed)
+                combined_path = os.path.join(image_dir, f"{today_str}_combined.png")
+                capture_html_to_png(combined_html, combined_path)
+                logging.info(f"[VISUAL] 圖片製作完成並儲存至: {combined_path}")
+                
+                # Daily image
+                logging.info("Capturing daily stats image...")
+                daily_html = render_stats_html(daily_processed)
+                daily_path_img = os.path.join(image_dir, f"{today_str}_daily.png")
+                capture_html_to_png(daily_html, daily_path_img)
+                logging.info(f"[VISUAL] 圖片製作完成並儲存至: {daily_path_img}")
+                
+                # Weekly image
+                logging.info("Capturing weekly stats image...")
+                weekly_html = render_stats_html([], weekly_processed)
+                weekly_path_img = os.path.join(image_dir, f"week_{current_week}_weekly.png")
+                capture_html_to_png(weekly_html, weekly_path_img)
+                logging.info(f"[VISUAL] 圖片製作完成並儲存至: {weekly_path_img}")
             
             # Send LINE message if requested
             reply_to = os.getenv("LINE_REPLY_TO")
@@ -136,24 +171,28 @@ def main():
                     if not https_url.startswith("https://"):
                         https_url = f"https://{https_url.lstrip('https://')}"
                         
-                    from src.utils.path_utils import parse_league_id
-                    sport, raw_id = parse_league_id(league_id)
-                    img_filename = f"{today_str}_combined.png"
-                    img_url = f"{https_url}/images/{sport}/{raw_id}/{img_filename}"
-                    
-                    logging.info(f"[LINE] 正在向 {reply_to} 推送戰績圖片: {img_url}")
+                    if sport == "mlb":
+                        img_filenames = [f"{today_str}_combined_hitter.png", f"{today_str}_combined_pitcher.png"]
+                        img_urls = [f"{https_url}/images/mlb/{raw_id}/{f}" for f in img_filenames]
+                        messages = [ImageMessage(original_content_url=url, preview_image_url=url) for url in img_urls]
+                        logging.info(f"[LINE] 正在向 {reply_to} 推送 MLB 投手/野手戰績圖片: {img_urls}")
+                    else:
+                        img_filename = f"{today_str}_combined.png"
+                        img_url = f"{https_url}/images/{sport}/{raw_id}/{img_filename}"
+                        messages = [
+                            ImageMessage(
+                                original_content_url=img_url,
+                                preview_image_url=img_url
+                            )
+                        ]
+                        logging.info(f"[LINE] 正在向 {reply_to} 推送戰績圖片: {img_url}")
                     
                     line_config = Configuration(access_token=config["LINE_CHANNEL_ACCESS_TOKEN"])
                     with ApiClient(line_config) as api_client:
                         messaging_api = MessagingApi(api_client)
                         push_req = PushMessageRequest(
                             to=reply_to,
-                            messages=[
-                                ImageMessage(
-                                    original_content_url=img_url,
-                                    preview_image_url=img_url
-                                )
-                            ]
+                            messages=messages
                         )
                         messaging_api.push_message(push_req)
                     logging.info(f"[LINE] 戰績圖片發送成功！")

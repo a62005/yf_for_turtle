@@ -8,6 +8,8 @@ from src.config import load_config
 from src.fetcher import YahooFantasyFetcher
 from src.utils.time_utils import get_pacific_datetime, get_fantasy_week
 from src.visualizer.flex_builder import build_matchup_comparison_card
+from src.visualizer.processor import is_mlb_pitcher_stat
+
 
 
 class MatchupHandler(BaseHandler):
@@ -76,82 +78,153 @@ class MatchupHandler(BaseHandler):
         except ValueError:
             return "-"
 
-    def compare_stats(self, my_stats: dict, opp_stats: dict) -> dict:
-        """比對 9-Cat 數據並統計比分"""
-        cats_to_compare = [
-            ("FG%", True), ("FT%", True), ("3PTM", True), ("PTS", True), 
-            ("REB", True), ("AST", True), ("ST", True), ("BLK", True), ("TO", False)
-        ]
-        
-        wins, losses, ties = 0, 0, 0
-        details = {}
+    def compare_stats(self, my_stats: dict, opp_stats: dict, stat_categories: list = None) -> dict:
+        """比對數據並統計比分"""
+        if not stat_categories:
+            # Fallback to NBA 9-cat
+            cats_to_compare = [
+                ("FG%", True), ("FT%", True), ("3PTM", True), ("PTS", True), 
+                ("REB", True), ("AST", True), ("ST", True), ("BLK", True), ("TO", False)
+            ]
+            
+            wins, losses, ties = 0, 0, 0
+            details = {}
 
-        # 1. 處理輔助行 (FGM/A, FTM/A) - 不進行比對
-        details["FGM/A"] = {
-            "my_val": self.to_val_str(my_stats.get("FGM/FGA")),
-            "opp_val": self.to_val_str(opp_stats.get("FGM/FGA"))
-        }
-        details["FTM/A"] = {
-            "my_val": self.to_val_str(my_stats.get("FTM/FTA")),
-            "opp_val": self.to_val_str(opp_stats.get("FTM/FTA"))
-        }
-
-        # 2. 處理 9-Cat 指標比對
-        for cat, is_larger_better in cats_to_compare:
-            my_raw = my_stats.get(cat)
-            opp_raw = opp_stats.get(cat)
-
-            # 轉換為百分比或數值字串
-            if cat in ["FG%", "FT%"]:
-                my_val_str = self.to_percent_str(my_raw)
-                opp_val_str = self.to_percent_str(opp_raw)
-            else:
-                my_val_str = self.to_val_str(my_raw)
-                opp_val_str = self.to_val_str(opp_raw)
-
-            # 安全轉換為 float 作為比較數值
-            try:
-                my_num = float(my_raw) if my_raw is not None else 0.0
-            except ValueError:
-                my_num = 0.0
-            try:
-                opp_num = float(opp_raw) if opp_raw is not None else 0.0
-            except ValueError:
-                opp_num = 0.0
-
-            # 勝負判定
-            if my_num == opp_num:
-                status = "tie"
-                ties += 1
-            elif is_larger_better:
-                if my_num > opp_num:
-                    status = "my_win"
-                    wins += 1
-                else:
-                    status = "opp_win"
-                    losses += 1
-            else:  # TO (越小越好)
-                if my_num < opp_num:
-                    status = "my_win"
-                    wins += 1
-                else:
-                    status = "opp_win"
-                    losses += 1
-
-            details[cat] = {
-                "status": status,
-                "my_val": my_val_str,
-                "opp_val": opp_val_str
+            # 1. 處理輔助行 (FGM/A, FTM/A) - 不進行比對
+            details["FGM/A"] = {
+                "my_val": self.to_val_str(my_stats.get("FGM/FGA")),
+                "opp_val": self.to_val_str(opp_stats.get("FGM/FGA"))
+            }
+            details["FTM/A"] = {
+                "my_val": self.to_val_str(my_stats.get("FTM/FTA")),
+                "opp_val": self.to_val_str(opp_stats.get("FTM/FTA"))
             }
 
-        return {
-            "wins": wins,
-            "losses": losses,
-            "ties": ties,
-            "details": details
-        }
+            # 2. 處理 9-Cat 指標比對
+            for cat, is_larger_better in cats_to_compare:
+                my_raw = my_stats.get(cat)
+                opp_raw = opp_stats.get(cat)
 
-    def format_matchup_stats(self, player_info: dict, comp_res: dict, week_str: str) -> dict:
+                # 轉換為百分比或數值字串
+                if cat in ["FG%", "FT%"]:
+                    my_val_str = self.to_percent_str(my_raw)
+                    opp_val_str = self.to_percent_str(opp_raw)
+                else:
+                    my_val_str = self.to_val_str(my_raw)
+                    opp_val_str = self.to_val_str(opp_raw)
+
+                # 安全轉換為 float 作為比較數值
+                try:
+                    my_num = float(my_raw) if my_raw is not None else 0.0
+                except ValueError:
+                    my_num = 0.0
+                try:
+                    opp_num = float(opp_raw) if opp_raw is not None else 0.0
+                except ValueError:
+                    opp_num = 0.0
+
+                # 勝負判定
+                if my_num == opp_num:
+                    status = "tie"
+                    ties += 1
+                elif is_larger_better:
+                    if my_num > opp_num:
+                        status = "my_win"
+                        wins += 1
+                    else:
+                        status = "opp_win"
+                        losses += 1
+                else:  # TO (越小越好)
+                    if my_num < opp_num:
+                        status = "my_win"
+                        wins += 1
+                    else:
+                        status = "opp_win"
+                        losses += 1
+
+                details[cat] = {
+                    "status": status,
+                    "my_val": my_val_str,
+                    "opp_val": opp_val_str
+                }
+
+            return {
+                "wins": wins,
+                "losses": losses,
+                "ties": ties,
+                "details": details
+            }
+        else:
+            # MLB / 動態比對邏輯
+            wins, losses, ties = 0, 0, 0
+            details = {}
+            for cat in stat_categories:
+                disp = cat["display_name"]
+                sort_order = cat.get("sort_order")
+                is_only_display = (sort_order is None) or (sort_order not in [0, 1])
+
+                my_raw = my_stats.get(disp)
+                opp_raw = opp_stats.get(disp)
+
+                if "%" in disp:
+                    my_val_str = self.to_percent_str(my_raw)
+                    opp_val_str = self.to_percent_str(opp_raw)
+                else:
+                    my_val_str = self.to_val_str(my_raw)
+                    opp_val_str = self.to_val_str(opp_raw)
+
+                if is_only_display:
+                    details[disp] = {
+                        "my_val": my_val_str,
+                        "opp_val": opp_val_str
+                    }
+                    continue
+
+                is_larger_better = (sort_order == 1)
+
+                # 安全轉換為 float 作為比較數值
+                try:
+                    my_num = float(my_raw) if my_raw is not None else 0.0
+                except ValueError:
+                    my_num = 0.0
+                try:
+                    opp_num = float(opp_raw) if opp_raw is not None else 0.0
+                except ValueError:
+                    opp_num = 0.0
+
+                # 勝負判定
+                if my_num == opp_num:
+                    status = "tie"
+                    ties += 1
+                elif is_larger_better:
+                    if my_num > opp_num:
+                        status = "my_win"
+                        wins += 1
+                    else:
+                        status = "opp_win"
+                        losses += 1
+                else:  # 越小越好 (sort_order=0, 如 ERA, WHIP, TO)
+                    if my_num < opp_num:
+                        status = "my_win"
+                        wins += 1
+                    else:
+                        status = "opp_win"
+                        losses += 1
+
+                details[disp] = {
+                    "status": status,
+                    "my_val": my_val_str,
+                    "opp_val": opp_val_str
+                }
+
+            return {
+                "wins": wins,
+                "losses": losses,
+                "ties": ties,
+                "details": details
+            }
+
+    def format_matchup_stats(self, player_info: dict, comp_res: dict, week_str: str, stat_categories: list = None, is_mlb: bool = False) -> dict:
         """組裝 Matchup Flex Message 卡片"""
         details = comp_res["details"]
         wins = comp_res["wins"]
@@ -166,25 +239,45 @@ class MatchupHandler(BaseHandler):
             "losses": losses
         }
 
-        comparison_rows = [
-            # (指標名稱, 左側數值, 右側數值, 勝負狀態, 是否為輔助行)
-            ("FGM/A", details["FGM/A"]["my_val"], details["FGM/A"]["opp_val"], None, True),
-            ("FG%", details["FG%"]["my_val"], details["FG%"]["opp_val"], details["FG%"]["status"], False),
-            ("FTM/A", details["FTM/A"]["my_val"], details["FTM/A"]["opp_val"], None, True),
-            ("FT%", details["FT%"]["my_val"], details["FT%"]["opp_val"], details["FT%"]["status"], False),
-            ("3PTM", details["3PTM"]["my_val"], details["3PTM"]["opp_val"], details["3PTM"]["status"], False),
-            ("PTS", details["PTS"]["my_val"], details["PTS"]["opp_val"], details["PTS"]["status"], False),
-            ("REB", details["REB"]["my_val"], details["REB"]["opp_val"], details["REB"]["status"], False),
-            ("AST", details["AST"]["my_val"], details["AST"]["opp_val"], details["AST"]["status"], False),
-            ("ST", details["ST"]["my_val"], details["ST"]["opp_val"], details["ST"]["status"], False),
-            ("BLK", details["BLK"]["my_val"], details["BLK"]["opp_val"], details["BLK"]["status"], False),
-            ("TO", details["TO"]["my_val"], details["TO"]["opp_val"], details["TO"]["status"], False)
-        ]
+        if stat_categories:
+            DISPLAY_ALIASES = {"FGM/FGA": "FGM/A", "FTM/FTA": "FTM/A"}
+            comparison_rows = []
+            for cat in stat_categories:
+                disp = cat["display_name"]
+                label = DISPLAY_ALIASES.get(disp, disp)
+                
+                my_val = details[disp]["my_val"]
+                opp_val = details[disp]["opp_val"]
+                status = details[disp].get("status")
+                
+                sort_order = cat.get("sort_order")
+                is_aux = (sort_order is None) or (sort_order not in [0, 1])
+                
+                stat_id = cat.get("stat_id", "")
+                is_pitcher = is_mlb_pitcher_stat(stat_id, disp)
+                
+                comparison_rows.append((label, my_val, opp_val, status, is_aux, is_pitcher))
+        else:
+            comparison_rows = [
+                # (指標名稱, 左側數值, 右側數值, 勝負狀態, 是否為輔助行, is_pitcher)
+                ("FGM/A", details["FGM/A"]["my_val"], details["FGM/A"]["opp_val"], None, True, False),
+                ("FG%", details["FG%"]["my_val"], details["FG%"]["opp_val"], details["FG%"]["status"], False, False),
+                ("FTM/A", details["FTM/A"]["my_val"], details["FTM/A"]["opp_val"], None, True, False),
+                ("FT%", details["FT%"]["my_val"], details["FT%"]["opp_val"], details["FT%"]["status"], False, False),
+                ("3PTM", details["3PTM"]["my_val"], details["3PTM"]["opp_val"], details["3PTM"]["status"], False, False),
+                ("PTS", details["PTS"]["my_val"], details["PTS"]["opp_val"], details["PTS"]["status"], False, False),
+                ("REB", details["REB"]["my_val"], details["REB"]["opp_val"], details["REB"]["status"], False, False),
+                ("AST", details["AST"]["my_val"], details["AST"]["opp_val"], details["AST"]["status"], False, False),
+                ("ST", details["ST"]["my_val"], details["ST"]["opp_val"], details["ST"]["status"], False, False),
+                ("BLK", details["BLK"]["my_val"], details["BLK"]["opp_val"], details["BLK"]["status"], False, False),
+                ("TO", details["TO"]["my_val"], details["TO"]["opp_val"], details["TO"]["status"], False, False)
+            ]
 
         return build_matchup_comparison_card(
             title=f"WEEK {week_str} MATCHUP",
             subtitle=subtitle_dict,
-            comparison_rows=comparison_rows
+            comparison_rows=comparison_rows,
+            is_mlb=is_mlb
         )
 
     def execute(self, event: MessageEvent, configuration: Configuration) -> None:
@@ -278,10 +371,23 @@ class MatchupHandler(BaseHandler):
             }
 
             # 10. 比對數據
-            comp_res = self.compare_stats(my_team["stats"], opp_team["stats"])
+            from src.utils.path_utils import parse_league_id
+            from src.utils.cache_utils import load_league_metadata
+            sport, _ = parse_league_id(league_id)
+            is_mlb = (sport == "mlb")
+            
+            meta = load_league_metadata(league_id)
+            stat_categories = meta.get("stat_categories")
+            if not stat_categories:
+                try:
+                    stat_categories = fetcher.sync_league_settings(league_id)
+                except Exception as se:
+                    logging.warning(f"Failed to sync league settings for matchup: {se}")
+
+            comp_res = self.compare_stats(my_team["stats"], opp_team["stats"], stat_categories=stat_categories)
 
             # 11. 產生 Flex Container 卡片
-            flex_dict = self.format_matchup_stats(player_info, comp_res, str(week))
+            flex_dict = self.format_matchup_stats(player_info, comp_res, str(week), stat_categories=stat_categories, is_mlb=is_mlb)
 
             # 12. 透過 LINE 回覆 Flex Message
             alt_text = f"WEEK {week} MATCHUP - {player_info['my_nickname']} vs {player_info['opp_nickname']}"

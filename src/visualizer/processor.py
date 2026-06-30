@@ -9,6 +9,24 @@ DISPLAY_ALIASES = {
     "3PTM": "3PT"
 }
 
+def is_mlb_pitcher_stat(stat_id: str, display_name: str) -> bool:
+    pitcher_ids = {
+        "26", "27", "28", "29", "30", "31", "32", "37", "38", "39",
+        "41", "42", "48", "50", "81", "82", "83", "89", "121", "122"
+    }
+    if stat_id in pitcher_ids:
+        return True
+    
+    pitcher_names = {
+        "IP", "ERA", "WHIP", "QS", "SV+H", "SV", "HLD", "K", "W", "L", 
+        "CG", "SHO", "OUT", "K/9", "BB/9", "K/BB", "SV+HLD"
+    }
+    if display_name in pitcher_names:
+        if display_name in ("BB", "H"):
+            return False
+        return True
+    return False
+
 def process_stats_for_visual(data: dict) -> list:
     team_stats = data.get("team_stats", [])
     if not team_stats:
@@ -38,26 +56,26 @@ def process_stats_for_visual(data: dict) -> list:
             total = t["stats"].get("GP_TOTAL", 0)
             t["stats"]["GP_SORT_KEY"] = (played * 1000) + total
             t["stats"]["Game Player"] = f"{played} / {total}"
-        categories.append({"label": "Game Player", "data_key": "Game Player", "sort_key": "GP_SORT_KEY", "reverse": True})
+        categories.append({"label": "Game Player", "data_key": "Game Player", "sort_key": "GP_SORT_KEY", "reverse": True, "is_pitcher": False, "is_common": True})
 
     # Check for Today Player data
     if any("Today Player" in t["stats"] for t in team_stats):
-        categories.append({"label": "Today Player", "data_key": "Today Player", "sort_key": "Today Player", "reverse": True})
+        categories.append({"label": "Today Player", "data_key": "Today Player", "sort_key": "Today Player", "reverse": True, "is_pitcher": False, "is_common": True})
 
     if not stat_categories:
         # Fallback to standard NBA categories if no categories found in metadata
         categories += [
-            {"label": "FG", "data_key": "FGM/FGA", "sort_key": "FG%", "reverse": True},
-            {"label": "FG%", "data_key": "FG%", "sort_key": "FG%", "reverse": True},
-            {"label": "FT", "data_key": "FTM/FTA", "sort_key": "FT%", "reverse": True},
-            {"label": "FT%", "data_key": "FT%", "sort_key": "FT%", "reverse": True},
-            {"label": "3PT", "data_key": "3PTM", "sort_key": "3PTM", "reverse": True},
-            {"label": "PTS", "data_key": "PTS", "sort_key": "PTS", "reverse": True},
-            {"label": "REB", "data_key": "REB", "sort_key": "REB", "reverse": True},
-            {"label": "AST", "data_key": "AST", "sort_key": "AST", "reverse": True},
-            {"label": "ST", "data_key": "ST", "sort_key": "ST", "reverse": True},
-            {"label": "BLK", "data_key": "BLK", "sort_key": "BLK", "reverse": True},
-            {"label": "TO", "data_key": "TO", "sort_key": "TO", "reverse": False},
+            {"label": "FG", "data_key": "FGM/FGA", "sort_key": "FG%", "reverse": True, "is_pitcher": False, "is_common": False},
+            {"label": "FG%", "data_key": "FG%", "sort_key": "FG%", "reverse": True, "is_pitcher": False, "is_common": False},
+            {"label": "FT", "data_key": "FTM/FTA", "sort_key": "FT%", "reverse": True, "is_pitcher": False, "is_common": False},
+            {"label": "FT%", "data_key": "FT%", "sort_key": "FT%", "reverse": True, "is_pitcher": False, "is_common": False},
+            {"label": "3PT", "data_key": "3PTM", "sort_key": "3PTM", "reverse": True, "is_pitcher": False, "is_common": False},
+            {"label": "PTS", "data_key": "PTS", "sort_key": "PTS", "reverse": True, "is_pitcher": False, "is_common": False},
+            {"label": "REB", "data_key": "REB", "sort_key": "REB", "reverse": True, "is_pitcher": False, "is_common": False},
+            {"label": "AST", "data_key": "AST", "sort_key": "AST", "reverse": True, "is_pitcher": False, "is_common": False},
+            {"label": "ST", "data_key": "ST", "sort_key": "ST", "reverse": True, "is_pitcher": False, "is_common": False},
+            {"label": "BLK", "data_key": "BLK", "sort_key": "BLK", "reverse": True, "is_pitcher": False, "is_common": False},
+            {"label": "TO", "data_key": "TO", "sort_key": "TO", "reverse": False, "is_pitcher": False, "is_common": False},
         ]
     else:
         # Add dynamic stats categories from settings cache
@@ -75,7 +93,9 @@ def process_stats_for_visual(data: dict) -> list:
                 "label": label,
                 "data_key": disp_name,
                 "sort_key": sort_key_name,
-                "reverse": reverse_val
+                "reverse": reverse_val,
+                "is_pitcher": is_mlb_pitcher_stat(cat.get("stat_id", ""), disp_name),
+                "is_common": False
             })
 
     # Formatting heuristics helper
@@ -142,7 +162,9 @@ def process_stats_for_visual(data: dict) -> list:
         result.append({
             "label": cat["label"],
             "rows": rows,
-            "reverse": cat["reverse"]
+            "reverse": cat["reverse"],
+            "is_pitcher": cat.get("is_pitcher", False),
+            "is_common": cat.get("is_common", False)
         })
         
     return result
