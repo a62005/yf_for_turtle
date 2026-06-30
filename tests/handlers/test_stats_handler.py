@@ -64,3 +64,39 @@ def test_stats_handler_execute_sanity(mock_os_close, mock_os_open, mock_makedirs
     assert mock_messaging_api.called
     # Check if subprocess.Popen was called to trigger main.py
     assert mock_popen.called
+
+
+@patch("src.handlers.stats_handler.load_config")
+@patch("src.handlers.stats_handler.load_league_metadata")
+@patch("src.handlers.stats_handler.get_pacific_date")
+@patch("src.handlers.stats_handler.is_empty_data")
+@patch("src.handlers.stats_handler.ApiClient")
+@patch("src.handlers.stats_handler.MessagingApi")
+@patch("src.handlers.stats_handler.subprocess.Popen")
+@patch("os.path.exists")
+@patch("os.makedirs")
+@patch("os.open")
+@patch("os.close")
+def test_stats_handler_mlb_bypasses_game_day(mock_os_close, mock_os_open, mock_makedirs, mock_exists, mock_popen, mock_messaging_api, mock_api_client, mock_is_empty_data, mock_get_pacific, mock_load_meta, mock_load_config):
+    handler = StatsHandler()
+    
+    # MLB league_id
+    mock_load_config.return_value = {"LEAGUE_ID": "mlb.l.12345", "DEFAULT_SEASON_START": "2024-10-22"}
+    mock_load_meta.return_value = {"start_date": "2024-10-22", "end_date": "2025-04-13", "end_week": 24}
+    mock_get_pacific.return_value = "2024-11-01"
+    mock_exists.return_value = False
+    mock_is_empty_data.return_value = False
+    
+    event = MagicMock(spec=MessageEvent)
+    event.message = MagicMock()
+    event.message.text = "#戰績"
+    event.reply_token = "dummy_token"
+    
+    config = MagicMock(spec=Configuration)
+    
+    # 因為是 MLB，所以不論目前時間是幾點、NBA 是否在比賽，都不應被 is_stats_query_allowed 阻擋，直接放行
+    handler.execute(event, config)
+        
+    # 因為是 MLB，所以不應被 is_stats_query_allowed 阻擋，依然能觸發背景任務
+    assert mock_popen.called
+    assert mock_messaging_api.called

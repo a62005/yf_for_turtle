@@ -185,8 +185,10 @@ class StatsHandler(BaseHandler):
         is_current_week_query = (cmd_type == "specific_week" and target_week == current_week)
 
         if is_today_query or is_current_week_query:
-            from src.utils.time_utils import is_stats_query_allowed
-            allowed, err_msg = is_stats_query_allowed(is_offseason=is_offseason, target_date=today_pacific)
+            from src.utils.time_utils import is_game_day
+            from src.utils.path_utils import parse_league_id
+            sport, _ = parse_league_id(config.get("LEAGUE_ID"))
+            allowed, err_msg = is_game_day(sport=sport, is_offseason=is_offseason, target_date=today_pacific)
             if not allowed:
                 with ApiClient(configuration) as api_client:
                     MessagingApi(api_client).reply_message(

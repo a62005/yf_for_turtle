@@ -289,3 +289,61 @@ def test_fetch_league_metadata_permission_denied(mocker):
     with pytest.raises(LeaguePermissionError):
         fetcher.fetch_league_data("12345")
 
+
+def test_fetch_weekly_stats_scoreboard_format(mocker):
+    mock_ctx = mocker.patch("src.fetcher.yahoofantasy.Context").return_value
+    mocker.patch("src.fetcher.yahoofantasy.League")
+    
+    scoreboard_data = {
+        "fantasy_content": {
+            "league": {
+                "scoreboard": {
+                    "matchups": {
+                        "matchup": [
+                            {
+                                "teams": {
+                                    "team": [
+                                        {
+                                            "team_id": "1", 
+                                            "name": "Team 1",
+                                            "team_remaining_games": {
+                                                "total": {
+                                                    "completed_games": "2",
+                                                    "live_games": "1",
+                                                    "remaining_games": "3"
+                                                }
+                                            }
+                                        },
+                                        {"team_id": "2", "name": "Team 2"}
+                                    ]
+                                }
+                            }
+                        ]
+                    }
+                }
+            }
+        }
+    }
+    mock_ctx.make_request.return_value = scoreboard_data
+    
+    mocker.patch("yahoofantasy.resources.team.Team")
+    mocker.patch("yahoofantasy.api.parse.as_list", side_effect=lambda x: x if isinstance(x, list) else [x])
+    
+    def from_response_object_side_effect(obj, data):
+        obj.name = data.get("name")
+        obj.team_id = data.get("team_id")
+    mocker.patch("yahoofantasy.api.parse.from_response_object", side_effect=from_response_object_side_effect)
+    
+    fetcher = YahooFantasyFetcher(team_mapping={"1": "A01"})
+    mocker.patch.object(YahooFantasyFetcher, "_parse_stats", return_value={"PTS": "100"})
+    
+    data = fetcher.fetch_weekly_stats("12345", 1)
+    
+    assert "team_stats" in data
+    assert len(data["team_stats"]) == 2
+    assert data["team_stats"][0]["team_id"] == "1"
+    assert data["team_stats"][0]["name"] == "A01"
+    assert data["team_stats"][0]["stats"]["PTS"] == "100"
+    assert data["team_stats"][0]["stats"]["GP_PLAYED"] == 3
+    assert data["team_stats"][0]["stats"]["GP_TOTAL"] == 6
+

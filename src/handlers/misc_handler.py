@@ -22,7 +22,7 @@ from src.llm.llm_agent import LLMAgent
 
 class MiscHandler(BaseHandler):
     def __init__(self):
-        self.pattern = re.compile(r"^#(?:開季|選秀|獎金|幫助|[hH][eE][lL][pP])$")
+        self.pattern = re.compile(r"^#(?:開季|選秀|獎金|幫助|幫忙|更多|[hH][eE][lL][pP])$")
 
     @property
     def instruction_desc(self) -> str:
@@ -84,7 +84,7 @@ class MiscHandler(BaseHandler):
             self._handle_draft_countdown(event, configuration)
         elif user_text == "#獎金":
             self._handle_prize(event, configuration)
-        elif user_text.startswith("#") and user_text[1:].lower() in ("幫助", "help"):
+        elif user_text.startswith("#") and user_text[1:].lower() in ("幫助", "幫忙", "更多", "help"):
             self._handle_help(event, configuration)
 
     def _calculate_countdown(self, target_time_str: str) -> str:

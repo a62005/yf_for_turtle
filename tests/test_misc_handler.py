@@ -31,6 +31,8 @@ def test_misc_handler_can_handle():
     assert handler.can_handle("#Help") is True
     assert handler.can_handle("#HELP") is True
     assert handler.can_handle("  #help  ") is True
+    assert handler.can_handle("#幫忙") is True
+    assert handler.can_handle("#更多") is True
     
     assert handler.can_handle("#開季啦") is False
     assert handler.can_handle("#開季 ") is True # Since we strip the user text, this should be True
@@ -209,7 +211,6 @@ def test_execute_prize(mock_messaging_api, mock_api_client, mock_load_config, mo
 @patch("src.handlers.misc_handler.MessagingApi")
 def test_execute_help_success(mock_messaging_api, mock_api_client, mock_load_config, mock_get_pacific, mock_load_meta, mock_event, mock_config):
     handler = MiscHandler()
-    mock_event.message.text = "#幫助"
     
     mock_load_meta.return_value = {"end_date": "2026-04-12"}
     mock_get_pacific.return_value = "2026-05-29"
@@ -220,6 +221,16 @@ def test_execute_help_success(mock_messaging_api, mock_api_client, mock_load_con
     mock_open_helper.return_value.__enter__.return_value.read.return_value = "Custom Help Document"
     
     with patch("builtins.open", mock_open_helper):
+        mock_event.message.text = "#幫助"
+        handler.execute(mock_event, mock_config)
+        
+        reply_req = mock_messaging_api.return_value.reply_message.call_args[0][0]
+        assert reply_req.reply_token == "dummy_reply_token"
+        assert reply_req.messages[0].text == "Custom Help Document"
+
+        # 測試類似詞 "#更多"
+        mock_messaging_api.reset_mock()
+        mock_event.message.text = "#更多"
         handler.execute(mock_event, mock_config)
         
         reply_req = mock_messaging_api.return_value.reply_message.call_args[0][0]
