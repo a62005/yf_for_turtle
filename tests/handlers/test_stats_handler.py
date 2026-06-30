@@ -57,7 +57,8 @@ def test_stats_handler_execute_sanity(mock_os_close, mock_os_open, mock_makedirs
     config = MagicMock(spec=Configuration)
     
     # Patch is_stats_query_allowed to return allowed=True so the time-limit block is bypassed
-    with patch("src.utils.time_utils.is_stats_query_allowed", return_value=(True, "")):
+    with patch("src.utils.time_utils.is_stats_query_allowed", return_value=(True, "")), \
+         patch("src.handlers.stats_handler.get_target_date", return_value="2024-11-01"):
         handler.execute(event, config)
     
     # Check if MessagingApi was called (at least once for "數據更新中")
@@ -95,7 +96,8 @@ def test_stats_handler_mlb_bypasses_game_day(mock_os_close, mock_os_open, mock_m
     config = MagicMock(spec=Configuration)
     
     # 因為是 MLB，所以不論目前時間是幾點、NBA 是否在比賽，都不應被 is_stats_query_allowed 阻擋，直接放行
-    handler.execute(event, config)
+    with patch("src.handlers.stats_handler.get_target_date", return_value="2024-11-01"):
+        handler.execute(event, config)
         
     # 因為是 MLB，所以不應被 is_stats_query_allowed 阻擋，依然能觸發背景任務
     assert mock_popen.called
@@ -137,7 +139,8 @@ def test_stats_handler_mlb_cache_hit(mock_exists, mock_popen, mock_messaging_api
     mock_api_instance = MagicMock()
     mock_messaging_api.return_value = mock_api_instance
     
-    handler.execute(event, config)
+    with patch("src.handlers.stats_handler.get_target_date", return_value="2024-11-01"):
+        handler.execute(event, config)
     
     # verify that MessagingApi was called and Popen was NOT called (because of cache hit)
     assert not mock_popen.called
