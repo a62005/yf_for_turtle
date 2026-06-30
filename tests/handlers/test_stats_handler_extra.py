@@ -128,7 +128,8 @@ def test_execute_before_1400(mock_exists, mock_is_empty, mock_messaging_api, moc
     handler = StatsHandler()
     mock_event.message.text = "#戰績"
     
-    handler.execute(mock_event, mock_config)
+    with patch("src.handlers.stats_handler.get_target_date", return_value="2025-11-15"):
+        handler.execute(mock_event, mock_config)
     
     reply_req = mock_messaging_api.return_value.reply_message.call_args[0][0]
     assert reply_req.messages[0].text == "請於 14:00 後再進行查詢。"
@@ -164,7 +165,8 @@ def test_execute_lock_file_exists(mock_open, mock_exists, mock_is_empty, mock_me
     handler = StatsHandler()
     mock_event.message.text = "#戰績"
     
-    handler.execute(mock_event, mock_config)
+    with patch("src.handlers.stats_handler.get_target_date", return_value="2025-11-15"):
+        handler.execute(mock_event, mock_config)
     
     reply_req = mock_messaging_api.return_value.reply_message.call_args[0][0]
     assert reply_req.messages[0].text == "數據更新中"

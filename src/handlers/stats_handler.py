@@ -13,7 +13,7 @@ from .base_handler import BaseHandler
 # Required project imports
 from src.config import load_config
 from src.utils.cache_utils import load_league_metadata, is_empty_data, save_league_metadata
-from src.utils.time_utils import get_pacific_date, get_fantasy_week
+from src.utils.time_utils import get_pacific_date, get_fantasy_week, get_target_date
 from src.fetcher import YahooFantasyFetcher
 
 class StatsHandler(BaseHandler):
@@ -107,7 +107,9 @@ class StatsHandler(BaseHandler):
         elif cmd_type == "specific_week":
             target_week = cmd_val
         elif cmd_type == "yesterday":
-            target_dt = today_dt - timedelta(days=1)
+            base_date = get_target_date(is_offseason=is_offseason, end_date=meta.get('end_date'))
+            base_dt = pytz.timezone("US/Pacific").localize(datetime.strptime(base_date, "%Y-%m-%d"))
+            target_dt = base_dt - timedelta(days=1)
             target_date = target_dt.strftime("%Y-%m-%d")
             target_week = date_to_week.get(target_date) or get_fantasy_week(start_date, target_dt)
         elif cmd_type == "last_week":
@@ -115,10 +117,7 @@ class StatsHandler(BaseHandler):
             target_week = max(1, current_week - 1)
         elif cmd_type == "combined":
             # Default #戰績 logic
-            target_date = today_pacific
-            if is_offseason:
-                logging.info(f"[SYSTEM] 休賽季導向: {today_pacific} > {meta['end_date']}")
-                target_date = meta['end_date']
+            target_date = get_target_date(is_offseason=is_offseason, end_date=meta.get('end_date'))
             target_dt = pytz.timezone("US/Pacific").localize(datetime.strptime(target_date, "%Y-%m-%d"))
             target_week = date_to_week.get(target_date) or get_fantasy_week(start_date, target_dt)
             if meta.get('end_week') and target_week > meta['end_week']:
