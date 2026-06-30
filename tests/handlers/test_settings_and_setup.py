@@ -427,16 +427,34 @@ def test_set_league_id_handler_remove_success_preserves_auth():
         current_chat_id.reset(token)
 
 def test_set_league_id_handler_remove_direct_call_without_session_fails():
-    from src.utils.session_manager import clear_session
+    from src.utils.session_manager import clear_remove_league_session
     handler = SetLeagueIdHandler()
     handler.reply_text = MagicMock()
     
     # 確保沒有 remove_league_id 的 session
-    clear_session("user_no_session", "remove_league_id")
+    clear_remove_league_session("user_no_session")
     
     event = MagicMock()
     event.message.text = "#確定移除聯盟ID"
     event.source.user_id = "user_no_session"
+    config = MagicMock()
+    
+    handler.execute(event, config)
+    
+    # 根本不存在應直接無視，不作 any response
+    handler.reply_text.assert_not_called()
+
+def test_set_league_id_handler_remove_expired_session_fails():
+    from src.utils.session_manager import set_remove_league_session
+    handler = SetLeagueIdHandler()
+    handler.reply_text = MagicMock()
+    
+    # 模擬已過期的 session
+    set_remove_league_session("user_expired", duration_sec=-10)
+    
+    event = MagicMock()
+    event.message.text = "#確定移除聯盟ID"
+    event.source.user_id = "user_expired"
     config = MagicMock()
     
     handler.execute(event, config)

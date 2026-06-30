@@ -30,8 +30,8 @@ class SetLeagueIdHandler(BaseHandler):
         
         if user_text == "#移除聯盟ID":
             if user_id:
-                from src.utils.session_manager import set_session
-                set_session(user_id, "remove_league_id", {"active": True}, duration_sec=60)
+                from src.utils.session_manager import set_remove_league_session
+                set_remove_league_session(user_id, duration_sec=60)
             else:
                 self.reply_text(event, configuration, "⚠️ 無法獲取您的 User ID，請重新嘗試。")
                 return
@@ -47,17 +47,21 @@ class SetLeagueIdHandler(BaseHandler):
             return
 
         if user_text == "#確定移除聯盟ID":
-            from src.utils.session_manager import get_session, clear_session
-            session = None
+            from src.utils.session_manager import check_remove_league_session, clear_remove_league_session
+            status = "not_found"
             if user_id:
-                session = get_session(user_id, "remove_league_id")
+                status = check_remove_league_session(user_id)
                 
-            if not session:
+            if status == "not_found":
+                # 若不存在則直接無視（安靜攔截，不作 any response）
+                return
+                
+            if status == "expired":
                 self.reply_text(event, configuration, "⚠️ 移除請求已過期或未發起，請重新輸入 #移除聯盟ID。")
                 return
                 
             if user_id:
-                clear_session(user_id, "remove_league_id")
+                clear_remove_league_session(user_id)
 
             from src.config import current_chat_id
             from src.utils.path_utils import BASE_DIR

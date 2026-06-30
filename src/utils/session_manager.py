@@ -69,3 +69,19 @@ def get_league_id_session(user_id: str) -> any | None:
 
 def clear_league_id_session(user_id: str) -> None:
     clear_session(user_id, "set_league_id")
+
+def set_remove_league_session(user_id: str, duration_sec: int = 60) -> None:
+    set_session(user_id, "remove_league_id", {"active": True}, duration_sec)
+
+def check_remove_league_session(user_id: str) -> str:
+    key = (user_id, "remove_league_id")
+    session = _sessions.get(key)
+    if not session:
+        return "not_found"
+    if time.time() > session["expire_at"]:
+        del _sessions[key]
+        return "expired"
+    return "valid"
+
+def clear_remove_league_session(user_id: str) -> None:
+    clear_session(user_id, "remove_league_id")
