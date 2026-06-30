@@ -35,18 +35,23 @@ class MiscHandler(BaseHandler):
         return bool(self.pattern.match(user_text))
 
     def execute(self, event: MessageEvent, configuration: Configuration) -> None:
-        from src.config import load_config
         config = load_config()
         league_id = config.get("LEAGUE_ID")
         
-        if league_id and str(league_id).startswith("mlb.l."):
-            self.reply_text(event, configuration, "⚠️ 此功能目前僅支援 NBA 聯賽。")
+        if not league_id:
+            # 未綁定聯賽則靜默退出
             return
 
         user_text = event.message.text.strip()
         match = self.pattern.match(user_text)
         if not match:
             return
+
+        # 僅限制 NBA 聯賽的指令
+        if user_text in ("#開季", "#選秀"):
+            if str(league_id).startswith("mlb.l."):
+                self.reply_text(event, configuration, "⚠️ 此功能目前僅支援 NBA 聯賽。")
+                return
 
         meta = load_league_metadata(league_id) or {}
         end_date = meta.get("end_date")
@@ -65,6 +70,10 @@ class MiscHandler(BaseHandler):
         elif user_text == "#獎金":
             self._handle_prize(event, configuration)
         elif user_text.startswith("#") and user_text[1:].lower() in ("幫助", "help"):
+            # 幫助指令也僅限 NBA
+            if str(league_id).startswith("mlb.l."):
+                self.reply_text(event, configuration, "⚠️ 此功能目前僅支援 NBA 聯賽。")
+                return
             self._handle_help(event, configuration)
 
     def _calculate_countdown(self, target_time_str: str) -> str:
@@ -217,42 +226,38 @@ class MiscHandler(BaseHandler):
 
     def _handle_prize(self, event: MessageEvent, configuration: Configuration) -> None:
         config = load_config()
-        prize_image_path = config.get("PRIZE_IMAGE_PATH") or "data/images/bonus.png"
+        league_id = config.get("LEAGUE_ID")
+        if not league_id:
+            return
+            
+        from src.utils.path_utils import parse_league_id, DATA_DIR
+        sport, raw_id = parse_league_id(league_id)
+        image_dir = os.path.join(DATA_DIR, "league", sport, raw_id, "image")
         
-        from src.utils.path_utils import get_league_image_dir
-        league_img_dir = get_league_image_dir()
-        filename = os.path.basename(prize_image_path)
-        img_path = os.path.join(league_img_dir, filename)
-        
-        if not os.path.exists(img_path):
-            if os.path.exists(prize_image_path):
-                img_path = prize_image_path
-            else:
-                project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-                resolved_path = os.path.join(project_root, prize_image_path)
-                if os.path.exists(resolved_path):
-                    img_path = resolved_path
-                else:
-                    default_bonus = os.path.join(project_root, "data", "images", "bonus.png")
-                    if os.path.exists(default_bonus):
-                        img_path = default_bonus
-                    else:
-                        logging.info("Prize image path does not exist anywhere, ignoring")
-                        return
-                        
+        target_file = None
+        if os.path.exists(image_dir):
+            for f in os.listdir(image_dir):
+                base, ext = os.path.splitext(f.lower())
+                if base in ("bouns", "bonus"):
+                    target_file = f
+                    break
+                    
+        if not target_file:
+            self.reply_text(event, configuration, "尚未設置獎金")
+            return
+            
         server_url = config.get("SERVER_URL")
         if not server_url:
-            logging.info("SERVER_URL not configured, ignoring")
+            logging.info("SERVER_URL not configured, ignoring prize command")
             return
             
         server_url = server_url.rstrip("/")
-        
         if server_url.startswith("http://"):
             server_url = server_url.replace("http://", "https://")
         elif not server_url.startswith("https://"):
             server_url = f"https://{server_url}"
             
-        img_url = f"{server_url}/images/{filename}"
+        img_url = f"{server_url}/images/{sport}/{raw_id}/{target_file}"
         
         reply_img = ImageMessage(original_content_url=img_url, preview_image_url=img_url)
         with ApiClient(configuration) as api_client:

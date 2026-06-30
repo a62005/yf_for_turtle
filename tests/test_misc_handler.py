@@ -148,7 +148,7 @@ def test_execute_draft(mock_messaging_api, mock_api_client, mock_load_config, mo
     
     # 2. Offseason, and DRAFT_DATE set -> reply countdown
     mock_get_pacific.return_value = "2026-05-29"
-    mock_load_config.return_value = {"DRAFT_DATE": "2026-10-15 10:00"}
+    mock_load_config.return_value = {"LEAGUE_ID": "nba.l.12345", "DRAFT_DATE": "2026-10-15 10:00"}
     
     with patch.object(handler, "_calculate_countdown", return_value="135 天 7 小時 0 分鐘") as mock_calc:
         handler.execute(mock_event, mock_config)
@@ -171,37 +171,35 @@ def test_execute_draft(mock_messaging_api, mock_api_client, mock_load_config, mo
 def test_execute_prize(mock_messaging_api, mock_api_client, mock_load_config, mock_get_pacific, mock_load_meta, mock_event, mock_config):
     handler = MiscHandler()
     mock_event.message.text = "#獎金"
-    
-    mock_load_meta.return_value = {"end_date": "2026-04-12"}
     mock_get_pacific.return_value = "2026-05-29"
+    mock_load_meta.return_value = {"end_date": "2026-04-12"}
     
-    # 1. Missing PRIZE_IMAGE_PATH or SERVER_URL -> silently ignore
-    with patch("os.path.exists", return_value=False):
-        mock_load_config.return_value = {"PRIZE_IMAGE_PATH": None, "SERVER_URL": "http://localhost:5000"}
-        handler.execute(mock_event, mock_config)
-        mock_api_client.assert_not_called()
+    # 情境 1: 沒有綁定 league_id -> 靜默 return
+    mock_load_config.return_value = {"LEAGUE_ID": None, "SERVER_URL": "http://localhost:5000"}
+    handler.execute(mock_event, mock_config)
+    mock_api_client.assert_not_called()
     
-    # Reset mock for the next case
+    # 情境 2: 已綁定，但找不到獎金圖片 -> 回覆 "尚未設置獎金"
     mock_api_client.reset_mock()
-    
-    # 2. Path not existing -> silently ignore
-    with patch("os.path.exists", return_value=False):
-        mock_load_config.return_value = {"PRIZE_IMAGE_PATH": "non_existent.png", "SERVER_URL": "http://localhost:5000"}
+    mock_load_config.return_value = {"LEAGUE_ID": "mlb.l.62358", "SERVER_URL": "http://localhost:5000"}
+    with patch("src.utils.path_utils.parse_league_id", return_value=("mlb", "62358")), \
+         patch("os.path.exists", return_value=True), \
+         patch("os.listdir", return_value=[]):  # 目錄為空
         handler.execute(mock_event, mock_config)
-        mock_api_client.assert_not_called()
-    
-    # Reset mock for the next case
+        
+        reply_req = mock_messaging_api.return_value.reply_message.call_args[0][0]
+        assert reply_req.messages[0].text == "尚未設置獎金"
+        
+    # 情境 3: 已綁定，且有獎金圖片 (如 bouns.png) -> 回覆 ImageMessage
     mock_api_client.reset_mock()
-    
-    # 3. Path exists -> Reply ImageMessage
-    with patch("os.path.exists", return_value=True):
-        mock_load_config.return_value = {"PRIZE_IMAGE_PATH": "data/images/bonus.png", "SERVER_URL": "http://localhost:5000"}
+    with patch("src.utils.path_utils.parse_league_id", return_value=("mlb", "62358")), \
+         patch("os.path.exists", return_value=True), \
+         patch("os.listdir", return_value=["bouns.png"]):
         handler.execute(mock_event, mock_config)
         
         reply_req = mock_messaging_api.return_value.reply_message.call_args[0][0]
         assert isinstance(reply_req.messages[0], ImageMessage)
-        assert reply_req.messages[0].original_content_url == "https://localhost:5000/images/bonus.png"
-        assert reply_req.messages[0].preview_image_url == "https://localhost:5000/images/bonus.png"
+        assert reply_req.messages[0].original_content_url == "https://localhost:5000/images/mlb/62358/bouns.png"
 
 @patch("src.handlers.misc_handler.load_league_metadata")
 @patch("src.handlers.misc_handler.get_pacific_date")
