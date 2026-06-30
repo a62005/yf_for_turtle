@@ -20,6 +20,8 @@ def sync_season_metadata(fetcher: YahooFantasyFetcher, league_id: str):
         meta = fetcher.fetch_league_metadata(league_id)
     except Exception as e:
         logging.error(f"[SYSTEM] 取得賽季基礎資料時發生異常: {e}")
+        if not (isinstance(old_meta, dict) and old_meta.get("end_week") and old_meta.get("start_date")):
+            raise e
         meta = {}
     
     if not meta.get("end_week") or not meta.get("start_date"):
@@ -86,4 +88,13 @@ def sync_season_metadata(fetcher: YahooFantasyFetcher, league_id: str):
     meta["week_dates"] = week_dates
     meta["date_to_week"] = date_to_week
     
+    # 同步聯賽設定並寫入 stat_categories
+    try:
+        stats = fetcher.sync_league_settings(league_id)
+        meta["stat_categories"] = stats
+    except Exception as e:
+        logging.error(f"[SYSTEM] 同步聯賽設定失敗: {e}")
+        
+    meta["sport"] = league_id.split(".")[0]
     save_league_metadata(meta, league_id)
+

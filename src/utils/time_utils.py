@@ -153,3 +153,18 @@ def check_nba_game_status(date_str: str) -> tuple[bool, str] | None:
         logging.warning(f"ESPN Scoreboard API 請求或解析失敗: {e}，將降級採用靜態時間阻擋規則。")
         return None
 
+
+def is_game_day(sport: str = "nba", is_offseason: bool = False, target_date: str = None) -> tuple[bool, str]:
+    if sport != "nba":
+        return True, ""
+    return is_stats_query_allowed(is_offseason=is_offseason, target_date=target_date)
+
+
+def check_game_day(date_str: str = None, sport: str = "nba") -> tuple[bool, str] | None:
+    if sport != "nba":
+        return True, ""
+    if date_str is None:
+        date_str = get_target_date()
+    return check_nba_game_status(date_str)
+
+

@@ -40,7 +40,8 @@ class SetNicknameHandler(BaseHandler):
                 from src.fetcher import YahooFantasyFetcher
                 fetcher = YahooFantasyFetcher(
                     client_id=config.get("YAHOO_CLIENT_ID"),
-                    client_secret=config.get("YAHOO_CLIENT_SECRET")
+                    client_secret=config.get("YAHOO_CLIENT_SECRET"),
+                    league_id=league_id
                 )
                 league = yahoofantasy.League(fetcher.ctx, fetcher._normalize_league_id(league_id))
                 for team in league.teams():

@@ -32,15 +32,43 @@ class MiscHandler(BaseHandler):
 
     def can_handle(self, user_text: str) -> bool:
         user_text = user_text.strip()
+        if user_text.startswith("#傷兵"):
+            config = load_config()
+            league_id = config.get("LEAGUE_ID")
+            if league_id and str(league_id).startswith("mlb.l."):
+                return True
+            return False
         return bool(self.pattern.match(user_text))
 
     def execute(self, event: MessageEvent, configuration: Configuration) -> None:
+        league_id = None
+        if configuration:
+            if hasattr(configuration, "get"):
+                league_id = configuration.get("LEAGUE_ID")
+            else:
+                league_id = getattr(configuration, "LEAGUE_ID", None)
+        
+        if not league_id:
+            config = load_config()
+            league_id = config.get("LEAGUE_ID")
+            
+        if not league_id:
+            # 未綁定聯賽則靜默退出
+            return
+
         user_text = event.message.text.strip()
+
+        # 僅限制 NBA 聯賽的指令
+        if user_text == "#開季" or user_text.startswith("#傷兵"):
+            if str(league_id).startswith("mlb.l."):
+                self.reply_text(event, configuration, "⚠️ 此功能目前僅支援 NBA 聯賽。")
+                return
+
         match = self.pattern.match(user_text)
         if not match:
             return
 
-        meta = load_league_metadata() or {}
+        meta = load_league_metadata(league_id) or {}
         end_date = meta.get("end_date")
         today_pacific = get_pacific_date()
         is_offseason = bool(end_date and today_pacific > end_date)
@@ -83,6 +111,7 @@ class MiscHandler(BaseHandler):
 
     def _handle_season_start(self, event: MessageEvent, configuration: Configuration) -> None:
         config = load_config()
+        league_id = config.get("LEAGUE_ID")
         today_pacific = get_pacific_date()
         target_time_str = None
         
@@ -94,7 +123,7 @@ class MiscHandler(BaseHandler):
         # b. 若無，則退回讀取 metadata.json 中的 next_season_start_date 或 start_date
         meta = None
         if not target_time_str:
-            meta = load_league_metadata() or {}
+            meta = load_league_metadata(league_id) or {}
             if "next_season_start_date" in meta:
                 target_time_str = meta["next_season_start_date"]
             else:
@@ -208,42 +237,46 @@ class MiscHandler(BaseHandler):
 
     def _handle_prize(self, event: MessageEvent, configuration: Configuration) -> None:
         config = load_config()
-        prize_image_path = config.get("PRIZE_IMAGE_PATH") or "data/images/bonus.png"
+        league_id = config.get("LEAGUE_ID")
+        if not league_id:
+            return
+            
+        from src.utils.path_utils import parse_league_id, DATA_DIR
+        sport, raw_id = parse_league_id(league_id)
+        image_dir = os.path.join(DATA_DIR, "league", sport, raw_id, "image")
         
-        from src.utils.path_utils import get_league_image_dir
-        league_img_dir = get_league_image_dir()
-        filename = os.path.basename(prize_image_path)
-        img_path = os.path.join(league_img_dir, filename)
-        
-        if not os.path.exists(img_path):
-            if os.path.exists(prize_image_path):
-                img_path = prize_image_path
-            else:
-                project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-                resolved_path = os.path.join(project_root, prize_image_path)
-                if os.path.exists(resolved_path):
-                    img_path = resolved_path
-                else:
-                    default_bonus = os.path.join(project_root, "data", "images", "bonus.png")
-                    if os.path.exists(default_bonus):
-                        img_path = default_bonus
-                    else:
-                        logging.info("Prize image path does not exist anywhere, ignoring")
-                        return
-                        
+        target_file = None
+        if os.path.exists(image_dir):
+            candidates = []
+            for f in os.listdir(image_dir):
+                name = f.lower()
+                if name.startswith("bonus") or name.startswith("bouns"):
+                    file_path = os.path.join(image_dir, f)
+                    try:
+                        mtime = os.path.getmtime(file_path)
+                        candidates.append((f, mtime))
+                    except OSError:
+                        pass
+            if candidates:
+                candidates.sort(key=lambda x: x[1], reverse=True)
+                target_file = candidates[0][0]
+                    
+        if not target_file:
+            self.reply_text(event, configuration, "尚未設置獎金")
+            return
+            
         server_url = config.get("SERVER_URL")
         if not server_url:
-            logging.info("SERVER_URL not configured, ignoring")
+            logging.info("SERVER_URL not configured, ignoring prize command")
             return
             
         server_url = server_url.rstrip("/")
-        
         if server_url.startswith("http://"):
             server_url = server_url.replace("http://", "https://")
         elif not server_url.startswith("https://"):
             server_url = f"https://{server_url}"
             
-        img_url = f"{server_url}/images/{filename}"
+        img_url = f"{server_url}/images/{sport}/{raw_id}/{target_file}"
         
         reply_img = ImageMessage(original_content_url=img_url, preview_image_url=img_url)
         with ApiClient(configuration) as api_client:
@@ -290,3 +323,7 @@ class MiscHandler(BaseHandler):
                     messages=[TextMessage(text=text)]
                 )
             )
+
+
+SeasonCountdownHandler = MiscHandler
+

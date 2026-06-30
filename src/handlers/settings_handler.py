@@ -28,7 +28,7 @@ class SettingsHandler(BaseHandler):
             # 判斷是否為休賽季
             from src.utils.cache_utils import load_league_metadata
             from src.utils.time_utils import get_pacific_date
-            meta = load_league_metadata() or {}
+            meta = load_league_metadata(league_id) or {}
             end_date = meta.get("end_date")
             today_pacific = get_pacific_date()
             is_offseason = bool(end_date and today_pacific > end_date)
@@ -39,9 +39,10 @@ class SettingsHandler(BaseHandler):
             buttons = [
                 (draft_button_label, draft_button_action),
                 ("設置玩家暱稱", "#設置玩家暱稱"),
+                ("設置獎金", "#設置獎金"),
                 (None, None),
                 ("更換聯盟ID (即將推出)", ""),
-                ("移除聯盟ID (即將推出)", "")
+                ("移除聯盟ID", "#移除聯盟ID")
             ]
             
         flex_dict = build_button_menu_card(title, subtitle, buttons)

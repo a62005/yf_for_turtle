@@ -15,6 +15,48 @@ class BaseHandler(ABC):
         self.requires_whitelist: bool = False
         self.exclude_from_llm: bool = False
         
+        # 動態包裝子類別的 execute 方法以統一處理 LeaguePermissionError
+        original_execute = self.execute
+        def wrapped_execute(event, configuration):
+            try:
+                original_execute(event, configuration)
+            except Exception as e:
+                from src.fetcher import LeaguePermissionError
+                if isinstance(e, LeaguePermissionError) or e.__class__.__name__ == "LeaguePermissionError":
+                    from src.config import current_chat_id, load_config
+                    cfg = load_config()
+                    client_id = ""
+                    server_url = ""
+                    # 1. 優先從傳入的 configuration (若為 dict) 獲取
+                    if isinstance(configuration, dict):
+                        client_id = configuration.get("YAHOO_CLIENT_ID")
+                        server_url = configuration.get("SERVER_URL")
+                    # 2. 若無則從 load_config() 獲取
+                    if not client_id or not server_url:
+                        client_id = client_id or cfg.get("YAHOO_CLIENT_ID") or ""
+                        server_url = server_url or cfg.get("SERVER_URL") or ""
+                        
+                    chat_id = current_chat_id.get() or ""
+                    redirect_uri = f"{server_url.rstrip('/')}/oauth/callback"
+                    
+                    auth_url = (
+                        "https://api.login.yahoo.com/oauth2/request_auth"
+                        f"?client_id={client_id}"
+                        f"&redirect_uri={redirect_uri}"
+                        f"&response_type=code"
+                        f"&state={chat_id}"
+                    )
+                    
+                    msg = (
+                        "⚠️ 機器人 Yahoo 帳號目前無權限存取此聯盟。\n"
+                        "請聯絡白名單成員點擊以下連結進行 Yahoo 帳號授權以啟用此聯賽：\n"
+                        f"👉 {auth_url}"
+                    )
+                    self.reply_text(event, configuration, msg)
+                else:
+                    raise
+        self.execute = wrapped_execute
+        
     @abstractmethod
     def can_handle(self, user_text: str) -> bool:
         """Return True if this handler can process the given text."""

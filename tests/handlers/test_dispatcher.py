@@ -42,3 +42,17 @@ def test_dispatcher_ignores_if_no_handler():
     # Should not raise exception
     dispatcher.handle(mock_event, Mock())
     assert not handler1.executed
+
+def test_dispatcher_get_handler():
+    dispatcher = CommandDispatcher()
+    handler = MockHandler(True)
+    dispatcher.register(handler)
+    
+    assert dispatcher.get_handler(MockHandler) is handler
+    
+    class UnregisteredHandler(BaseHandler):
+        def can_handle(self, user_text): return False
+        def execute(self, event, configuration): pass
+        
+    assert dispatcher.get_handler(UnregisteredHandler) is None
+

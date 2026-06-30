@@ -35,6 +35,31 @@ def test_settings_handler_execute_offseason():
         draft_time_btn = [btn for btn in buttons_box["contents"] if btn["type"] == "button" and btn["action"]["label"] == "設置選秀時間"][0]
         assert draft_time_btn["action"]["text"] == "#設置選秀時間"
 
+        # 驗證「設置獎金」按鈕存在，且位置在「設置玩家暱稱」之下，分隔線之上
+        btn_labels = [btn["action"]["label"] for btn in buttons_box["contents"] if btn["type"] == "button"]
+        assert "設置獎金" in btn_labels
+        
+        contents = buttons_box["contents"]
+        idx_nickname = -1
+        idx_prize = -1
+        idx_separator = -1
+        
+        for idx, item in enumerate(contents):
+            if item.get("type") == "button":
+                label = item["action"].get("label")
+                if label == "設置玩家暱稱":
+                    idx_nickname = idx
+                elif label == "設置獎金":
+                    idx_prize = idx
+            elif item.get("type") == "separator":
+                idx_separator = idx
+                
+        assert idx_nickname != -1
+        assert idx_prize != -1
+        assert idx_separator != -1
+        assert idx_nickname < idx_prize < idx_separator
+
+
 def test_settings_handler_execute_inseason():
     handler = SettingsHandler()
     handler.reply_flex = MagicMock()
@@ -59,6 +84,25 @@ def test_settings_handler_execute_inseason():
         draft_time_btn = [btn for btn in buttons_box["contents"] if btn["type"] == "button" and btn["action"]["label"] == "設置選秀時間 (限休賽季)"][0]
         assert draft_time_btn["action"]["type"] == "postback"
         assert draft_time_btn["action"]["data"] == "action=ignore"
+
+
+def test_settings_handler_contains_remove_league_button():
+    handler = SettingsHandler()
+    handler.reply_flex = MagicMock()
+    event = MagicMock()
+    config = MagicMock()
+
+    with patch("src.handlers.settings_handler.load_config", return_value={"LEAGUE_ID": "12345"}), \
+         patch("src.utils.cache_utils.load_league_metadata", return_value={"end_date": "2026-04-12"}), \
+         patch("src.utils.time_utils.get_pacific_date", return_value="2026-04-10"):
+        handler.execute(event, config)
+        handler.reply_flex.assert_called_once()
+        args = handler.reply_flex.call_args[0]
+        flex_card = args[3]
+        buttons_box = flex_card["body"]["contents"][1]
+        remove_btn = [btn for btn in buttons_box["contents"] if btn["type"] == "button" and (btn["action"]["label"] == "移除聯盟ID (即將推出)" or btn["action"]["label"] == "移除聯盟ID")][0]
+        assert remove_btn["action"]["text"] == "#移除聯盟ID"
+
 
 
 
