@@ -47,19 +47,25 @@ class SetPrizeHandler(BaseHandler):
             image_dir = os.path.join(DATA_DIR, "league", sport, raw_id, "image")
             os.makedirs(image_dir, exist_ok=True)
 
-            # 清除舊的獎金圖檔（避免多個舊副檔名干擾）
+            # 使用時間戳記生成唯一檔名以防 Windows 檔案鎖定導致寫入失敗
+            import time
+            timestamp = int(time.time())
+            target_path = os.path.join(image_dir, f"bonus_{timestamp}.jpg")
+            
+            with open(target_path, "wb") as f:
+                f.write(image_bytes)
+
+            # 寫入成功後，在背景嘗試刪除其他舊的獎金圖檔（刪除失敗也不會影響本次上傳的成功）
             if os.path.exists(image_dir):
                 for f in os.listdir(image_dir):
-                    base, ext = os.path.splitext(f.lower())
-                    if base in ("bouns", "bonus"):
+                    if f == f"bonus_{timestamp}.jpg":
+                        continue
+                    name = f.lower()
+                    if name.startswith("bonus") or name.startswith("bouns"):
                         try:
                             os.remove(os.path.join(image_dir, f))
                         except Exception as e:
-                            logging.warning(f"Failed to remove old prize file {f}: {e}")
-
-            target_path = os.path.join(image_dir, "bonus.jpg")
-            with open(target_path, "wb") as f:
-                f.write(image_bytes)
+                            logging.warning(f"Failed to remove old prize file {f} due to Windows file lock: {e}")
 
             clear_prize_session(user_id)
             self.reply_text(event, configuration, "✅ 成功設定獎金圖片！")

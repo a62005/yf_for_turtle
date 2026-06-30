@@ -58,8 +58,10 @@ def test_set_prize_handler_handle_image():
             assert not os.path.exists(os.path.join(test_dir, "bouns.png"))
             assert not os.path.exists(os.path.join(test_dir, "bonus.png"))
             
-            new_file_path = os.path.join(test_dir, "bonus.jpg")
-            assert os.path.exists(new_file_path)
+            # 尋找新產生的時間戳記檔案並驗證內容
+            files = [f for f in os.listdir(test_dir) if f.startswith("bonus_") and f.endswith(".jpg")]
+            assert len(files) == 1
+            new_file_path = os.path.join(test_dir, files[0])
             with open(new_file_path, "rb") as f:
                 assert f.read() == b"fake_image_bytes"
                 

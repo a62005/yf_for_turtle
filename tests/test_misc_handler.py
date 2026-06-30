@@ -194,6 +194,7 @@ def test_execute_prize(mock_messaging_api, mock_api_client, mock_load_config, mo
     mock_api_client.reset_mock()
     with patch("src.utils.path_utils.parse_league_id", return_value=("mlb", "62358")), \
          patch("os.path.exists", return_value=True), \
+         patch("os.path.getmtime", return_value=12345.0), \
          patch("os.listdir", return_value=["bouns.png"]):
         handler.execute(mock_event, mock_config)
         

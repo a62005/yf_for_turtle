@@ -247,11 +247,19 @@ class MiscHandler(BaseHandler):
         
         target_file = None
         if os.path.exists(image_dir):
+            candidates = []
             for f in os.listdir(image_dir):
-                base, ext = os.path.splitext(f.lower())
-                if base in ("bouns", "bonus"):
-                    target_file = f
-                    break
+                name = f.lower()
+                if name.startswith("bonus") or name.startswith("bouns"):
+                    file_path = os.path.join(image_dir, f)
+                    try:
+                        mtime = os.path.getmtime(file_path)
+                        candidates.append((f, mtime))
+                    except OSError:
+                        pass
+            if candidates:
+                candidates.sort(key=lambda x: x[1], reverse=True)
+                target_file = candidates[0][0]
                     
         if not target_file:
             self.reply_text(event, configuration, "尚未設置獎金")
