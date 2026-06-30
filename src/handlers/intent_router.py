@@ -52,7 +52,12 @@ class IntentRouter:
         # 3. 活動中 Session 優先（在群組也不需要被 @提及）
         user_id = getattr(event.source, "user_id", None)
         if user_id:
-            if get_nickname_session(user_id) or get_draft_time_session(user_id):
+            from src.utils.session_manager import get_prize_session
+            try:
+                from src.utils.session_manager import get_league_id_session
+            except ImportError:
+                get_league_id_session = lambda uid: None
+            if get_nickname_session(user_id) or get_draft_time_session(user_id) or get_league_id_session(user_id) or get_prize_session(user_id):
                 return True
 
         # 4. 群聊中必須被提及 (@提及)
@@ -109,6 +114,19 @@ class IntentRouter:
                     self._update_team_nickname(team_id, user_text)
                     clear_nickname_session(user_id)
                     self.reply_text(event, configuration, f"✅ 成功將暱稱修改為：{user_text}")
+                    return
+
+            # 4. 攔截獎金設定會話中的文字輸入
+            from src.utils.session_manager import get_prize_session, clear_prize_session
+            prize_session = get_prize_session(user_id)
+            if prize_session:
+                if user_text.startswith("#"):
+                    clear_prize_session(user_id)
+                    if user_text == "#":
+                        self.reply_text(event, configuration, "已取消設定。")
+                        return
+                else:
+                    self.reply_text(event, configuration, "⚠️ 設置獎金模式中，請傳送獎金圖片，或輸入 # 取消設定。")
                     return
         
         # 1. 優先處理標準指令
@@ -264,3 +282,25 @@ class IntentRouter:
         except Exception as e:
             import logging
             logging.error(f"[IntentRouter] 寫入設定檔 settings.json 失敗: {e}")
+
+    def route_image(self, event: MessageEvent, configuration: Configuration) -> None:
+        """路由圖片訊息事件"""
+        user_id = getattr(event.source, "user_id", None)
+        if not user_id:
+            return
+
+        from src.utils.session_manager import get_prize_session
+        if get_prize_session(user_id):
+            from src.handlers.set_prize_handler import SetPrizeHandler
+            handler = self.dispatcher.get_handler(SetPrizeHandler)
+            if handler:
+                try:
+                    from linebot.v3.messaging import MessagingApiBlob
+                    with ApiClient(configuration) as api_client:
+                        blob_api = MessagingApiBlob(api_client)
+                        image_bytes = blob_api.get_message_content(event.message.id)
+                    
+                    handler.handle_image(event, configuration, image_bytes)
+                except Exception as e:
+                    logging.error(f"[IntentRouter] 下載圖片或處理失敗: {e}")
+                    self.reply_text(event, configuration, "⚠️ 圖片下載或儲存失敗，請稍後重試。")

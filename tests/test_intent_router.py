@@ -330,3 +330,67 @@ def test_intent_router_intercept_draft_session_failure():
         args, kwargs = mock_reply.call_args
         assert "無法解析" in args[2] or "格式" in args[2] or "請重新輸入" in args[2]
 
+
+def test_intent_router_prize_session_text_interception():
+    from src.handlers.dispatcher import CommandDispatcher
+    from src.handlers.intent_router import IntentRouter
+    from src.utils.session_manager import set_prize_session, get_prize_session
+    
+    dispatcher = CommandDispatcher()
+    router = IntentRouter(dispatcher)
+    
+    event = MagicMock()
+    event.source.user_id = "user_prize_text"
+    event.source.type = "user"
+    event.message.text = "普通文字訊息"
+    config = MagicMock()
+    
+    set_prize_session("user_prize_text", duration_sec=60)
+    
+    with patch.object(router, "reply_text") as mock_reply:
+        router.route(event, config)
+        assert get_prize_session("user_prize_text") is not None
+        mock_reply.assert_called_once_with(
+            event, config, "⚠️ 設置獎金模式中，請傳送獎金圖片，或輸入 # 取消設定。"
+        )
+        
+    event.message.text = "#"
+    with patch.object(router, "reply_text") as mock_reply:
+        router.route(event, config)
+        assert get_prize_session("user_prize_text") is None
+        mock_reply.assert_called_once_with(event, config, "已取消設定。")
+
+def test_intent_router_route_image():
+    from src.handlers.dispatcher import CommandDispatcher
+    from src.handlers.intent_router import IntentRouter
+    from src.utils.session_manager import set_prize_session, clear_prize_session
+    from src.handlers.set_prize_handler import SetPrizeHandler
+    
+    dispatcher = CommandDispatcher()
+    mock_handler = MagicMock(spec=SetPrizeHandler)
+    dispatcher.register(mock_handler)
+    
+    router = IntentRouter(dispatcher)
+    
+    event = MagicMock()
+    event.source.user_id = "user_prize_image"
+    event.message.id = "image_msg_123"
+    config = MagicMock()
+    
+    set_prize_session("user_prize_image", duration_sec=60)
+    
+    with patch("src.handlers.intent_router.ApiClient"), \
+         patch("linebot.v3.messaging.MessagingApiBlob") as mock_blob_class:
+        
+        mock_blob = MagicMock()
+        mock_blob.get_message_content.return_value = b"image_data"
+        mock_blob_class.return_value = mock_blob
+        
+        router.route_image(event, config)
+        
+        mock_blob.get_message_content.assert_called_once_with("image_msg_123")
+        mock_handler.handle_image.assert_called_once_with(event, config, b"image_data")
+        
+    clear_prize_session("user_prize_image")
+
+
