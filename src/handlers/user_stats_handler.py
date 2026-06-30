@@ -11,6 +11,7 @@ from src.utils.cache_utils import load_league_metadata
 from src.fetcher import YahooFantasyFetcher
 from src.utils.time_utils import get_fantasy_week
 from src.visualizer.flex_builder import build_stats_list_card
+from src.visualizer.processor import is_mlb_pitcher_stat
 
 class UserStatsHandler(BaseHandler):
     def __init__(self):
@@ -99,12 +100,13 @@ class UserStatsHandler(BaseHandler):
             except (ValueError, TypeError):
                 return str(val)
 
-        def build_stat_rows(stats):
+        def build_stat_rows(stats, categories_to_use=None):
             rows = []
-            if stat_categories:
+            cats = categories_to_use if categories_to_use is not None else stat_categories
+            if cats:
                 # Dynamic MLB/NBA path: use stat_categories from metadata
                 DISPLAY_ALIASES = {"FGM/FGA": "FGM/A", "FTM/FTA": "FTM/A", "3PTM": "3PM"}
-                for cat in stat_categories:
+                for cat in cats:
                     disp = cat["display_name"]
                     label = DISPLAY_ALIASES.get(disp, disp)
                     val = stats.get(disp)
@@ -132,19 +134,57 @@ class UserStatsHandler(BaseHandler):
                 ]
             return rows
 
-        daily_rows = build_stat_rows(daily_stats)
-        weekly_rows = build_stat_rows(weekly_stats)
+        has_mlb_split = False
+        hitter_cats = []
+        pitcher_cats = []
+        if stat_categories:
+            for cat in stat_categories:
+                stat_id = cat.get("stat_id", "")
+                disp = cat.get("display_name", "")
+                if is_mlb_pitcher_stat(stat_id, disp):
+                    pitcher_cats.append(cat)
+                else:
+                    hitter_cats.append(cat)
+            if hitter_cats and pitcher_cats:
+                has_mlb_split = True
 
-        sections = [
-            {
-                "header": date_str,
-                "rows": daily_rows
-            },
-            {
-                "header": f"W{week_str}",
-                "rows": weekly_rows
-            }
-        ]
+        if has_mlb_split:
+            daily_hitter_rows = build_stat_rows(daily_stats, hitter_cats)
+            daily_pitcher_rows = build_stat_rows(daily_stats, pitcher_cats)
+            weekly_hitter_rows = build_stat_rows(weekly_stats, hitter_cats)
+            weekly_pitcher_rows = build_stat_rows(weekly_stats, pitcher_cats)
+            
+            sections = [
+                {
+                    "header": f"{date_str} (Hitter)",
+                    "rows": daily_hitter_rows
+                },
+                {
+                    "header": f"{date_str} (Pitcher)",
+                    "rows": daily_pitcher_rows
+                },
+                {
+                    "header": f"W{week_str} (Hitter)",
+                    "rows": weekly_hitter_rows
+                },
+                {
+                    "header": f"W{week_str} (Pitcher)",
+                    "rows": weekly_pitcher_rows
+                }
+            ]
+        else:
+            daily_rows = build_stat_rows(daily_stats)
+            weekly_rows = build_stat_rows(weekly_stats)
+            sections = [
+                {
+                    "header": date_str,
+                    "rows": daily_rows
+                },
+                {
+                    "header": f"W{week_str}",
+                    "rows": weekly_rows
+                }
+            ]
 
         return build_stats_list_card(
             title=player_info["manager_name"],
