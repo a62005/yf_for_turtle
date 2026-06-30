@@ -17,12 +17,28 @@ class SetLeagueIdHandler(BaseHandler):
         self.exclude_from_llm = True
         
     def can_handle(self, user_text: str) -> bool:
-        return user_text.strip().startswith("#設置聯盟ID")
+        text = user_text.strip()
+        return (
+            text.startswith("#設置聯盟ID") or 
+            text == "#移除聯盟ID" or 
+            text == "#確定移除聯盟ID"
+        )
         
     def execute(self, event: MessageEvent, configuration: Configuration) -> None:
         user_text = event.message.text.strip()
         user_id = getattr(event.source, "user_id", None)
         
+        if user_text == "#移除聯盟ID":
+            from src.visualizer.flex_builder import build_button_menu_card
+            title = "確定要移除聯盟綁定嗎？"
+            buttons = [
+                ("確定移除", "#確定移除聯盟ID"),
+                ("取消", "")
+            ]
+            flex_dict = build_button_menu_card(title, None, buttons)
+            self.reply_flex(event, configuration, "確認移除聯盟綁定", flex_dict)
+            return
+
         # 1. 收到無參數 #設置聯盟ID 時，發送包含 NBA 籃球與 MLB 棒球按鈕的 Flex Message
         if user_text == "#設置聯盟ID":
             from src.visualizer.flex_builder import build_button_menu_card

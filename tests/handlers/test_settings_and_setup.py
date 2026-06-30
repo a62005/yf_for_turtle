@@ -217,5 +217,35 @@ def test_set_league_id_handler_permission_denied_pre_saves_mapping(mocker):
         current_chat_id.reset(token)
 
 
+def test_set_league_id_handler_shows_remove_confirm_card():
+    from src.config import current_chat_id
+    handler = SetLeagueIdHandler()
+    handler.reply_flex = MagicMock()
+    event = MagicMock()
+    event.message.text = "#移除聯盟ID"
+    config = MagicMock()
+
+    token = current_chat_id.set("group_test_confirm")
+    try:
+        handler.execute(event, config)
+        handler.reply_flex.assert_called_once()
+        args = handler.reply_flex.call_args[0]
+        title = args[2]
+        flex_card = args[3]
+        
+        assert "請選擇" in title or "確認" in title
+        # 檢查選單內有「確定移除」與「取消」按鈕
+        buttons_box = flex_card["body"]["contents"][1]
+        btn_labels = [btn["action"]["label"] for btn in buttons_box["contents"] if btn["type"] == "button"]
+        assert "確定移除" in btn_labels
+        assert "取消" in btn_labels
+        
+        confirm_btn = [btn for btn in buttons_box["contents"] if btn["type"] == "button" and btn["action"]["label"] == "確定移除"][0]
+        assert confirm_btn["action"]["text"] == "#確定移除聯盟ID"
+    finally:
+        current_chat_id.reset(token)
+
+
+
 
 
