@@ -158,14 +158,23 @@ def handle_message(event):
 
 @handler.add(MessageEvent, message=ImageMessageContent)
 def handle_image_message(event):
+    chat_id = None
     user_id = None
     if hasattr(event, "source") and event.source:
+        source_type = getattr(event.source, "type", None)
+        if source_type == "group":
+            chat_id = getattr(event.source, "group_id", None)
+        elif source_type == "room":
+            chat_id = getattr(event.source, "room_id", None)
+        elif source_type == "user":
+            chat_id = getattr(event.source, "user_id", None)
+        
         user_id = getattr(event.source, "user_id", None)
             
-    if not user_id:
+    if not chat_id or not user_id:
         return
         
-    token = current_chat_id.set(user_id)
+    token = current_chat_id.set(chat_id)
     try:
         if is_token_processed(event.reply_token):
             return
