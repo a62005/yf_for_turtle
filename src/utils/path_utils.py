@@ -29,3 +29,13 @@ def get_league_daily_dir(league_id: str = None) -> str:
 
 def get_league_weekly_dir(league_id: str = None) -> str:
     return os.path.join(get_league_dir(league_id), "weekly")
+
+DATA_DIR = os.path.join(BASE_DIR, "data")
+
+def parse_league_id(league_id: str) -> tuple[str, str]:
+    """將聯賽 ID 拆分為 (sport, raw_id)，例如 'nba_12345' -> ('nba', '12345')"""
+    if "_" in league_id:
+        parts = league_id.split("_", 1)
+        return parts[0], parts[1]
+    return "nba", league_id
+
