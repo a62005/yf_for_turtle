@@ -35,9 +35,17 @@ class MiscHandler(BaseHandler):
         return bool(self.pattern.match(user_text))
 
     def execute(self, event: MessageEvent, configuration: Configuration) -> None:
-        config = load_config()
-        league_id = config.get("LEAGUE_ID")
+        league_id = None
+        if configuration:
+            if hasattr(configuration, "get"):
+                league_id = configuration.get("LEAGUE_ID")
+            else:
+                league_id = getattr(configuration, "LEAGUE_ID", None)
         
+        if not league_id:
+            config = load_config()
+            league_id = config.get("LEAGUE_ID")
+            
         if not league_id:
             # 未綁定聯賽則靜默退出
             return
@@ -48,7 +56,7 @@ class MiscHandler(BaseHandler):
             return
 
         # 僅限制 NBA 聯賽的指令
-        if user_text in ("#開季", "#選秀"):
+        if user_text == "#開季":
             if str(league_id).startswith("mlb.l."):
                 self.reply_text(event, configuration, "⚠️ 此功能目前僅支援 NBA 聯賽。")
                 return
@@ -70,10 +78,6 @@ class MiscHandler(BaseHandler):
         elif user_text == "#獎金":
             self._handle_prize(event, configuration)
         elif user_text.startswith("#") and user_text[1:].lower() in ("幫助", "help"):
-            # 幫助指令也僅限 NBA
-            if str(league_id).startswith("mlb.l."):
-                self.reply_text(event, configuration, "⚠️ 此功能目前僅支援 NBA 聯賽。")
-                return
             self._handle_help(event, configuration)
 
     def _calculate_countdown(self, target_time_str: str) -> str:
@@ -279,8 +283,15 @@ class MiscHandler(BaseHandler):
             "※ 提示：輸入「#幫助」可獲取完整的指令複製清單。"
         )
         
+        config = load_config()
+        league_id = config.get("LEAGUE_ID")
+        from src.utils.path_utils import parse_league_id
+        sport, _ = parse_league_id(league_id)
+        
         project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        help_file_path = os.path.join(project_root, "data", "help.txt")
+        help_file_path = os.path.join(project_root, "data", f"help_{sport}.txt")
+        if not os.path.exists(help_file_path):
+            help_file_path = os.path.join(project_root, "data", "help.txt")
         
         reply_content = default_help
         try:
@@ -289,6 +300,15 @@ class MiscHandler(BaseHandler):
                     content = f.read().strip()
                     if content:
                         reply_content = content
+                        # If we fallback to help.txt but it is mlb, perform text replacement
+                        if "help_mlb.txt" not in help_file_path.replace("\\", "/") and sport == "mlb":
+                            reply_content = reply_content.replace("Fantasy NBA", "Fantasy MLB")
+                            reply_content = reply_content.replace("NBA 數據小助手", "MLB 數據小助手")
+                            reply_content = reply_content.replace("NBA 球員", "MLB 球員")
+                            reply_content = reply_content.replace("NBA 球星", "MLB 球星")
+                            reply_content = reply_content.replace("NBA 新賽季", "MLB 新賽季")
+                            reply_content = reply_content.replace("老詹、#球員 咖哩、#球員 士官長", "大谷、#球員 法官、#球員 阿庫尼亞")
+                            reply_content = reply_content.replace("NBA", "MLB")
             else:
                 logging.warning(f"Help file not found at {help_file_path}, using fallback.")
         except Exception as e:
