@@ -412,5 +412,118 @@ def test_execute_matchup_no_nickname(mocker):
     mock_reply_player_list.assert_called_once_with(mock_event, mock_config, is_matchup=True)
 
 
+def test_matchup_compare_logic_mlb():
+    handler = MatchupHandler()
+    
+    # 模擬 MLB 數據指標類別 (含有打者與投手)
+    stat_categories = [
+        {"stat_id": "23", "display_name": "AVG", "sort_order": 1},
+        {"stat_id": "1001", "display_name": "H/AB", "sort_order": None},
+        {"stat_id": "8", "display_name": "HR", "sort_order": 1},
+        {"stat_id": "26", "display_name": "ERA", "sort_order": 0},
+        {"stat_id": "27", "display_name": "WHIP", "sort_order": 0},
+        {"stat_id": "28", "display_name": "K", "sort_order": 1}
+    ]
+    
+    my_stats = {
+        "AVG": "0.280", "H/AB": "14/50", "HR": "5", "ERA": "3.00", "WHIP": "1.10", "K": "25"
+    }
+    opp_stats = {
+        "AVG": "0.260", "H/AB": "13/50", "HR": "3", "ERA": "4.50", "WHIP": "1.25", "K": "30"
+    }
+    
+    comp_res = handler.compare_stats(my_stats, opp_stats, stat_categories=stat_categories)
+    
+    # 算比分 (我方贏: AVG, HR, ERA, WHIP；輸: K；H/AB 不比 -> 4:1)
+    assert comp_res["wins"] == 4
+    assert comp_res["losses"] == 1
+    assert comp_res["ties"] == 0
+    
+    # 驗證勝負細節
+    assert comp_res["details"]["AVG"]["status"] == "my_win"
+    assert comp_res["details"]["AVG"]["my_val"] == "0.280"
+    assert comp_res["details"]["AVG"]["opp_val"] == "0.260"
+    
+    # H/AB 沒有 status，是輔助行
+    assert "status" not in comp_res["details"]["H/AB"]
+    assert comp_res["details"]["H/AB"]["my_val"] == "14/50"
+    
+    # ERA 我方小勝 (3.00 < 4.50)
+    assert comp_res["details"]["ERA"]["status"] == "my_win"
+    
+    # K 敵方勝 (25 < 30)
+    assert comp_res["details"]["K"]["status"] == "opp_win"
+
+
+def test_format_matchup_stats_mlb():
+    handler = MatchupHandler()
+    
+    player_info = {
+        "my_nickname": "韋哥",
+        "my_official": "Vigo's MLB Team",
+        "opp_nickname": "Jerry",
+        "opp_official": "Jerry's Awesome"
+    }
+    
+    stat_categories = [
+        {"stat_id": "23", "display_name": "AVG", "sort_order": 1},
+        {"stat_id": "1001", "display_name": "H/AB", "sort_order": None},
+        {"stat_id": "8", "display_name": "HR", "sort_order": 1},
+        {"stat_id": "26", "display_name": "ERA", "sort_order": 0},
+        {"stat_id": "27", "display_name": "WHIP", "sort_order": 0},
+        {"stat_id": "28", "display_name": "K", "sort_order": 1}
+    ]
+    
+    comp_res = {
+        "wins": 4, "losses": 1, "ties": 0,
+        "details": {
+            "AVG": {"status": "my_win", "my_val": "0.280", "opp_val": "0.260"},
+            "H/AB": {"my_val": "14/50", "opp_val": "13/50"},
+            "HR": {"status": "my_win", "my_val": "5", "opp_val": "3"},
+            "ERA": {"status": "my_win", "my_val": "3.00", "opp_val": "4.50"},
+            "WHIP": {"status": "my_win", "my_val": "1.10", "opp_val": "1.25"},
+            "K": {"status": "opp_win", "my_val": "25", "opp_val": "30"}
+        }
+    }
+    
+    bubble = handler.format_matchup_stats(player_info, comp_res, "24", stat_categories=stat_categories, is_mlb=True)
+    
+    assert isinstance(bubble, dict)
+    assert bubble["type"] == "bubble"
+    
+    body = bubble["body"]["contents"]
+    
+    # 驗證 Header 第一層：週次標題
+    assert body[0]["text"] == "WEEK 24 MATCHUP"
+    # 驗證比分 (4:1)
+    assert body[3]["contents"][0]["text"] == "4"
+    assert body[3]["contents"][2]["text"] == "1"
+    
+    # 驗證是否包含了 separator 區隔打者與投手
+    hitter_box = body[4]
+    assert hitter_box["type"] == "box"
+    assert hitter_box["layout"] == "vertical"
+    
+    separator = body[5]
+    assert separator["type"] == "separator"
+    assert separator["color"] == "#EAEAEA"
+    
+    pitcher_box = body[6]
+    assert pitcher_box["type"] == "box"
+    assert pitcher_box["layout"] == "vertical"
+    
+    # 驗證 hitter_box 和 pitcher_box 內部的 rows
+    hitter_contents = hitter_box["contents"]
+    assert hitter_contents[0]["contents"][1]["text"] == "AVG"
+    assert hitter_contents[1]["contents"][1]["text"] == "H/AB"
+    assert hitter_contents[2]["contents"][1]["text"] == "HR"
+    
+    pitcher_contents = pitcher_box["contents"]
+    assert pitcher_contents[0]["contents"][1]["text"] == "ERA"
+    assert pitcher_contents[1]["contents"][1]["text"] == "WHIP"
+    assert pitcher_contents[2]["contents"][1]["text"] == "K"
+
+
+
 
 
