@@ -333,14 +333,76 @@ def test_set_league_id_handler_remove_success_and_delete_directory():
         with patch("src.handlers.set_league_id_handler.open", side_effect=mock_mapping_io), \
              patch("src.handlers.set_league_id_handler.os.path.exists", return_value=True), \
              patch("src.handlers.set_league_id_handler.get_league_dir", return_value="mock_dir/nba/22222"), \
+             patch("os.listdir", return_value=["metadata.json"]) as mock_listdir, \
+             patch("os.path.isdir", side_effect=lambda p: "security" in p), \
+             patch("os.remove") as mock_remove, \
              patch("shutil.rmtree") as mock_rmtree:
              
             handler.execute(event, config)
             
-            # 驗證 mapping 中 group_1 被移除後已無人綁定
             assert "group_1" not in written_data
-            # 驗證觸發刪除資料夾
-            mock_rmtree.assert_called_once_with("mock_dir/nba/22222")
+            mock_remove.assert_called_once_with("mock_dir/nba/22222\\metadata.json")
+            mock_rmtree.assert_not_called()
+            handler.reply_text.assert_called_once_with(event, config, "✅ 已成功解除此群組的聯盟綁定。")
+    finally:
+        current_chat_id.reset(token)
+
+def test_set_league_id_handler_remove_success_preserves_auth():
+    from src.config import current_chat_id
+    import json
+    
+    handler = SetLeagueIdHandler()
+    handler.reply_text = MagicMock()
+    event = MagicMock()
+    event.message.text = "#確定移除聯盟ID"
+    config = MagicMock()
+    
+    written_data = {}
+    def mock_mapping_io(path, mode="r", *args, **kwargs):
+        import io
+        class MockFile(io.StringIO):
+            def __enter__(self): return self
+            def __exit__(self, exc_type, exc_val, exc_tb):
+                nonlocal written_data
+                val = self.getvalue()
+                if val: written_data = json.loads(val)
+            def close(self):
+                nonlocal written_data
+                val = self.getvalue()
+                if val: written_data = json.loads(val)
+                super().close()
+                
+        if "chat_league_mapping.json" in str(path).replace("\\", "/"):
+            if "r" in mode:
+                # 只有 group_1 綁定 nba.l.22222
+                return MockFile('{"group_1": "nba.l.22222"}')
+            return MockFile()
+        return open(path, mode, *args, **kwargs)
+
+    token = current_chat_id.set("group_1")
+    try:
+        with patch("src.handlers.set_league_id_handler.open", side_effect=mock_mapping_io), \
+             patch("src.handlers.set_league_id_handler.os.path.exists", return_value=True), \
+             patch("src.handlers.set_league_id_handler.get_league_dir", return_value="mock_dir/nba/22222"), \
+             patch("os.listdir", return_value=[".yahoofantasy", "metadata.json", "daily", "some_oauth.yahoo.json.tmp"]) as mock_listdir, \
+             patch("os.path.isdir", side_effect=lambda p: "daily" in p or "security" in p) as mock_isdir, \
+             patch("os.remove") as mock_remove, \
+             patch("shutil.rmtree") as mock_rmtree:
+             
+            handler.execute(event, config)
+            
+            assert "group_1" not in written_data
+            mock_listdir.assert_called_once_with("mock_dir/nba/22222")
+            mock_remove.assert_any_call("mock_dir/nba/22222\\metadata.json")
+            
+            # 確保 .yahoofantasy 與包含 .yahoo 的項目皆未被刪除
+            for call_args in mock_remove.call_args_list:
+                assert ".yahoofantasy" not in call_args[0][0]
+                assert "some_oauth.yahoo.json.tmp" not in call_args[0][0]
+            for call_args in mock_rmtree.call_args_list:
+                assert ".yahoofantasy" not in call_args[0][0]
+                
+            mock_rmtree.assert_any_call("mock_dir/nba/22222\\daily")
             handler.reply_text.assert_called_once_with(event, config, "✅ 已成功解除此群組的聯盟綁定。")
     finally:
         current_chat_id.reset(token)

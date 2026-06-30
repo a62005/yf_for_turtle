@@ -76,15 +76,25 @@ class SetLeagueIdHandler(BaseHandler):
             # 2. 檢查是否還有其他對話框對應此 league_id
             has_others = any(str(val) == str(removed_league_id) for val in mapping.values())
             
-            # 3. 若為孤立聯賽，刪除整個資料夾
+            # 3. 若為孤立聯賽，刪除整個資料夾 (但保留授權快取憑證)
             if not has_others:
                 league_dir = get_league_dir(removed_league_id)
                 if os.path.exists(league_dir):
                     try:
-                        shutil.rmtree(league_dir)
-                        logging.info(f"[SetLeagueIdHandler] 已成功刪除孤立聯賽目錄: {league_dir}")
+                        for item in os.listdir(league_dir):
+                            item_path = os.path.join(league_dir, item)
+                            # 保留 .yahoofantasy 授權憑證或包含 .yahoo 的授權設定檔
+                            if item == ".yahoofantasy" or ".yahoo" in item:
+                                logging.info(f"[SetLeagueIdHandler] 保留授權憑證: {item_path}")
+                                continue
+                            
+                            if os.path.isdir(item_path):
+                                shutil.rmtree(item_path)
+                            else:
+                                os.remove(item_path)
+                        logging.info(f"[SetLeagueIdHandler] 已成功清理孤立聯賽目錄 (保留授權憑證): {league_dir}")
                     except Exception as delete_error:
-                        logging.error(f"[SetLeagueIdHandler] 刪除聯賽目錄 {league_dir} 失敗: {delete_error}")
+                        logging.error(f"[SetLeagueIdHandler] 清理聯賽目錄 {league_dir} 失敗: {delete_error}")
                         
             # 4. 回覆結果
             self.reply_text(event, configuration, "✅ 已成功解除此群組的聯盟綁定。")
