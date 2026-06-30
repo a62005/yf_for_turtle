@@ -211,7 +211,7 @@ class StatsHandler(BaseHandler):
             from src.utils.time_utils import is_game_day
             from src.utils.path_utils import parse_league_id
             sport, _ = parse_league_id(config.get("LEAGUE_ID"))
-            allowed, err_msg = is_game_day(sport=sport, is_offseason=is_offseason, target_date=today_pacific)
+            allowed, err_msg = is_game_day(sport=sport, is_offseason=is_offseason, target_date=target_date)
             if not allowed:
                 with ApiClient(configuration) as api_client:
                     MessagingApi(api_client).reply_message(
