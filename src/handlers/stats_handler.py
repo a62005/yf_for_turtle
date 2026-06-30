@@ -161,17 +161,41 @@ class StatsHandler(BaseHandler):
         from src.utils.path_utils import get_league_dir, get_league_image_dir, parse_league_id
         img_path = os.path.join(get_league_image_dir(), img_filename)
         
-        if os.path.exists(img_path):
-            logging.info(f"[CACHE] 命中圖片快取: {img_filename}")
-            SERVER_URL = os.getenv('SERVER_URL', 'http://localhost:5000')
-            https_url = SERVER_URL.replace("http://", "https://")
-            if not https_url.startswith("https://"):
-                https_url = f"https://{https_url.lstrip('https://')}"
-            sport, raw_id = parse_league_id(config.get("LEAGUE_ID"))
-            img_url = f"{https_url}/images/{sport}/{raw_id}/{img_filename}"
-            reply_img = ImageMessage(original_content_url=img_url, preview_image_url=img_url)
+        sport, raw_id = parse_league_id(config.get("LEAGUE_ID"))
+        is_mlb = (sport == "mlb")
+        cache_hit = False
+        img_urls_to_send = []
+        
+        if is_mlb:
+            hitter_name = f"{target_date}_combined_hitter.png"
+            pitcher_name = f"{target_date}_combined_pitcher.png"
+            h_path = os.path.join(get_league_image_dir(), hitter_name)
+            p_path = os.path.join(get_league_image_dir(), pitcher_name)
+            if os.path.exists(h_path) and os.path.exists(p_path):
+                cache_hit = True
+                SERVER_URL = os.getenv('SERVER_URL', 'http://localhost:5000')
+                https_url = SERVER_URL.replace("http://", "https://")
+                if not https_url.startswith("https://"):
+                    https_url = f"https://{https_url.lstrip('https://')}"
+                img_urls_to_send = [
+                    f"{https_url}/images/mlb/{raw_id}/{hitter_name}",
+                    f"{https_url}/images/mlb/{raw_id}/{pitcher_name}"
+                ]
+        else:
+            if os.path.exists(img_path):
+                cache_hit = True
+                SERVER_URL = os.getenv('SERVER_URL', 'http://localhost:5000')
+                https_url = SERVER_URL.replace("http://", "https://")
+                if not https_url.startswith("https://"):
+                    https_url = f"https://{https_url.lstrip('https://')}"
+                img_url = f"{https_url}/images/{sport}/{raw_id}/{img_filename}"
+                img_urls_to_send = [img_url]
+                
+        if cache_hit:
+            logging.info(f"[CACHE] 命中圖片快取")
+            messages_to_send = [ImageMessage(original_content_url=url, preview_image_url=url) for url in img_urls_to_send]
             with ApiClient(configuration) as api_client:
-                MessagingApi(api_client).reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[reply_img]))
+                MessagingApi(api_client).reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=messages_to_send))
             return
 
         if is_empty_data(cache_key):
