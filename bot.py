@@ -11,7 +11,7 @@ from linebot.v3.messaging import Configuration, ApiClient, MessagingApi, SetWebh
 from linebot.v3.webhooks import MessageEvent, TextMessageContent, ImageMessageContent
 from dotenv import load_dotenv
 from pyngrok import ngrok
-from src.config import load_config
+from src.config import load_config, current_chat_id
 from src.fetcher import YahooFantasyFetcher
 from src.utils.cache_utils import save_league_metadata
 from src.utils.token_utils import is_token_processed
