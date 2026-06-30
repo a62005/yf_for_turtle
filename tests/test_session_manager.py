@@ -54,3 +54,18 @@ def test_session_expiry():
         # 時間已超時 (1011.0 > 1010.0)
         mock_time.return_value = 1011.0
         assert get_session(user_id, "draft_time") is None
+
+def test_prize_session():
+    # 測試獎金設定會話的設定、讀取與清除
+    user_id = "user_prize_test"
+    
+    # 測試設定與讀取
+    from src.utils.session_manager import set_prize_session, get_prize_session, clear_prize_session
+    set_prize_session(user_id, duration_sec=10)
+    data = get_prize_session(user_id)
+    assert data == {"active": True}
+    
+    # 測試清除
+    clear_prize_session(user_id)
+    assert get_prize_session(user_id) is None
+

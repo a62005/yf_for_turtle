@@ -51,3 +51,13 @@ def get_draft_time_session(user_id: str) -> any | None:
 
 def clear_draft_time_session(user_id: str) -> None:
     clear_session(user_id, "draft_time")
+
+def set_prize_session(user_id: str, duration_sec: int = 60) -> None:
+    set_session(user_id, "set_prize", {"active": True}, duration_sec)
+
+def get_prize_session(user_id: str) -> any | None:
+    return get_session(user_id, "set_prize")
+
+def clear_prize_session(user_id: str) -> None:
+    clear_session(user_id, "set_prize")
+
