@@ -372,9 +372,17 @@ class MatchupHandler(BaseHandler):
 
             # 10. 比對數據
             from src.utils.path_utils import parse_league_id
+            from src.utils.cache_utils import load_league_metadata
             sport, _ = parse_league_id(league_id)
             is_mlb = (sport == "mlb")
-            stat_categories = metadata.get("stat_categories")
+            
+            meta = load_league_metadata(league_id)
+            stat_categories = meta.get("stat_categories")
+            if not stat_categories:
+                try:
+                    stat_categories = fetcher.sync_league_settings(league_id)
+                except Exception as se:
+                    logging.warning(f"Failed to sync league settings for matchup: {se}")
 
             comp_res = self.compare_stats(my_team["stats"], opp_team["stats"], stat_categories=stat_categories)
 
