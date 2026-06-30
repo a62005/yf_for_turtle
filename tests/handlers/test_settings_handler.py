@@ -61,4 +61,23 @@ def test_settings_handler_execute_inseason():
         assert draft_time_btn["action"]["data"] == "action=ignore"
 
 
+def test_settings_handler_contains_remove_league_button():
+    handler = SettingsHandler()
+    handler.reply_flex = MagicMock()
+    event = MagicMock()
+    config = MagicMock()
+
+    with patch("src.handlers.settings_handler.load_config", return_value={"LEAGUE_ID": "12345"}), \
+         patch("src.utils.cache_utils.load_league_metadata", return_value={"end_date": "2026-04-12"}), \
+         patch("src.utils.time_utils.get_pacific_date", return_value="2026-04-10"):
+        handler.execute(event, config)
+        handler.reply_flex.assert_called_once()
+        args = handler.reply_flex.call_args[0]
+        flex_card = args[3]
+        buttons_box = flex_card["body"]["contents"][1]
+        remove_btn = [btn for btn in buttons_box["contents"] if btn["type"] == "button" and (btn["action"]["label"] == "移除聯盟ID (即將推出)" or btn["action"]["label"] == "移除聯盟ID")][0]
+        assert remove_btn["action"]["text"] == "#移除聯盟ID"
+
+
+
 
