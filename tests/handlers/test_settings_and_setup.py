@@ -384,7 +384,7 @@ def test_set_league_id_handler_remove_success_preserves_auth():
         with patch("src.handlers.set_league_id_handler.open", side_effect=mock_mapping_io), \
              patch("src.handlers.set_league_id_handler.os.path.exists", return_value=True), \
              patch("src.handlers.set_league_id_handler.get_league_dir", return_value="mock_dir/nba/22222"), \
-             patch("os.listdir", return_value=[".yahoofantasy", "metadata.json", "daily", "some_oauth.yahoo.json.tmp"]) as mock_listdir, \
+             patch("os.listdir", return_value=[".yahoofantasy", "oauth2.json", "metadata.json", "daily", "some_oauth.json.tmp"]) as mock_listdir, \
              patch("os.path.isdir", side_effect=lambda p: "daily" in p or "security" in p) as mock_isdir, \
              patch("os.remove") as mock_remove, \
              patch("shutil.rmtree") as mock_rmtree:
@@ -395,12 +395,14 @@ def test_set_league_id_handler_remove_success_preserves_auth():
             mock_listdir.assert_called_once_with("mock_dir/nba/22222")
             mock_remove.assert_any_call("mock_dir/nba/22222\\metadata.json")
             
-            # 確保 .yahoofantasy 與包含 .yahoo 的項目皆未被刪除
+            # 確保 .yahoofantasy, oauth2.json 及包含 oauth 的項目皆未被刪除
             for call_args in mock_remove.call_args_list:
                 assert ".yahoofantasy" not in call_args[0][0]
-                assert "some_oauth.yahoo.json.tmp" not in call_args[0][0]
+                assert "oauth2.json" not in call_args[0][0]
+                assert "some_oauth.json.tmp" not in call_args[0][0]
             for call_args in mock_rmtree.call_args_list:
                 assert ".yahoofantasy" not in call_args[0][0]
+                assert "oauth2.json" not in call_args[0][0]
                 
             mock_rmtree.assert_any_call("mock_dir/nba/22222\\daily")
             handler.reply_text.assert_called_once_with(event, config, "✅ 已成功解除此群組的聯盟綁定。")

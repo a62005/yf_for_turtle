@@ -83,8 +83,8 @@ class SetLeagueIdHandler(BaseHandler):
                     try:
                         for item in os.listdir(league_dir):
                             item_path = os.path.join(league_dir, item)
-                            # 保留 .yahoofantasy 授權憑證或包含 .yahoo 的授權設定檔
-                            if item == ".yahoofantasy" or ".yahoo" in item:
+                            # 保留 .yahoofantasy 授權憑證、oauth2.json 以及包含 oauth 或 yahoo 的授權設定檔
+                            if item in (".yahoofantasy", "oauth2.json") or "yahoo" in item or "oauth" in item:
                                 logging.info(f"[SetLeagueIdHandler] 保留授權憑證: {item_path}")
                                 continue
                             
