@@ -35,12 +35,9 @@ class MiscHandler(BaseHandler):
         return bool(self.pattern.match(user_text))
 
     def execute(self, event: MessageEvent, configuration: Configuration) -> None:
-        league_id = None
-        if configuration:
-            if hasattr(configuration, "get"):
-                league_id = configuration.get("LEAGUE_ID")
-            else:
-                league_id = getattr(configuration, "LEAGUE_ID", None)
+        from src.config import load_config
+        config = load_config()
+        league_id = config.get("LEAGUE_ID")
         
         if league_id and str(league_id).startswith("mlb.l."):
             self.reply_text(event, configuration, "⚠️ 此功能目前僅支援 NBA 聯賽。")
@@ -51,7 +48,7 @@ class MiscHandler(BaseHandler):
         if not match:
             return
 
-        meta = load_league_metadata() or {}
+        meta = load_league_metadata(league_id) or {}
         end_date = meta.get("end_date")
         today_pacific = get_pacific_date()
         is_offseason = bool(end_date and today_pacific > end_date)
@@ -94,6 +91,7 @@ class MiscHandler(BaseHandler):
 
     def _handle_season_start(self, event: MessageEvent, configuration: Configuration) -> None:
         config = load_config()
+        league_id = config.get("LEAGUE_ID")
         today_pacific = get_pacific_date()
         target_time_str = None
         
@@ -105,7 +103,7 @@ class MiscHandler(BaseHandler):
         # b. 若無，則退回讀取 metadata.json 中的 next_season_start_date 或 start_date
         meta = None
         if not target_time_str:
-            meta = load_league_metadata() or {}
+            meta = load_league_metadata(league_id) or {}
             if "next_season_start_date" in meta:
                 target_time_str = meta["next_season_start_date"]
             else:

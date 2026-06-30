@@ -8,7 +8,7 @@ from src.handlers.base_handler import BaseHandler
 from src.config import load_config
 from src.fetcher import YahooFantasyFetcher, LeaguePermissionError
 from src.utils.season_utils import sync_season_metadata
-from src.utils.path_utils import get_league_team_mapping_path
+from src.utils.path_utils import get_league_team_mapping_path, get_league_dir
 
 class SetLeagueIdHandler(BaseHandler):
     def __init__(self):
@@ -37,6 +37,57 @@ class SetLeagueIdHandler(BaseHandler):
             ]
             flex_dict = build_button_menu_card(title, None, buttons)
             self.reply_flex(event, configuration, "確認移除聯盟綁定", flex_dict)
+            return
+
+        if user_text == "#確定移除聯盟ID":
+            from src.config import current_chat_id
+            from src.utils.path_utils import BASE_DIR
+            import shutil
+            
+            chat_id = current_chat_id.get() or "default"
+            security_dir = os.path.join(BASE_DIR, "data", "security")
+            config_path = os.path.join(security_dir, "chat_league_mapping.json")
+            
+            mapping = {}
+            if os.path.exists(config_path):
+                try:
+                    with open(config_path, "r", encoding="utf-8") as f:
+                        mapping = json.load(f)
+                except Exception:
+                    mapping = {}
+                    
+            if str(chat_id) not in mapping:
+                self.reply_text(event, configuration, "⚠️ 此群組尚未綁定任何聯盟 ID。")
+                return
+                
+            # 1. 取得該群組綁定的 league_id 並解綁
+            removed_league_id = mapping.pop(str(chat_id))
+            
+            # 寫回映射檔
+            try:
+                os.makedirs(security_dir, exist_ok=True)
+                with open(config_path, "w", encoding="utf-8") as f:
+                    json.dump(mapping, f, indent=2, ensure_ascii=False)
+            except Exception as e:
+                logging.error(f"[SetLeagueIdHandler] 寫入映射表失敗: {e}")
+                self.reply_text(event, configuration, "⚠️ 解除綁定時寫入設定檔失敗。")
+                return
+            
+            # 2. 檢查是否還有其他對話框對應此 league_id
+            has_others = any(str(val) == str(removed_league_id) for val in mapping.values())
+            
+            # 3. 若為孤立聯賽，刪除整個資料夾
+            if not has_others:
+                league_dir = get_league_dir(removed_league_id)
+                if os.path.exists(league_dir):
+                    try:
+                        shutil.rmtree(league_dir)
+                        logging.info(f"[SetLeagueIdHandler] 已成功刪除孤立聯賽目錄: {league_dir}")
+                    except Exception as delete_error:
+                        logging.error(f"[SetLeagueIdHandler] 刪除聯賽目錄 {league_dir} 失敗: {delete_error}")
+                        
+            # 4. 回覆結果
+            self.reply_text(event, configuration, "✅ 已成功解除此群組的聯盟綁定。")
             return
 
         # 1. 收到無參數 #設置聯盟ID 時，發送包含 NBA 籃球與 MLB 棒球按鈕的 Flex Message

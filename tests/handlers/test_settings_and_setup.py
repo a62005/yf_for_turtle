@@ -246,6 +246,107 @@ def test_set_league_id_handler_shows_remove_confirm_card():
         current_chat_id.reset(token)
 
 
+def test_set_league_id_handler_remove_success_with_others():
+    from src.config import current_chat_id
+    import json
+    
+    handler = SetLeagueIdHandler()
+    handler.reply_text = MagicMock()
+    event = MagicMock()
+    event.message.text = "#確定移除聯盟ID"
+    config = MagicMock()
+    
+    written_data = {}
+    def mock_mapping_io(path, mode="r", *args, **kwargs):
+        import io
+        class MockFile(io.StringIO):
+            def __enter__(self): return self
+            def __exit__(self, exc_type, exc_val, exc_tb):
+                nonlocal written_data
+                val = self.getvalue()
+                if val: written_data = json.loads(val)
+            def close(self):
+                nonlocal written_data
+                val = self.getvalue()
+                if val: written_data = json.loads(val)
+                super().close()
+                
+        if "chat_league_mapping.json" in str(path).replace("\\", "/"):
+            if "r" in mode:
+                # 兩個群組都綁定同一聯賽 nba.l.11111
+                return MockFile('{"group_1": "nba.l.11111", "group_2": "nba.l.11111"}')
+            return MockFile()
+        return open(path, mode, *args, **kwargs)
+
+    token = current_chat_id.set("group_1")
+    try:
+        with patch("src.handlers.set_league_id_handler.open", side_effect=mock_mapping_io), \
+             patch("src.handlers.set_league_id_handler.os.path.exists", return_value=True), \
+             patch("src.handlers.set_league_id_handler.get_league_dir") as mock_get_dir, \
+             patch("shutil.rmtree") as mock_rmtree:
+             
+            handler.execute(event, config)
+            
+            # 驗證 mapping 中 group_1 已被移除，但 group_2 仍保留
+            assert "group_1" not in written_data
+            assert written_data.get("group_2") == "nba.l.11111"
+            # 驗證並未執行刪除資料夾（因為還有 group_2 綁定）
+            mock_rmtree.assert_not_called()
+            handler.reply_text.assert_called_once_with(event, config, "✅ 已成功解除此群組的聯盟綁定。")
+    finally:
+        current_chat_id.reset(token)
+
+def test_set_league_id_handler_remove_success_and_delete_directory():
+    from src.config import current_chat_id
+    import json
+    
+    handler = SetLeagueIdHandler()
+    handler.reply_text = MagicMock()
+    event = MagicMock()
+    event.message.text = "#確定移除聯盟ID"
+    config = MagicMock()
+    
+    written_data = {}
+    def mock_mapping_io(path, mode="r", *args, **kwargs):
+        import io
+        class MockFile(io.StringIO):
+            def __enter__(self): return self
+            def __exit__(self, exc_type, exc_val, exc_tb):
+                nonlocal written_data
+                val = self.getvalue()
+                if val: written_data = json.loads(val)
+            def close(self):
+                nonlocal written_data
+                val = self.getvalue()
+                if val: written_data = json.loads(val)
+                super().close()
+                
+        if "chat_league_mapping.json" in str(path).replace("\\", "/"):
+            if "r" in mode:
+                # 只有 group_1 綁定 nba.l.22222
+                return MockFile('{"group_1": "nba.l.22222"}')
+            return MockFile()
+        return open(path, mode, *args, **kwargs)
+
+    token = current_chat_id.set("group_1")
+    try:
+        with patch("src.handlers.set_league_id_handler.open", side_effect=mock_mapping_io), \
+             patch("src.handlers.set_league_id_handler.os.path.exists", return_value=True), \
+             patch("src.handlers.set_league_id_handler.get_league_dir", return_value="mock_dir/nba/22222"), \
+             patch("shutil.rmtree") as mock_rmtree:
+             
+            handler.execute(event, config)
+            
+            # 驗證 mapping 中 group_1 被移除後已無人綁定
+            assert "group_1" not in written_data
+            # 驗證觸發刪除資料夾
+            mock_rmtree.assert_called_once_with("mock_dir/nba/22222")
+            handler.reply_text.assert_called_once_with(event, config, "✅ 已成功解除此群組的聯盟綁定。")
+    finally:
+        current_chat_id.reset(token)
+
+
+
 
 
 
