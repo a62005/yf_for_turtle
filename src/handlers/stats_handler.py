@@ -58,20 +58,25 @@ class StatsHandler(BaseHandler):
         return cmd_type is not None
 
     def _get_week_end_date(self, week: int) -> str | None:
-        meta = load_league_metadata()
+        config = load_config()
+        league_id = config.get("LEAGUE_ID")
+        meta = load_league_metadata(league_id)
         week_str = str(week)
         if "week_dates" in meta and week_str in meta["week_dates"]:
             return meta["week_dates"][week_str]
         
-        config = load_config()
-        fetcher = YahooFantasyFetcher(config["LEAGUE_ID"])
-        end_date = fetcher.fetch_week_end_date(config["LEAGUE_ID"], week)
+        fetcher = YahooFantasyFetcher(
+            league_id=league_id,
+            client_id=config.get("YAHOO_CLIENT_ID"),
+            client_secret=config.get("YAHOO_CLIENT_SECRET")
+        )
+        end_date = fetcher.fetch_week_end_date(league_id, week)
         
         if end_date:
             if "week_dates" not in meta:
                 meta["week_dates"] = {}
             meta["week_dates"][week_str] = end_date
-            save_league_metadata(meta)
+            save_league_metadata(meta, league_id)
         return end_date
 
     def execute(self, event: MessageEvent, configuration: Configuration) -> None:
@@ -82,7 +87,7 @@ class StatsHandler(BaseHandler):
             return
             
         config = load_config()
-        meta = load_league_metadata()
+        meta = load_league_metadata(config.get("LEAGUE_ID"))
         today_pacific = get_pacific_date()
         today_dt = pytz.timezone("US/Pacific").localize(datetime.strptime(today_pacific, "%Y-%m-%d"))
         
@@ -153,7 +158,7 @@ class StatsHandler(BaseHandler):
 
         # The rest is the same standard cache checking/execution
         project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        from src.utils.path_utils import get_league_dir, get_league_image_dir
+        from src.utils.path_utils import get_league_dir, get_league_image_dir, parse_league_id
         img_path = os.path.join(get_league_image_dir(), img_filename)
         
         if os.path.exists(img_path):
@@ -162,7 +167,8 @@ class StatsHandler(BaseHandler):
             https_url = SERVER_URL.replace("http://", "https://")
             if not https_url.startswith("https://"):
                 https_url = f"https://{https_url.lstrip('https://')}"
-            img_url = f"{https_url}/images/{img_filename}"
+            sport, raw_id = parse_league_id(config.get("LEAGUE_ID"))
+            img_url = f"{https_url}/images/{sport}/{raw_id}/{img_filename}"
             reply_img = ImageMessage(original_content_url=img_url, preview_image_url=img_url)
             with ApiClient(configuration) as api_client:
                 MessagingApi(api_client).reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[reply_img]))

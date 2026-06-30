@@ -100,7 +100,7 @@ class PlayerHandler(BaseHandler):
         nickname = match.group(1).strip()
         config = load_config()
         league_id = config["LEAGUE_ID"]
-        meta = load_league_metadata()
+        meta = load_league_metadata(league_id)
         sport = meta.get("sport") or league_id.split(".")[0]
         today_pacific = datetime.now(pytz.timezone("US/Pacific")).strftime("%Y-%m-%d")
         is_offseason = meta.get('end_date') and today_pacific > meta['end_date']
@@ -120,9 +120,12 @@ class PlayerHandler(BaseHandler):
             english_name = llm_res["english_name"]
             
             # Retrieve player key from Yahoo search
-            fetcher = YahooFantasyFetcher(client_id=config.get("YAHOO_CLIENT_ID"), client_secret=config.get("YAHOO_CLIENT_SECRET"))
-            full_league_id = league_id if ("." in league_id) else f"nba.l.{league_id}"
-            url = f"league/{full_league_id}/players;search={english_name}"
+            fetcher = YahooFantasyFetcher(
+                client_id=config.get("YAHOO_CLIENT_ID"),
+                client_secret=config.get("YAHOO_CLIENT_SECRET"),
+                league_id=league_id
+            )
+            url = f"league/{league_id}/players;search={english_name}"
             try:
                 xml_data = fetcher.ctx.make_request(url)
                 root = ET.fromstring(xml_data)
@@ -153,7 +156,11 @@ class PlayerHandler(BaseHandler):
         target_date = get_target_date(is_offseason=is_offseason, end_date=meta.get('end_date'))
         
         # 4. Fetch Stats by date
-        fetcher = YahooFantasyFetcher(client_id=config.get("YAHOO_CLIENT_ID"), client_secret=config.get("YAHOO_CLIENT_SECRET"))
+        fetcher = YahooFantasyFetcher(
+            client_id=config.get("YAHOO_CLIENT_ID"),
+            client_secret=config.get("YAHOO_CLIENT_SECRET"),
+            league_id=league_id
+        )
         player_key = player_info["player_key"]
         url = f"player/{player_key}/stats;type=date;date={target_date}"
         

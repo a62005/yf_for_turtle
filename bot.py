@@ -76,8 +76,16 @@ def callback():
         abort(400)
     return 'OK'
 
+@app.route("/images/<sport>/<raw_id>/<path:filename>")
+def serve_league_image(sport, raw_id, filename):
+    """Serve league images. URL: /images/<sport>/<raw_id>/<filename>"""
+    from src.utils.path_utils import DATA_DIR
+    image_dir = os.path.join(DATA_DIR, "league", sport, raw_id, "image")
+    return send_from_directory(image_dir, filename)
+
 @app.route("/images/<path:filename>")
 def serve_image(filename):
+    """Legacy fallback: serve images using context league_id."""
     from src.utils.path_utils import get_league_image_dir
     image_dir = get_league_image_dir()
     return send_from_directory(image_dir, filename)

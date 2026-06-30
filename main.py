@@ -43,7 +43,8 @@ def main():
         fetcher = YahooFantasyFetcher(
             team_mapping=team_mapping,
             client_id=config.get("YAHOO_CLIENT_ID"),
-            client_secret=config.get("YAHOO_CLIENT_SECRET")
+            client_secret=config.get("YAHOO_CLIENT_SECRET"),
+            league_id=league_id
         )
         storage = JsonStorage(data_dir=get_league_dir(league_id))
 
@@ -60,7 +61,7 @@ def main():
             current_week = int(test_week)
         else:
             from src.utils.cache_utils import load_league_metadata
-            meta = load_league_metadata()
+            meta = load_league_metadata(league_id)
             today_str = get_pacific_date()
             date_to_week = meta.get("date_to_week", {})
             
@@ -135,8 +136,10 @@ def main():
                     if not https_url.startswith("https://"):
                         https_url = f"https://{https_url.lstrip('https://')}"
                         
+                    from src.utils.path_utils import parse_league_id
+                    sport, raw_id = parse_league_id(league_id)
                     img_filename = f"{today_str}_combined.png"
-                    img_url = f"{https_url}/images/{img_filename}"
+                    img_url = f"{https_url}/images/{sport}/{raw_id}/{img_filename}"
                     
                     logging.info(f"[LINE] 正在向 {reply_to} 推送戰績圖片: {img_url}")
                     

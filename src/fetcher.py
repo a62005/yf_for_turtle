@@ -74,6 +74,12 @@ class YahooFantasyFetcher:
                 raw_id = lid_str
             persist_key = f"data/league/{sport}/{raw_id}/"
 
+        # 清除 yahoofantasy 的全域記憶體快取，避免同一 process 中切換聯賽時
+        # 舊的 auth 資料殘留在 CURRENT_PERSISTENCE，導致新 Context 讀到錯誤的
+        # refresh_token，換出的 access_token 無法存取目標聯賽而回傳 403。
+        from yahoofantasy.util.persistence import CURRENT_PERSISTENCE
+        CURRENT_PERSISTENCE.clear()
+
         self.ctx = yahoofantasy.Context(
             persist_key=persist_key,
             client_id=client_id,

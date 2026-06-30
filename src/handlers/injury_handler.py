@@ -64,12 +64,14 @@ class InjuryHandler(BaseHandler):
         
         try:
             config = load_config()
+            league_id = config["LEAGUE_ID"]
             fetcher = YahooFantasyFetcher(
                 client_id=config.get("YAHOO_CLIENT_ID"),
-                client_secret=config.get("YAHOO_CLIENT_SECRET")
+                client_secret=config.get("YAHOO_CLIENT_SECRET"),
+                league_id=league_id
             )
             
-            league_id = fetcher._normalize_league_id(config["LEAGUE_ID"])
+            league_id = fetcher._normalize_league_id(league_id)
             league = yahoofantasy.League(fetcher.ctx, league_id)
             
             target_team = None

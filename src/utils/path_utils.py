@@ -11,10 +11,10 @@ def get_league_id() -> str | None:
     """動態獲取當前配置的聯盟 ID，優先從 JSON 載入，否則從環境變數載入。"""
     return load_config().get("LEAGUE_ID")
 
-def get_league_dir(league_id: str = None) -> str:
+def parse_league_id(league_id: str = None) -> tuple[str, str]:
     lid = league_id or get_league_id()
     if not lid:
-        return os.path.join(DATA_DIR, "league", "default")
+        return "nba", "default"
     
     lid_str = str(lid).strip()
     if lid_str.startswith("nba.l."):
@@ -30,7 +30,10 @@ def get_league_dir(league_id: str = None) -> str:
     else:
         sport = "nba"
         raw_id = lid_str
-        
+    return sport, raw_id
+
+def get_league_dir(league_id: str = None) -> str:
+    sport, raw_id = parse_league_id(league_id)
     return os.path.join(DATA_DIR, "league", sport, raw_id)
 
 def get_league_metadata_path(league_id: str = None) -> str:

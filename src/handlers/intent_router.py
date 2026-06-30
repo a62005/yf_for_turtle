@@ -166,8 +166,10 @@ class IntentRouter:
         try:
             from src.utils.cache_utils import load_league_metadata
             from src.utils.time_utils import get_pacific_date
+            from src.config import load_config as _load_config
             
-            meta = load_league_metadata()
+            _league_id = _load_config().get("LEAGUE_ID")
+            meta = load_league_metadata(_league_id)
             today_str = get_pacific_date()
             current_week = meta.get("date_to_week", {}).get(today_str)
             end_week = meta.get("end_week")
