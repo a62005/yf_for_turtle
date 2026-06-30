@@ -213,7 +213,7 @@ class MatchupHandler(BaseHandler):
             team_mapping = self._load_team_mapping()
 
             # 4. 初始化 YahooFetcher
-            fetcher = YahooFantasyFetcher(team_mapping=team_mapping)
+            fetcher = YahooFantasyFetcher(team_mapping=team_mapping, league_id=league_id)
 
             # 5. 實時抓取聯盟 Meta 資訊
             metadata = fetcher.fetch_league_metadata(league_id)

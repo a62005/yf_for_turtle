@@ -35,7 +35,7 @@ class PlayerHandler(BaseHandler):
         config = load_config()
         return bool(config.get("LLM_API_KEY"))
 
-    def format_player_stats(self, player_info: dict, stats: dict, date_str: str | None = None) -> dict:
+    def format_player_stats(self, player_info: dict, stats: dict, date_str: str | None = None, stat_categories: list = None) -> dict:
         def to_percent_str(val):
             try:
                 f_val = float(val)
@@ -45,43 +45,65 @@ class PlayerHandler(BaseHandler):
             except (ValueError, TypeError):
                 return "-"
 
-        # FGM is stat_4, FGA is stat_3
-        fgm = stats.get("stat_4", "0")
-        fga = stats.get("stat_3", "0")
-        fgm_a = f"{fgm}/{fga}" if fga != "0" else "0/0"
+        def fmt_val(display_name, val):
+            if val is None or str(val).strip() in ("", "-", "0") and display_name not in ("TO",):
+                pass
+            if val is None or str(val).strip() in ("", "-"):
+                return "-"
+            if display_name in ("FG%", "FT%"):
+                return to_percent_str(val)
+            if display_name in ("AVG", "OBP", "SLG", "OPS"):
+                try:
+                    num = float(val)
+                    if num == 0: return "-"
+                    formatted = f"{num:.3f}"
+                    return formatted[1:] if formatted.startswith("0.") else formatted
+                except (ValueError, TypeError):
+                    return str(val)
+            if display_name in ("ERA", "WHIP"):
+                try:
+                    num = float(val)
+                    return f"{num:.2f}"
+                except (ValueError, TypeError):
+                    return str(val)
+            if "/" in display_name:
+                return str(val) if str(val) not in ("0", "None") else "-"
+            try:
+                return str(int(round(float(val))))
+            except (ValueError, TypeError):
+                return str(val)
 
-        fg_pct = to_percent_str(stats.get("FG%", "0.0"))
-
-        # FTM is stat_7, FTA is stat_6
-        ftm = stats.get("stat_7", "0")
-        fta = stats.get("stat_6", "0")
-        ftm_a = f"{ftm}/{fta}" if fta != "0" else "0/0"
-
-        ft_pct = to_percent_str(stats.get("FT%", "0.0"))
-        pm3 = stats.get("3PTM", "0")
-        pts = stats.get("PTS", "0")
-        reb = stats.get("REB", "0")
-        ast = stats.get("AST", "0")
-        stl = stats.get("ST", "0")
-        blk = stats.get("BLK", "0")
-        to = stats.get("TO", "0")
+        rows = []
+        if stat_categories:
+            DISPLAY_ALIASES = {"FGM/FGA": "FGM/A", "FTM/FTA": "FTM/A", "3PTM": "3PM"}
+            for cat in stat_categories:
+                disp = cat["display_name"]
+                label = DISPLAY_ALIASES.get(disp, disp)
+                val = stats.get(disp)
+                rows.append((label, fmt_val(disp, val)))
+        else:
+            # NBA fallback
+            fgm = stats.get("stat_4", "0")
+            fga = stats.get("stat_3", "0")
+            fgm_a = f"{fgm}/{fga}" if fga != "0" else "0/0"
+            fg_pct = to_percent_str(stats.get("FG%", "0.0"))
+            ftm = stats.get("stat_7", "0")
+            fta = stats.get("stat_6", "0")
+            ftm_a = f"{ftm}/{fta}" if fta != "0" else "0/0"
+            ft_pct = to_percent_str(stats.get("FT%", "0.0"))
+            
+            rows = [
+                ("FGM/A", fgm_a), ("FG%", fg_pct), ("FTM/A", ftm_a), ("FT%", ft_pct),
+                ("3PM", stats.get("3PTM", "0")), ("PTS", stats.get("PTS", "0")),
+                ("REB", stats.get("REB", "0")), ("AST", stats.get("AST", "0")),
+                ("STL", stats.get("ST", "0")), ("BLK", stats.get("BLK", "0")),
+                ("TO", stats.get("TO", "0"))
+            ]
 
         sections = [
             {
                 "header": date_str,
-                "rows": [
-                    ("FGM/A", fgm_a),
-                    ("FG%", fg_pct),
-                    ("FTM/A", ftm_a),
-                    ("FT%", ft_pct),
-                    ("3PM", pm3),
-                    ("PTS", pts),
-                    ("REB", reb),
-                    ("AST", ast),
-                    ("STL", stl),
-                    ("BLK", blk),
-                    ("TO", to)
-                ]
+                "rows": rows
             }
         ]
 
@@ -100,7 +122,8 @@ class PlayerHandler(BaseHandler):
         nickname = match.group(1).strip()
         config = load_config()
         league_id = config["LEAGUE_ID"]
-        meta = load_league_metadata()
+        meta = load_league_metadata(league_id)
+        sport = meta.get("sport") or league_id.split(".")[0]
         today_pacific = datetime.now(pytz.timezone("US/Pacific")).strftime("%Y-%m-%d")
         is_offseason = meta.get('end_date') and today_pacific > meta['end_date']
 
@@ -109,11 +132,9 @@ class PlayerHandler(BaseHandler):
         
         # 2. Cache Miss: LLM parse + Yahoo Search
         if not player_info:
-            llm_res = parse_player_nickname(
-                nickname, 
-                api_key=config.get("LLM_API_KEY"),
-                model_name=config.get("LLM_MODEL")
-            )
+            from src.llm.llm_agent import LLMAgent
+            agent = LLMAgent()
+            llm_res = agent.player_fuzzy_search(nickname, sport=sport)
             if not llm_res.get("is_known_player"):
                 self.reply_text(event, configuration, f"找不到現役球員「{nickname}」，請嘗試輸入更清晰的名字或別稱。")
                 return
@@ -121,8 +142,12 @@ class PlayerHandler(BaseHandler):
             english_name = llm_res["english_name"]
             
             # Retrieve player key from Yahoo search
-            fetcher = YahooFantasyFetcher(client_id=config.get("YAHOO_CLIENT_ID"), client_secret=config.get("YAHOO_CLIENT_SECRET"))
-            url = f"league/nba.l.{league_id}/players;search={english_name}"
+            fetcher = YahooFantasyFetcher(
+                client_id=config.get("YAHOO_CLIENT_ID"),
+                client_secret=config.get("YAHOO_CLIENT_SECRET"),
+                league_id=league_id
+            )
+            url = f"league/{league_id}/players;search={english_name}"
             try:
                 xml_data = fetcher.ctx.make_request(url)
                 root = ET.fromstring(xml_data)
@@ -153,7 +178,11 @@ class PlayerHandler(BaseHandler):
         target_date = get_target_date(is_offseason=is_offseason, end_date=meta.get('end_date'))
         
         # 4. Fetch Stats by date
-        fetcher = YahooFantasyFetcher(client_id=config.get("YAHOO_CLIENT_ID"), client_secret=config.get("YAHOO_CLIENT_SECRET"))
+        fetcher = YahooFantasyFetcher(
+            client_id=config.get("YAHOO_CLIENT_ID"),
+            client_secret=config.get("YAHOO_CLIENT_SECRET"),
+            league_id=league_id
+        )
         player_key = player_info["player_key"]
         url = f"player/{player_key}/stats;type=date;date={target_date}"
         
@@ -170,18 +199,27 @@ class PlayerHandler(BaseHandler):
                 s_id = s_id_node.text if s_id_node is not None else None
                 s_val = s_val_node.text if s_val_node is not None else "0"
                 if s_id is not None:
-                    label = translate_stat_id(s_id)
+                    label = fetcher._translate_stat(s_id, league_id)
                     stats_dict[label] = s_val
                 
-            # Guard: if no game played (MIN or PTS is 0 or stat_id not present)
-            minutes = stats_dict.get("stat_0", "0") # stat_0 is typically MIN in Yahoo
-            pts = stats_dict.get("PTS", "0")
-            
-            if minutes == "0" and pts == "0":
+            # Guard: if no game played (all stats are zero/empty/hyphen)
+            def is_zero_stats(sd):
+                for val in sd.values():
+                    val_str = str(val).strip()
+                    if val_str not in ("0", "0.0", "-", "0/0", ""):
+                        return False
+                return True
+                
+            if is_zero_stats(stats_dict):
                 self.reply_text(event, configuration, f"{player_info['english_name']} 於 {target_date} 今日無比賽數據。")
                 return
             
-            flex_dict = self.format_player_stats(player_info, stats_dict, target_date)
+            flex_dict = self.format_player_stats(
+                player_info, 
+                stats_dict, 
+                target_date,
+                stat_categories=meta.get("stat_categories")
+            )
             self.reply_flex(event, configuration, f"球員 {player_info.get('english_name', 'Unknown')} 數據", flex_dict)
         except Exception as e:
             logging.error(f"Yahoo fetch stats failed: {e}")

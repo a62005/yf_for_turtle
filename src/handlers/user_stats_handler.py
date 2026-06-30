@@ -56,7 +56,7 @@ class UserStatsHandler(BaseHandler):
         mapping = self._load_team_mapping()
         return nickname in mapping.values()
 
-    def format_user_stats(self, player_info: dict, daily_stats: dict, weekly_stats: dict, date_str: str, week_str: str) -> dict:
+    def format_user_stats(self, player_info: dict, daily_stats: dict, weekly_stats: dict, date_str: str, week_str: str, stat_categories: list = None) -> dict:
         def to_percent_str(val):
             try:
                 f_val = float(val)
@@ -66,43 +66,71 @@ class UserStatsHandler(BaseHandler):
             except (ValueError, TypeError):
                 return "-"
 
+        def fmt_val(display_name, val):
+            """Format a single stat value based on its display name."""
+            if val is None or str(val).strip() in ("", "-", "0") and display_name not in ("TO",):
+                # For rate stats that happen to be 0, still show -
+                pass
+            if val is None or str(val).strip() in ("", "-"):
+                return "-"
+            # Yahoo percentage stats (FG%, FT%, OBP, SLG, OPS, AVG, ERA, WHIP) returned as raw floats
+            if display_name in ("FG%", "FT%"):
+                return to_percent_str(val)
+            if display_name in ("AVG", "OBP", "SLG", "OPS"):
+                try:
+                    num = float(val)
+                    if num == 0: return "-"
+                    formatted = f"{num:.3f}"
+                    return formatted[1:] if formatted.startswith("0.") else formatted
+                except (ValueError, TypeError):
+                    return str(val)
+            if display_name in ("ERA", "WHIP"):
+                try:
+                    num = float(val)
+                    return f"{num:.2f}"
+                except (ValueError, TypeError):
+                    return str(val)
+            # For H/AB composite: may be stored as "3/10" string already
+            if "/" in display_name:
+                return str(val) if str(val) not in ("0", "None") else "-"
+            # Default: integer
+            try:
+                return str(int(round(float(val))))
+            except (ValueError, TypeError):
+                return str(val)
+
         def build_stat_rows(stats):
-            # Prioritize composite FGM/FGA value
-            fgm_a = stats.get("FGM/FGA")
-            if not fgm_a:
-                fgm = stats.get("stat_4")
-                fga = stats.get("stat_3")
-                if fgm is not None and fga is not None:
-                    fgm_a = f"{fgm}/{fga}" if fga != "0" else "0/0"
-                else:
-                    fgm_a = "0/0"
-            fg_pct = to_percent_str(stats.get("FG%", "0.0"))
-
-            # Prioritize composite FTM/FTA value
-            ftm_a = stats.get("FTM/FTA")
-            if not ftm_a:
-                ftm = stats.get("stat_7")
-                fta = stats.get("stat_6")
-                if ftm is not None and fta is not None:
-                    ftm_a = f"{ftm}/{fta}" if fta != "0" else "0/0"
-                else:
-                    ftm_a = "0/0"
-            ft_pct = to_percent_str(stats.get("FT%", "0.0"))
-
-            pm3 = stats.get("3PTM", "0")
-            pts = stats.get("PTS", "0")
-            reb = stats.get("REB", "0")
-            ast = stats.get("AST", "0")
-            stl = stats.get("ST", "0")
-            blk = stats.get("BLK", "0")
-            to = stats.get("TO", "0")
-
-            raw_stats = [
-                ("FGM/A", fgm_a), ("FG%", fg_pct), ("FTM/A", ftm_a), ("FT%", ft_pct),
-                ("3PM", pm3), ("PTS", pts), ("REB", reb), ("AST", ast),
-                ("STL", stl), ("BLK", blk), ("TO", to)
-            ]
-            return raw_stats
+            rows = []
+            if stat_categories:
+                # Dynamic MLB/NBA path: use stat_categories from metadata
+                DISPLAY_ALIASES = {"FGM/FGA": "FGM/A", "FTM/FTA": "FTM/A", "3PTM": "3PM"}
+                for cat in stat_categories:
+                    disp = cat["display_name"]
+                    label = DISPLAY_ALIASES.get(disp, disp)
+                    val = stats.get(disp)
+                    rows.append((label, fmt_val(disp, val)))
+            else:
+                # NBA fallback
+                fgm_a = stats.get("FGM/FGA")
+                if not fgm_a:
+                    fgm = stats.get("stat_4")
+                    fga = stats.get("stat_3")
+                    fgm_a = f"{fgm}/{fga}" if (fgm is not None and fga is not None and fga != "0") else "0/0"
+                fg_pct = to_percent_str(stats.get("FG%", "0.0"))
+                ftm_a = stats.get("FTM/FTA")
+                if not ftm_a:
+                    ftm = stats.get("stat_7")
+                    fta = stats.get("stat_6")
+                    ftm_a = f"{ftm}/{fta}" if (ftm is not None and fta is not None and fta != "0") else "0/0"
+                ft_pct = to_percent_str(stats.get("FT%", "0.0"))
+                rows = [
+                    ("FGM/A", fgm_a), ("FG%", fg_pct), ("FTM/A", ftm_a), ("FT%", ft_pct),
+                    ("3PM", stats.get("3PTM", "0")), ("PTS", stats.get("PTS", "0")),
+                    ("REB", stats.get("REB", "0")), ("AST", stats.get("AST", "0")),
+                    ("STL", stats.get("ST", "0")), ("BLK", stats.get("BLK", "0")),
+                    ("TO", stats.get("TO", "0"))
+                ]
+            return rows
 
         daily_rows = build_stat_rows(daily_stats)
         weekly_rows = build_stat_rows(weekly_stats)
@@ -151,7 +179,7 @@ class UserStatsHandler(BaseHandler):
 
         config = load_config()
         league_id = config["LEAGUE_ID"]
-        meta = load_league_metadata()
+        meta = load_league_metadata(league_id)
         
         # 2. 計算美西日期與週數
         from src.utils.time_utils import get_pacific_date
@@ -191,13 +219,14 @@ class UserStatsHandler(BaseHandler):
         if target_week < 1:
             target_week = 1
             
-        team_key = f"nba.l.{league_id}.t.{team_id}"
+        team_key = f"{league_id}.t.{team_id}"
         
         # 3. 實時抓取數據
         fetcher = YahooFantasyFetcher(
             team_mapping=mapping,
             client_id=config.get("YAHOO_CLIENT_ID"),
-            client_secret=config.get("YAHOO_CLIENT_SECRET")
+            client_secret=config.get("YAHOO_CLIENT_SECRET"),
+            league_id=league_id
         )
         
         try:
@@ -213,11 +242,12 @@ class UserStatsHandler(BaseHandler):
             }
             
             flex_dict = self.format_user_stats(
-                player_info, 
-                res_daily["stats"], 
-                res_weekly["stats"], 
-                target_date, 
-                str(target_week)
+                player_info,
+                res_daily["stats"],
+                res_weekly["stats"],
+                target_date,
+                str(target_week),
+                stat_categories=meta.get("stat_categories")
             )
             self.reply_flex(event, configuration, f"玩家 {nickname} 數據統計", flex_dict)
         except Exception as e:

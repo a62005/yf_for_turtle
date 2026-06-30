@@ -12,7 +12,9 @@ from src.utils.session_manager import (
     get_nickname_session, 
     clear_nickname_session,
     get_draft_time_session,
-    clear_draft_time_session
+    clear_draft_time_session,
+    get_league_id_session,
+    clear_league_id_session
 )
 from src.utils.path_utils import get_league_team_mapping_path
 
@@ -41,6 +43,21 @@ class IntentRouter:
         if not user_text:
             return False
 
+        # 多聯盟未綁定防護：若 league_id 未設定，僅放行指定設定指令或活動會話
+        config = load_config()
+        league_id = config.get("LEAGUE_ID")
+        if not league_id:
+            user_id = getattr(event.source, "user_id", None)
+            is_active_session = False
+            if user_id:
+                from src.utils.session_manager import get_prize_session
+                if get_nickname_session(user_id) or get_draft_time_session(user_id) or get_league_id_session(user_id) or get_prize_session(user_id):
+                    is_active_session = True
+            
+            is_allowed_cmd = (user_text == "#設置" or user_text == "#我的ID" or user_text.startswith("#設置聯盟ID"))
+            if not (is_allowed_cmd or is_active_session):
+                return False
+
         # 1. 指令優先
         if user_text.startswith("#"):
             return True
@@ -53,10 +70,6 @@ class IntentRouter:
         user_id = getattr(event.source, "user_id", None)
         if user_id:
             from src.utils.session_manager import get_prize_session
-            try:
-                from src.utils.session_manager import get_league_id_session
-            except ImportError:
-                get_league_id_session = lambda uid: None
             if get_nickname_session(user_id) or get_draft_time_session(user_id) or get_league_id_session(user_id) or get_prize_session(user_id):
                 return True
 
@@ -116,6 +129,16 @@ class IntentRouter:
                     self.reply_text(event, configuration, f"✅ 成功將暱稱修改為：{user_text}")
                     return
 
+            # 3. 攔截聯盟 ID 設定會話
+            league_session = get_league_id_session(user_id)
+            if league_session:
+                if user_text.startswith("#"):
+                    clear_league_id_session(user_id)
+                else:
+                    event.message.text = f"#設置聯盟ID {user_text}"
+                    self.dispatcher.handle(event, configuration)
+                    return
+
             # 4. 攔截獎金設定會話中的文字輸入
             from src.utils.session_manager import get_prize_session, clear_prize_session
             prize_session = get_prize_session(user_id)
@@ -158,8 +181,10 @@ class IntentRouter:
         try:
             from src.utils.cache_utils import load_league_metadata
             from src.utils.time_utils import get_pacific_date
+            from src.config import load_config as _load_config
             
-            meta = load_league_metadata()
+            _league_id = _load_config().get("LEAGUE_ID")
+            meta = load_league_metadata(_league_id)
             today_str = get_pacific_date()
             current_week = meta.get("date_to_week", {}).get(today_str)
             end_week = meta.get("end_week")

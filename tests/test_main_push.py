@@ -62,7 +62,7 @@ def test_main_push_success(
     mock_messaging_api.return_value.push_message.assert_called_once()
     push_req = mock_messaging_api.return_value.push_message.call_args[0][0]
     assert push_req.to == "test_user_id"
-    assert push_req.messages[0].original_content_url == "https://mock-server.com/images/2026-01-18_combined.png"
+    assert push_req.messages[0].original_content_url == "https://mock-server.com/images/nba/12345/2026-01-18_combined.png"
 
 
 @patch("main.load_config")

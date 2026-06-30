@@ -3,29 +3,98 @@ import logging
 import xml.etree.ElementTree as ET
 import os
 import json
+import shutil
 from src.utils.path_utils import get_league_weekly_dir, get_league_daily_dir
 from src.constants.stat_map import translate_stat_id
-from yahoofantasy.api.parse import as_list, from_response_object
+from yahoofantasy.api.parse import as_list, from_response_object, parse_response
 from yahoofantasy.resources.team import Team
 
 
 YAHOO_NS = {'ns': 'http://fantasysports.yahooapis.com/fantasy/v2/base.rng'}
 
+class LeaguePermissionError(Exception):
+    """Raised when the robot has no permission to access the Yahoo league."""
+    pass
+
+def handle_permission_errors(func):
+    from functools import wraps
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            err_str = str(e)
+            if "401" in err_str or "403" in err_str:
+                raise LeaguePermissionError(f"Yahoo API Permission Denied (401/403): {e}") from e
+            raise
+    return wrapper
+
+_real_exists = os.path.exists
+
 class YahooFantasyFetcher:
     NON_STARTING_POSITIONS = ['BN', 'IL', 'IL+', 'NA']
 
-    def __init__(self, team_mapping: dict = None, client_id: str = None, client_secret: str = None):
+    def __init__(self, team_mapping: dict = None, client_id: str = None, client_secret: str = None, league_id: str = None):
+        if league_id is None:
+            from src.config import load_config
+            league_id = load_config().get("LEAGUE_ID")
+        self.league_id = league_id
+
+        persist_key = "credentials/"
+        if league_id:
+            from src.utils.path_utils import BASE_DIR, get_league_dir
+            league_dir = get_league_dir(league_id)
+            
+            # 1. 處理憑證的複製繼承
+            spec_oauth_path = os.path.join(league_dir, "oauth2.json")
+            global_oauth_path = os.path.join(BASE_DIR, "credentials", "oauth2.json")
+            if not _real_exists(spec_oauth_path) and _real_exists(global_oauth_path):
+                os.makedirs(league_dir, exist_ok=True)
+                shutil.copy2(global_oauth_path, spec_oauth_path)
+            
+            spec_yf_path = os.path.join(league_dir, ".yahoofantasy")
+            global_yf_path = os.path.join(BASE_DIR, "credentials", ".yahoofantasy")
+            if not _real_exists(spec_yf_path) and _real_exists(global_yf_path):
+                os.makedirs(league_dir, exist_ok=True)
+                shutil.copy2(global_yf_path, spec_yf_path)
+                
+            lid_str = str(league_id)
+            if lid_str.startswith("nba.l."):
+                sport = "nba"
+                raw_id = lid_str.split(".")[-1]
+            elif lid_str.startswith("mlb.l."):
+                sport = "mlb"
+                raw_id = lid_str.split(".")[-1]
+            elif "." in lid_str:
+                parts = lid_str.split(".")
+                sport = parts[0]
+                raw_id = parts[-1]
+            else:
+                sport = "nba"
+                raw_id = lid_str
+            persist_key = f"data/league/{sport}/{raw_id}/"
+
+        # 清除 yahoofantasy 的全域記憶體快取，避免同一 process 中切換聯賽時
+        # 舊的 auth 資料殘留在 CURRENT_PERSISTENCE，導致新 Context 讀到錯誤的
+        # refresh_token，換出的 access_token 無法存取目標聯賽而回傳 403。
+        from yahoofantasy.util.persistence import CURRENT_PERSISTENCE
+        CURRENT_PERSISTENCE.clear()
+
         self.ctx = yahoofantasy.Context(
-            persist_key="credentials/",
+            persist_key=persist_key,
             client_id=client_id,
             client_secret=client_secret
         )
         self.team_mapping = team_mapping or {}
 
     def _normalize_league_id(self, league_id: str) -> str:
-        if league_id and not str(league_id).startswith('nba.l.'):
-            return f"nba.l.{league_id}"
-        return str(league_id)
+        lid_str = str(league_id).strip()
+        if lid_str.startswith("nba.l.") or lid_str.startswith("mlb.l."):
+            return lid_str
+        elif "." in lid_str:
+            return lid_str
+        else:
+            return f"nba.l.{lid_str}"
         
     def _find_node(self, parent, path):
         return parent.find(path, YAHOO_NS)
@@ -33,6 +102,86 @@ class YahooFantasyFetcher:
     def _find_all_nodes(self, parent, path):
         return parent.findall(path, YAHOO_NS)
 
+    @handle_permission_errors
+    def sync_league_settings(self, league_id: str) -> list:
+        """Fetch league settings and parse all stats categories with sort orders."""
+        league_id = self._normalize_league_id(league_id)
+        url = f"league/{league_id}/settings"
+        xml_data = self.ctx.make_request(url)
+        root = ET.fromstring(xml_data)
+        
+        stats = []
+        stat_nodes = root.findall('.//ns:stat_categories/ns:stats/ns:stat', YAHOO_NS)
+        for node in stat_nodes:
+            s_id_node = node.find('ns:stat_id', YAHOO_NS)
+            name_node = node.find('ns:name', YAHOO_NS)
+            disp_node = node.find('ns:display_name', YAHOO_NS)
+            sort_node = node.find('ns:sort_order', YAHOO_NS)
+            
+            s_id = s_id_node.text if s_id_node is not None else None
+            disp = disp_node.text if disp_node is not None else (name_node.text if name_node is not None else "")
+            sort_val = int(sort_node.text) if (sort_node is not None and sort_node.text is not None) else 1
+            
+            if s_id:
+                stats.append({
+                    "stat_id": str(s_id),
+                    "display_name": str(disp),
+                    "sort_order": sort_val
+                })
+                
+        # Cache it in metadata.json
+        from src.utils.path_utils import get_league_dir
+        meta_path = os.path.join(get_league_dir(league_id), "metadata.json")
+        meta = {}
+        if os.path.exists(meta_path):
+            try:
+                with open(meta_path, "r", encoding="utf-8") as f:
+                    meta = json.load(f)
+            except Exception:
+                pass
+        meta["stat_categories"] = stats
+        os.makedirs(os.path.dirname(meta_path), exist_ok=True)
+        with open(meta_path, "w", encoding="utf-8") as f:
+            json.dump(meta, f, ensure_ascii=False, indent=2)
+            
+        return stats
+
+    def _get_stat_map(self, league_id: str = None) -> dict:
+        if not league_id:
+            pk = getattr(self.ctx, "_persist_key", "")
+            parts = [p for p in pk.split("/") if p]
+            if len(parts) >= 4 and parts[1] == "league":
+                league_id = f"{parts[2]}.l.{parts[3]}"
+                
+        if not league_id:
+            league_id = getattr(self, "league_id", None)
+        if not league_id:
+            from src.config import load_config
+            league_id = load_config().get("LEAGUE_ID")
+            
+        from src.utils.path_utils import get_league_dir
+        meta_path = os.path.join(get_league_dir(league_id), "metadata.json")
+        stat_map = {}
+        if os.path.exists(meta_path):
+            try:
+                with open(meta_path, "r", encoding="utf-8") as f:
+                    meta = json.load(f)
+                    for cat in meta.get("stat_categories", []):
+                        stat_map[str(cat["stat_id"])] = cat["display_name"]
+            except Exception:
+                pass
+        
+        if not stat_map:
+            from src.constants.stat_map import STAT_MAP
+            stat_map = STAT_MAP
+        return stat_map
+
+    def _translate_stat(self, s_id, league_id=None) -> str:
+        stat_map = self._get_stat_map(league_id)
+        s_id_str = str(s_id)
+        return stat_map.get(s_id_str, f"stat_{s_id_str}")
+
+    @handle_permission_errors
     def fetch_league_metadata(self, league_id: str) -> dict:
         """Fetch basic league metadata including season start and end dates."""
         league_id = self._normalize_league_id(league_id)
@@ -63,6 +212,10 @@ class YahooFantasyFetcher:
                 start_date, end_date, season, name, end_week = None, None, None, "Unknown League", None
                 
         except Exception as e:
+            # 權限不足的錯誤應立即拋出，不進行 fallback
+            err_str = str(e)
+            if "401" in err_str or "403" in err_str:
+                raise
             # Fallback if XML parsing fails
             import logging
             logging.error(f"Failed to parse league metadata XML: {e}")
@@ -103,6 +256,7 @@ class YahooFantasyFetcher:
             logging.error(f"Failed to fetch week end date for week {week}: {e}")
             return None
 
+    @handle_permission_errors
     def fetch_league_data(self, league_id: str) -> dict:
         # Ensure league_id has the correct prefix for NBA
         league_id = self._normalize_league_id(league_id)
@@ -172,12 +326,13 @@ class YahooFantasyFetcher:
                         s_id = getattr(s, 'stat_id', None)
                         s_val = getattr(s, 'value', None)
                         if s_id is not None:
-                            label = translate_stat_id(s_id)
+                            label = self._translate_stat(s_id)
                             stats_dict[label] = self._get_val(s_val)
                 except Exception:
                     pass
         return stats_dict
 
+    @handle_permission_errors
     def fetch_team_stats(self, league_id: str) -> dict:
         league_id = self._normalize_league_id(league_id)
             
@@ -203,6 +358,7 @@ class YahooFantasyFetcher:
             
         return {"team_stats": team_stats_data}
 
+    @handle_permission_errors
     def fetch_weekly_stats(self, league_id: str, week: int) -> dict:
         league_id = self._normalize_league_id(league_id)
         raw_id = league_id.split(".")[-1]
@@ -221,13 +377,15 @@ class YahooFantasyFetcher:
                 logging.warning(f"[CACHE] 讀取週數據快取失敗: {e}")
                 
         url = f"league/{league_id}/scoreboard;week={week}"
-        data = self.ctx.make_request(url)
+        data_raw = self.ctx.make_request(url)
+        data = parse_response(data_raw) if isinstance(data_raw, str) else data_raw
         
         os.makedirs(cache_dir, exist_ok=True)
         with open(cache_path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
         return self._parse_teams_from_content(data)
 
+    @handle_permission_errors
     def fetch_daily_stats(self, league_id: str, date_str: str) -> dict:
         league_id = self._normalize_league_id(league_id)
         raw_id = league_id.split(".")[-1]
@@ -246,7 +404,8 @@ class YahooFantasyFetcher:
                 logging.warning(f"[CACHE] 讀取日數據快取失敗: {e}")
                 
         url = f"league/{league_id}/teams/stats;type=date;date={date_str}"
-        data = self.ctx.make_request(url)
+        data_raw = self.ctx.make_request(url)
+        data = parse_response(data_raw) if isinstance(data_raw, str) else data_raw
         
         os.makedirs(cache_dir, exist_ok=True)
         with open(cache_path, "w", encoding="utf-8") as f:
@@ -398,8 +557,7 @@ class YahooFantasyFetcher:
             s_id = node.find('ns:stat_id', YAHOO_NS).text
             s_val = node.find('ns:value', YAHOO_NS).text
             
-            # 使用我們原有的翻譯邏輯
-            label = translate_stat_id(s_id)
+            label = self._translate_stat(s_id)
             stats_dict[label] = s_val if s_val is not None else "0"
             
         return {
@@ -407,12 +565,14 @@ class YahooFantasyFetcher:
             "stats": stats_dict
         }
 
+    @handle_permission_errors
     def fetch_single_team_stats_by_url(self, team_key: str, stat_type: str, type_val: str) -> dict:
         """實時且無快取地抓取單一隊伍在指定日期/週數的 9-Cat 數據"""
         url = f"team/{team_key}/stats;type={stat_type};{stat_type}={type_val}"
         xml_data = self.ctx.make_request(url)
         return self._parse_team_stats_xml(xml_data)
 
+    @handle_permission_errors
     def fetch_matchups(self, league_id: str, week: int) -> list:
         """Fetch matchups with detailed team stats for a specific week from the scoreboard."""
         league_id = self._normalize_league_id(league_id)
@@ -445,7 +605,7 @@ class YahooFantasyFetcher:
                         if s_id_node is not None and s_id_node.text:
                             s_id = s_id_node.text
                             s_val = s_val_node.text if s_val_node is not None else "0"
-                            label = translate_stat_id(s_id)
+                            label = self._translate_stat(s_id, league_id)
                             stats_dict[label] = s_val if s_val is not None else "0"
                     
                     # 拼接出手數與分母輔助項

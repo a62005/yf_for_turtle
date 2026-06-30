@@ -135,4 +135,62 @@ class LLMAgent:
             logging.error(f"[LLM] 解析選秀時間失敗: {e}")
             return {"success": False, "date": None}
 
+    def google_search(self, query: str) -> list:
+        from src.llm.prompts.player_fuzzy_search import _search_duckduckgo
+        return _search_duckduckgo(query)
+
+    def player_fuzzy_search(self, nickname: str, sport: str = "nba") -> dict:
+        sport = str(sport).lower()
+        sport_name = "MLB" if sport == "mlb" else "NBA"
+        sport_desc = "MLB 棒球" if sport == "mlb" else "NBA 籃球"
+        expert_desc = "棒球專家" if sport == "mlb" else "籃球專家"
+
+        if not self.provider:
+            return {
+                "is_known_player": False,
+                "english_name": None,
+                "chinese_name": None,
+                "team": None,
+                "jersey_number": None,
+                "confidence": 0.0,
+                "reason": "API Key 尚未設定"
+            }
+
+        from src.llm.prompts.player_fuzzy_search import get_system_prompt
+        system_prompt = get_system_prompt(sport)
+
+        try:
+            # 第一次先直接解析
+            data = self.provider.generate_json(f"請解析以下輸入：{nickname}", system_prompt)
+            
+            if not data.get("is_known_player"):
+                logging.info(f"LLM 解析 '{nickname}' 失敗，嘗試進行網路搜尋...")
+                query = f'{sport_name} "{nickname}"'
+                search_results = self.google_search(query)
+                results_text = "\n\n".join(search_results) if search_results else "無搜尋結果"
+
+                prompt = f"""你是一個精準的 {sport_desc} 專家（{expert_desc}）。我們在網路搜尋了「{query}」，得到以下結果：
+
+{results_text}
+
+請結合上述搜尋結果以及你的知識，解析使用者的輸入「{nickname}」是指哪位現役 {sport_name} 球員。
+如果搜尋結果或你的知識明確指出這是指哪位現役球員，請將 is_known_player 設為 true 並填寫其資訊。
+如果仍然無法確定，或該球員已退休，請將 is_known_player 設為 false。
+必須以指定的 JSON 格式回傳，不要包含 any 額外的說明、Markdown 標記或 ```json 包裹。"""
+                data_search = self.provider.generate_json(prompt, system_prompt)
+                return data_search
+            return data
+        except Exception as e:
+            logging.error(f"LLM API parse failed: {e}")
+            return {
+                "is_known_player": False,
+                "english_name": None,
+                "chinese_name": None,
+                "team": None,
+                "jersey_number": None,
+                "confidence": 0.0,
+                "reason": f"API 呼叫失敗: {str(e)}"
+            }
+
+
 

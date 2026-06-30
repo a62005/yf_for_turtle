@@ -1,6 +1,10 @@
 import os
 import json
 from dotenv import load_dotenv
+from contextvars import ContextVar
+from typing import Optional
+
+current_chat_id: ContextVar[Optional[str]] = ContextVar("current_chat_id", default=None)
 
 def load_config() -> dict:
     dynamic_server_url = os.environ.get("SERVER_URL")
@@ -12,17 +16,19 @@ def load_config() -> dict:
     if (not current_server_url or current_server_url.strip() == "") and dynamic_server_url:
         os.environ["SERVER_URL"] = dynamic_server_url
     
-    # 僅從動態設定檔 data/security/league_config.json 讀取聯盟 ID，不再從環境變數或 env 讀取
+    # 從 current_chat_id 取得 chat_id，讀取 data/security/chat_league_mapping.json 對應的 league_id
     league_id = None
-    security_file = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "security", "league_config.json"))
-    if os.path.exists(security_file):
-        try:
-            with open(security_file, "r", encoding="utf-8") as f:
-                sec_data = json.load(f)
-                if sec_data.get("LEAGUE_ID"):
-                    league_id = str(sec_data["LEAGUE_ID"])
-        except Exception:
-            pass
+    chat_id = current_chat_id.get() or os.environ.get("LINE_REPLY_TO")
+    if chat_id:
+        mapping_file = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "security", "chat_league_mapping.json"))
+        if os.path.exists(mapping_file):
+            try:
+                with open(mapping_file, "r", encoding="utf-8") as f:
+                    mapping_data = json.load(f)
+                    if mapping_data and chat_id in mapping_data:
+                        league_id = str(mapping_data[chat_id])
+            except Exception:
+                pass
             
     mapping_file = os.getenv("TEAM_MAPPING_FILE", "team_mapping.json")
     season_start = os.getenv("SEASON_START_DATE")
