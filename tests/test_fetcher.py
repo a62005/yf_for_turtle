@@ -303,7 +303,17 @@ def test_fetch_weekly_stats_scoreboard_format(mocker):
                             {
                                 "teams": {
                                     "team": [
-                                        {"team_id": "1", "name": "Team 1"},
+                                        {
+                                            "team_id": "1", 
+                                            "name": "Team 1",
+                                            "team_remaining_games": {
+                                                "total": {
+                                                    "completed_games": "2",
+                                                    "live_games": "1",
+                                                    "remaining_games": "3"
+                                                }
+                                            }
+                                        },
                                         {"team_id": "2", "name": "Team 2"}
                                     ]
                                 }
@@ -334,4 +344,6 @@ def test_fetch_weekly_stats_scoreboard_format(mocker):
     assert data["team_stats"][0]["team_id"] == "1"
     assert data["team_stats"][0]["name"] == "A01"
     assert data["team_stats"][0]["stats"]["PTS"] == "100"
+    assert data["team_stats"][0]["stats"]["GP_PLAYED"] == 3
+    assert data["team_stats"][0]["stats"]["GP_TOTAL"] == 6
 
