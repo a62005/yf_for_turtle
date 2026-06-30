@@ -372,7 +372,7 @@ class YahooFantasyFetcher:
                 with open(cache_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
                 if data:
-                    return self._parse_teams_from_content(data)
+                    return self._parse_weekly_content(data)
             except Exception as e:
                 logging.warning(f"[CACHE] 讀取週數據快取失敗: {e}")
                 
@@ -383,6 +383,20 @@ class YahooFantasyFetcher:
         os.makedirs(cache_dir, exist_ok=True)
         with open(cache_path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
+        return self._parse_weekly_content(data)
+
+    def _parse_weekly_content(self, data) -> dict:
+        """根據 API 傳回的結構自動選擇解析器 (matchup-based scoreboard 或 team-based stats)"""
+        try:
+            if "fantasy_content" in data and "league" in data["fantasy_content"]:
+                league = data["fantasy_content"]["league"]
+                if "scoreboard" in league:
+                    return self._parse_scoreboard(data)
+                elif "teams" in league:
+                    return self._parse_teams_from_content(data)
+        except Exception as e:
+            logging.error(f"Error choosing weekly parser: {e}")
+        # fallback
         return self._parse_teams_from_content(data)
 
     @handle_permission_errors
@@ -466,13 +480,14 @@ class YahooFantasyFetcher:
                     t = Team(self.ctx, None, team_data["team_id"])
                     from_response_object(t, team_data)
                     team_id = str(getattr(t, "team_id", ""))
-                    team_name = self.team_mapping.get(team_id, str(getattr(t, "name", "Unknown")))
+                    team_name = self.get_team_name(team_id, team_data.get("name", "Unknown"))
                     team_stats_data.append({
+                        "team_id": team_id,
                         "name": team_name,
                         "stats": self._parse_stats(t)
                     })
-        except Exception:
-            pass
+        except Exception as e:
+            logging.error(f"Error parsing scoreboard: {e}")
         return {"team_stats": team_stats_data}
 
     def fetch_batch_rosters(self, league_id: str, date_str: str) -> dict:
