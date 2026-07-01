@@ -521,7 +521,7 @@ class MiscHandler(BaseHandler):
             card_files.append("card_4_admin.json")
             
         project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        help_flex_dir = os.path.join(project_root, "data", "help_flex")
+        help_flex_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "help_flex")
         
         bubbles = []
         try:
