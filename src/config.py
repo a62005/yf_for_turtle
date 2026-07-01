@@ -69,6 +69,5 @@ def load_config() -> dict:
         "LLM_MODEL": os.getenv("LLM_MODEL"),
         "NEXT_SEASON_START_DATE": next_season_start_date,
         "DRAFT_DATE": draft_date,
-        "PRIZE_IMAGE_PATH": os.getenv("PRIZE_IMAGE_PATH"),
         "ENABLE_FOOTBALL_ANALYSIS": os.getenv("ENABLE_FOOTBALL_ANALYSIS", "False").lower() in ("true", "1", "yes")
     }
