@@ -96,7 +96,8 @@ def test_stats_handler_mlb_bypasses_game_day(mock_os_close, mock_os_open, mock_m
     config = MagicMock(spec=Configuration)
     
     # 因為是 MLB，所以不論目前時間是幾點、NBA 是否在比賽，都不應被 is_stats_query_allowed 阻擋，直接放行
-    with patch("src.handlers.stats_handler.get_target_date", return_value="2024-11-01"):
+    with patch("src.handlers.stats_handler.get_target_date", return_value="2024-11-01"), \
+         patch("src.utils.time_utils.is_game_day", return_value=(True, "")):
         handler.execute(event, config)
         
     # 因為是 MLB，所以不應被 is_stats_query_allowed 阻擋，依然能觸發背景任務

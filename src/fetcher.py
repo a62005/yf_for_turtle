@@ -361,12 +361,16 @@ class YahooFantasyFetcher:
     @handle_permission_errors
     def fetch_weekly_stats(self, league_id: str, week: int) -> dict:
         league_id = self._normalize_league_id(league_id)
-        raw_id = league_id.split(".")[-1]
         
-        cache_dir = get_league_weekly_dir(raw_id)
+        cache_dir = get_league_weekly_dir(league_id)
         cache_path = os.path.join(cache_dir, f"week_{week}.json")
         
-        if os.path.exists(cache_path):
+        from src.utils.cache_utils import load_league_metadata
+        meta = load_league_metadata(league_id)
+        current_week = meta.get("current_week")
+        is_current_week = (week == current_week)
+        
+        if os.path.exists(cache_path) and not is_current_week:
             logging.info(f"[CACHE] 命中週數據快取: {cache_path}")
             try:
                 with open(cache_path, "r", encoding="utf-8") as f:
@@ -402,12 +406,14 @@ class YahooFantasyFetcher:
     @handle_permission_errors
     def fetch_daily_stats(self, league_id: str, date_str: str) -> dict:
         league_id = self._normalize_league_id(league_id)
-        raw_id = league_id.split(".")[-1]
         
-        cache_dir = get_league_daily_dir(raw_id)
+        cache_dir = get_league_daily_dir(league_id)
         cache_path = os.path.join(cache_dir, f"date_{date_str}.json")
         
-        if os.path.exists(cache_path):
+        from src.utils.time_utils import get_pacific_date
+        is_today = (date_str == get_pacific_date())
+        
+        if os.path.exists(cache_path) and not is_today:
             logging.info(f"[CACHE] 命中日數據快取: {cache_path}")
             try:
                 with open(cache_path, "r", encoding="utf-8") as f:
