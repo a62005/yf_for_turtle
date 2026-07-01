@@ -1,0 +1,74 @@
+{
+  "type": "bubble",
+  "body": {
+    "type": "box",
+    "layout": "vertical",
+    "spacing": "md",
+    "contents": [
+      {
+        "type": "box",
+        "layout": "vertical",
+        "spacing": "xs",
+        "contents": [
+          {
+            "type": "text",
+            "text": "🏀 聯賽資訊",
+            "weight": "bold",
+            "size": "xl",
+            "color": "#111111"
+          },
+          {
+            "type": "text",
+            "text": "掌握賽季日程與聯賽資訊",
+            "size": "sm",
+            "color": "#555555"
+          }
+        ]
+      },
+      {
+        "type": "text",
+        "text": "選秀與開季倒數僅於休賽季啟用",
+        "size": "xs",
+        "color": "#777777",
+        "wrap": true
+      },
+      {
+        "type": "box",
+        "layout": "vertical",
+        "spacing": "sm",
+        "contents": [
+          {
+            "type": "button",
+            "style": "secondary",
+            "height": "sm",
+            "action": {
+              "type": "message",
+              "label": "聯賽獎金",
+              "text": "#獎金"
+            }
+          },
+          {
+            "type": "button",
+            "style": "secondary",
+            "height": "sm",
+            "action": {
+              "type": "message",
+              "label": "開季倒數",
+              "text": "#開季"
+            }
+          },
+          {
+            "type": "button",
+            "style": "secondary",
+            "height": "sm",
+            "action": {
+              "type": "message",
+              "label": "選秀倒數",
+              "text": "#選秀"
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

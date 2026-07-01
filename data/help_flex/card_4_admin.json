@@ -1,0 +1,64 @@
+{
+  "type": "bubble",
+  "body": {
+    "type": "box",
+    "layout": "vertical",
+    "spacing": "md",
+    "contents": [
+      {
+        "type": "box",
+        "layout": "vertical",
+        "spacing": "xs",
+        "contents": [
+          {
+            "type": "text",
+            "text": "⚙️ 管理員專區",
+            "weight": "bold",
+            "size": "xl",
+            "color": "#111111"
+          },
+          {
+            "type": "text",
+            "text": "聯盟後台與參數配置",
+            "size": "sm",
+            "color": "#555555"
+          }
+        ]
+      },
+      {
+        "type": "text",
+        "text": "限聯賽白名單管理員使用",
+        "size": "xs",
+        "color": "#777777",
+        "wrap": true
+      },
+      {
+        "type": "box",
+        "layout": "vertical",
+        "spacing": "sm",
+        "contents": [
+          {
+            "type": "button",
+            "style": "secondary",
+            "height": "sm",
+            "action": {
+              "type": "message",
+              "label": "系統設置",
+              "text": "#設置"
+            }
+          },
+          {
+            "type": "button",
+            "style": "secondary",
+            "height": "sm",
+            "action": {
+              "type": "message",
+              "label": "設置暱稱",
+              "text": "#設置玩家暱稱"
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

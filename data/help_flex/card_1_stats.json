@@ -1,0 +1,74 @@
+{
+  "type": "bubble",
+  "body": {
+    "type": "box",
+    "layout": "vertical",
+    "spacing": "md",
+    "contents": [
+      {
+        "type": "box",
+        "layout": "vertical",
+        "spacing": "xs",
+        "contents": [
+          {
+            "type": "text",
+            "text": "🏆 聯賽戰績板",
+            "weight": "bold",
+            "size": "xl",
+            "color": "#111111"
+          },
+          {
+            "type": "text",
+            "text": "查詢最新排名與歷史戰績",
+            "size": "sm",
+            "color": "#555555"
+          }
+        ]
+      },
+      {
+        "type": "text",
+        "text": "支援輸入 #戰績W3 或特定日期",
+        "size": "xs",
+        "color": "#777777",
+        "wrap": true
+      },
+      {
+        "type": "box",
+        "layout": "vertical",
+        "spacing": "sm",
+        "contents": [
+          {
+            "type": "button",
+            "style": "secondary",
+            "height": "sm",
+            "action": {
+              "type": "message",
+              "label": "今日戰績",
+              "text": "#戰績"
+            }
+          },
+          {
+            "type": "button",
+            "style": "secondary",
+            "height": "sm",
+            "action": {
+              "type": "message",
+              "label": "昨日戰績",
+              "text": "#戰績昨天"
+            }
+          },
+          {
+            "type": "button",
+            "style": "secondary",
+            "height": "sm",
+            "action": {
+              "type": "message",
+              "label": "上週戰績",
+              "text": "#戰績上週"
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

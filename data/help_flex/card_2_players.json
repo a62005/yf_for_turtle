@@ -1,0 +1,64 @@
+{
+  "type": "bubble",
+  "body": {
+    "type": "box",
+    "layout": "vertical",
+    "spacing": "md",
+    "contents": [
+      {
+        "type": "box",
+        "layout": "vertical",
+        "spacing": "xs",
+        "contents": [
+          {
+            "type": "text",
+            "text": "⚔️ 玩家與對戰",
+            "weight": "bold",
+            "size": "xl",
+            "color": "#111111"
+          },
+          {
+            "type": "text",
+            "text": "查詢本週即時比分與玩家數據",
+            "size": "sm",
+            "color": "#555555"
+          }
+        ]
+      },
+      {
+        "type": "text",
+        "text": "※ 球員數據請直接在對話框輸入：\n#球員 球員名字 (例：#球員 老詹)",
+        "size": "xs",
+        "color": "#777777",
+        "wrap": true
+      },
+      {
+        "type": "box",
+        "layout": "vertical",
+        "spacing": "sm",
+        "contents": [
+          {
+            "type": "button",
+            "style": "secondary",
+            "height": "sm",
+            "action": {
+              "type": "message",
+              "label": "即時對決",
+              "text": "#對戰"
+            }
+          },
+          {
+            "type": "button",
+            "style": "secondary",
+            "height": "sm",
+            "action": {
+              "type": "message",
+              "label": "玩家數據",
+              "text": "#玩家"
+            }
+          }
+        ]
+      }
+    ]
+  }
+}
