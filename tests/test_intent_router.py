@@ -672,3 +672,155 @@ def test_intent_router_add_manager_flow():
         mock_reply.assert_called_once_with(event, config, f"✅ 成功將管理員 小華 ({valid_id}) 加入全域管理員名單。")
 
 
+def test_intent_router_add_whitelist_flow():
+    from src.handlers.dispatcher import CommandDispatcher
+    from src.handlers.intent_router import IntentRouter
+    from src.utils.session_manager import (
+        set_add_whitelist_session,
+        get_add_whitelist_session,
+        clear_add_whitelist_session
+    )
+    from linebot.v3.messaging import Configuration
+    from unittest.mock import patch, MagicMock
+
+    dispatcher = CommandDispatcher()
+    router = IntentRouter(dispatcher)
+
+    event = MagicMock()
+    event.source.user_id = "user_wl_test"
+    event.source.type = "user"
+    config = Configuration()
+    config.access_token = "dummy"
+
+    # Mock manager check
+    with patch("src.utils.security.security_manager.is_super_admin", return_value=True), \
+         patch("src.handlers.intent_router.load_config", return_value={"LEAGUE_ID": "123"}):
+        
+        # 1. 測試指令 #新增白名單成員 起始會話
+        event.message.text = "#新增白名單成員"
+        with patch.object(router, "reply_text") as mock_reply:
+            router.route(event, config)
+            sess = get_add_whitelist_session("user_wl_test")
+            assert sess is not None
+            assert sess["step"] == 1
+            mock_reply.assert_called_once_with(
+                event, config, "請在 60 秒內輸入欲新增的白名單成員 LINE ID（例如：U123456...），或輸入 # 取消："
+            )
+
+        # 2. 測試輸入 "#" 取消
+        set_add_whitelist_session("user_wl_test", step=1, data={}, duration_sec=60)
+        event.message.text = "#"
+        with patch.object(router, "reply_text") as mock_reply:
+            router.route(event, config)
+            assert get_add_whitelist_session("user_wl_test") is None
+            mock_reply.assert_called_once_with(event, config, "已取消新增成員。")
+
+        # 3. 測試 Step 1: 格式錯誤
+        set_add_whitelist_session("user_wl_test", step=1, data={}, duration_sec=60)
+        event.message.text = "invalid_id"
+        with patch.object(router, "reply_text") as mock_reply:
+            router.route(event, config)
+            sess = get_add_whitelist_session("user_wl_test")
+            assert sess is not None
+            assert sess["step"] == 1
+            mock_reply.assert_called_once()
+            assert "格式錯誤" in mock_reply.call_args[0][2]
+
+        # 4. 測試 Step 1: 成功，進到 Step 2
+        set_add_whitelist_session("user_wl_test", step=1, data={}, duration_sec=60)
+        valid_id = "U" + "b" * 32
+        event.message.text = valid_id
+        with patch.object(router, "reply_text") as mock_reply:
+            router.route(event, config)
+            sess = get_add_whitelist_session("user_wl_test")
+            assert sess is not None
+            assert sess["step"] == 2
+            assert sess["data"]["target_id"] == valid_id
+            mock_reply.assert_called_once_with(
+                event, config, "請在 60 秒內輸入該成員的方便識別名稱（例如：大雄），或輸入 # 取消："
+            )
+
+        # 5. 測試 Step 2: 名字為空
+        set_add_whitelist_session("user_wl_test", step=2, data={"target_id": valid_id}, duration_sec=60)
+        event.message.text = "   "
+        with patch.object(router, "reply_text") as mock_reply:
+            router.route(event, config)
+            sess = get_add_whitelist_session("user_wl_test")
+            assert sess is not None
+            assert sess["step"] == 2
+            mock_reply.assert_called_once()
+            assert "名稱不能為空" in mock_reply.call_args[0][2]
+
+        # 6. 測試 Step 2: 成功加入白名單成員
+        set_add_whitelist_session("user_wl_test", step=2, data={"target_id": valid_id}, duration_sec=60)
+        event.message.text = "大雄"
+        with patch.object(router, "reply_text") as mock_reply, \
+             patch("src.utils.security.security_manager.add_to_league_whitelist", return_value=True) as mock_add:
+            router.route(event, config)
+            mock_add.assert_called_once_with("123", valid_id, "大雄")
+            assert get_add_whitelist_session("user_wl_test") is None
+            mock_reply.assert_called_once_with(
+                event, config, f"✅ 成功將成員 大雄 ({valid_id}) 加入此聯盟的白名單成員。"
+            )
+
+
+def test_intent_router_remove_whitelist_flow():
+    from src.handlers.dispatcher import CommandDispatcher
+    from src.handlers.intent_router import IntentRouter
+    from linebot.v3.messaging import Configuration
+    from unittest.mock import patch, MagicMock
+
+    dispatcher = CommandDispatcher()
+    router = IntentRouter(dispatcher)
+
+    event = MagicMock()
+    event.source.user_id = "user_wl_test"
+    event.source.type = "user"
+    config = Configuration()
+    config.access_token = "dummy"
+
+    # Mock manager check
+    with patch("src.utils.security.security_manager.is_super_admin", return_value=True), \
+         patch("src.handlers.intent_router.load_config", return_value={"LEAGUE_ID": "123"}):
+
+        # 1. 測試 #移除白名單成員：目前無成員
+        event.message.text = "#移除白名單成員"
+        with patch.object(router, "reply_text") as mock_reply, \
+             patch("src.utils.security.security_manager._load_json", return_value={}):
+            router.route(event, config)
+            mock_reply.assert_called_once_with(event, config, "ℹ️ 目前此聯盟無任何白名單成員。")
+
+        # 2. 測試 #移除白名單成員：有成員，渲染 Flex
+        valid_id = "U" + "b" * 32
+        mock_roles = {
+            "123": {
+                "manager": "mgr_id",
+                "whitelist": {
+                    valid_id: "大雄"
+                }
+            }
+        }
+        event.message.text = "#移除白名單成員"
+        with patch.object(router, "reply_flex") as mock_reply, \
+             patch("src.utils.security.security_manager._load_json", return_value=mock_roles):
+            router.route(event, config)
+            mock_reply.assert_called_once()
+            args = mock_reply.call_args[0]
+            assert args[2] == "移除白名單成員選單"
+            # 驗證按鈕標籤與指令
+            buttons = args[3]["body"]["contents"][1]["contents"]
+            assert buttons[0]["action"]["label"] == "移除 大雄 (Ubbbbb...)"
+            assert buttons[0]["action"]["text"] == f"#確切移除白名單 {valid_id}"
+
+        # 3. 測試 #確切移除白名單
+        event.message.text = f"#確切移除白名單 {valid_id}"
+        with patch.object(router, "reply_text") as mock_reply, \
+             patch("src.utils.security.security_manager._load_json", return_value=mock_roles), \
+             patch("src.utils.security.security_manager.remove_from_league_whitelist", return_value=True) as mock_remove:
+            router.route(event, config)
+            mock_remove.assert_called_once_with("123", valid_id)
+            mock_reply.assert_called_once_with(
+                event, config, f"✅ 成功將成員 大雄 ({valid_id}) 移出白名單。"
+            )
+
+

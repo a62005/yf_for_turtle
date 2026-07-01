@@ -4,7 +4,7 @@ import os
 import json
 import time
 from linebot.v3.webhooks import MessageEvent
-from linebot.v3.messaging import Configuration, ApiClient, MessagingApi, ReplyMessageRequest, TextMessage
+from linebot.v3.messaging import Configuration, ApiClient, MessagingApi, ReplyMessageRequest, TextMessage, FlexMessage, FlexContainer
 from src.handlers.dispatcher import CommandDispatcher
 from src.llm.llm_agent import LLMAgent
 from src.config import load_config
@@ -20,7 +20,8 @@ from src.utils.session_manager import (
     get_add_manager_session,
     clear_add_manager_session,
     get_add_whitelist_session,
-    clear_add_whitelist_session
+    clear_add_whitelist_session,
+    set_add_whitelist_session
 )
 from src.utils.path_utils import get_league_team_mapping_path
 
@@ -180,6 +181,54 @@ class IntentRouter:
                     clear_add_manager_session(user_id)
                     return
 
+            # 0.6 攔截新增白名單成員會話
+            add_whitelist_sess = get_add_whitelist_session(user_id)
+            if add_whitelist_sess:
+                if user_text == "#":
+                    clear_add_whitelist_session(user_id)
+                    self.reply_text(event, configuration, "已取消新增成員。")
+                    return
+                
+                step = add_whitelist_sess.get("step")
+                data = add_whitelist_sess.get("data") or {}
+                
+                if step == 1:
+                    # 驗證 LINE ID 格式
+                    if not re.match(r"^U[a-fA-F0-9]{32}$", user_text):
+                        self.reply_text(
+                            event, 
+                            configuration, 
+                            "⚠️ LINE ID 格式錯誤，必須為 U 開頭後接 32 位十六進位字元。\n請重新輸入，或輸入 # 取消："
+                        )
+                        return
+                    
+                    target_id = user_text
+                    set_add_whitelist_session(user_id, step=2, data={"target_id": target_id}, duration_sec=60)
+                    self.reply_text(event, configuration, "請在 60 秒內輸入該成員的方便識別名稱（例如：大雄），或輸入 # 取消：")
+                    return
+                    
+                elif step == 2:
+                    display_name = user_text.strip()
+                    if not display_name:
+                        self.reply_text(
+                            event, 
+                            configuration, 
+                            "⚠️ 名稱不能為空，請重新輸入該成員的方便識別名稱，或輸入 # 取消："
+                        )
+                        return
+                    
+                    target_id = data.get("target_id")
+                    from src.utils.security import security_manager
+                    config = load_config()
+                    league_id = config.get("LEAGUE_ID")
+                    if league_id:
+                        security_manager.add_to_league_whitelist(league_id, target_id, display_name)
+                        self.reply_text(event, configuration, f"✅ 成功將成員 {display_name} ({target_id}) 加入此聯盟的白名單成員。")
+                    else:
+                        self.reply_text(event, configuration, "⚠️ 尚未設置聯盟 ID，無法新增白名單成員。")
+                    clear_add_whitelist_session(user_id)
+                    return
+
             # 1. 攔截選秀時間會話
             draft_session = get_draft_time_session(user_id)
             if draft_session:
@@ -255,7 +304,76 @@ class IntentRouter:
                 else:
                     self.reply_text(event, configuration, "⚠️ 設置獎金模式中，請傳送獎金圖片，或輸入 # 取消設定。")
                     return
+        # 0.7 攔截白名單成員管理指令
+        from src.utils.security import security_manager
         
+        if user_text == "#新增白名單成員":
+            is_manager = False
+            if user_id:
+                if security_manager.is_super_admin(user_id):
+                    is_manager = True
+                else:
+                    config = load_config()
+                    league_id = config.get("LEAGUE_ID")
+                    if league_id and security_manager.is_league_manager(user_id, league_id):
+                        is_manager = True
+            if is_manager:
+                set_add_whitelist_session(user_id, step=1, duration_sec=60)
+                self.reply_text(event, configuration, "請在 60 秒內輸入欲新增的白名單成員 LINE ID（例如：U123456...），或輸入 # 取消：")
+            return
+
+        if user_text == "#移除白名單成員":
+            is_manager = False
+            if user_id:
+                if security_manager.is_super_admin(user_id):
+                    is_manager = True
+                else:
+                    config = load_config()
+                    league_id = config.get("LEAGUE_ID")
+                    if league_id and security_manager.is_league_manager(user_id, league_id):
+                        is_manager = True
+            if is_manager:
+                config = load_config()
+                league_id = config.get("LEAGUE_ID")
+                roles = security_manager._load_json(security_manager.league_roles_path, {})
+                league_data = roles.get(league_id) or {} if league_id else {}
+                whitelist = league_data.get("whitelist", {})
+                if not whitelist:
+                    self.reply_text(event, configuration, "ℹ️ 目前此聯盟無任何白名單成員。")
+                else:
+                    from src.visualizer.flex_builder import build_button_menu_card
+                    buttons = []
+                    for target_id, name in whitelist.items():
+                        id_slice = target_id[:6]
+                        buttons.append((f"移除 {name} ({id_slice}...)", f"#確切移除白名單 {target_id}"))
+                    flex_dict = build_button_menu_card("移除白名單成員", "請選擇欲移除的成員：", buttons)
+                    self.reply_flex(event, configuration, "移除白名單成員選單", flex_dict)
+            return
+
+        if user_text.startswith("#確切移除白名單 "):
+            is_manager = False
+            if user_id:
+                if security_manager.is_super_admin(user_id):
+                    is_manager = True
+                else:
+                    config = load_config()
+                    league_id = config.get("LEAGUE_ID")
+                    if league_id and security_manager.is_league_manager(user_id, league_id):
+                        is_manager = True
+            if is_manager:
+                target_id = user_text[len("#確切移除白名單 "):].strip()
+                config = load_config()
+                league_id = config.get("LEAGUE_ID")
+                if league_id:
+                    roles = security_manager._load_json(security_manager.league_roles_path, {})
+                    league_data = roles.get(league_id) or {}
+                    whitelist = league_data.get("whitelist", {})
+                    display_name = whitelist.get(target_id, target_id)
+                    
+                    security_manager.remove_from_league_whitelist(league_id, target_id)
+                    self.reply_text(event, configuration, f"✅ 成功將成員 {display_name} ({target_id}) 移出白名單。")
+            return
+
         # 1. 優先處理標準指令
         if user_text.startswith("#"):
             logging.info(f"[IntentRouter] 收到標準指令: {user_text}")
@@ -356,6 +474,17 @@ class IntentRouter:
                 ReplyMessageRequest(
                     reply_token=event.reply_token,
                     messages=[TextMessage(text=text)]
+                )
+            )
+
+    def reply_flex(self, event: MessageEvent, configuration: Configuration, alt_text: str, flex_dict: dict) -> None:
+        """Reply to user with a LINE Flex Message."""
+        flex_container = FlexContainer.from_json(json.dumps(flex_dict))
+        with ApiClient(configuration) as api_client:
+            MessagingApi(api_client).reply_message(
+                ReplyMessageRequest(
+                    reply_token=event.reply_token,
+                    messages=[FlexMessage(alt_text=alt_text, contents=flex_container)]
                 )
             )
 
