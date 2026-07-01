@@ -258,6 +258,19 @@ def test_execute_help_admin(mock_messaging_api, mock_api_client, mock_load_confi
         flex_dict = args[3]
         # 預期管理員看見 4 張卡片
         assert len(flex_dict["contents"]) == 4
+        
+        # 驗證第四張管理員卡片中包含 "設置暱稱" 與 "系統設置"
+        admin_bubble = flex_dict["contents"][3]
+        buttons = []
+        body = admin_bubble.get("body", {})
+        for container in body.get("contents", []):
+            if container.get("type") == "box" and "contents" in container:
+                for item in container["contents"]:
+                    if item.get("type") == "button":
+                        buttons.append(item["action"]["text"])
+        assert "#設置" in buttons
+        assert "#設置玩家暱稱" in buttons
+
 
 @patch("src.handlers.misc_handler.security_manager")
 @patch("src.handlers.misc_handler.load_league_metadata")

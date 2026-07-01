@@ -612,7 +612,7 @@ class MiscHandler(BaseHandler):
                 with open(file_path, "r", encoding="utf-8") as f:
                     card_data = json.load(f)
                     
-                    if not league_id or card_file == "card_4_admin.json":
+                    if not league_id and card_file == "card_4_admin.json":
                         body = card_data.get("body", {})
                         contents = body.get("contents", [])
                         for container in contents:
