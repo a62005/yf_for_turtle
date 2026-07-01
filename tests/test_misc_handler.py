@@ -285,3 +285,43 @@ def test_execute_help_fallback(mock_messaging_api, mock_api_client, mock_load_co
         # Fallback 的常數應包含 3 個 Bubble
         assert flex_dict["type"] == "carousel"
         assert len(flex_dict["contents"]) == 3
+
+@patch("src.handlers.misc_handler.security_manager")
+@patch("src.handlers.misc_handler.load_league_metadata")
+@patch("src.handlers.misc_handler.get_pacific_date")
+@patch("src.handlers.misc_handler.load_config")
+@patch("src.handlers.misc_handler.ApiClient")
+@patch("src.handlers.misc_handler.MessagingApi")
+def test_execute_help_no_league_id_admin(mock_messaging_api, mock_api_client, mock_load_config, mock_get_pacific, mock_load_meta, mock_sec_manager, mock_event, mock_config):
+    handler = MiscHandler()
+    mock_event.message.text = "#幫助"
+    mock_event.source.user_id = "user_admin"
+    
+    mock_load_meta.return_value = {"end_date": "2026-04-12"}
+    mock_get_pacific.return_value = "2026-05-29"
+    mock_load_config.return_value = {"LEAGUE_ID": None}
+    mock_sec_manager.is_whitelisted.return_value = True
+    
+    with patch.object(handler, "reply_flex") as mock_reply_flex:
+        handler.execute(mock_event, mock_config)
+        mock_reply_flex.assert_called_once()
+        args = mock_reply_flex.call_args[0]
+        flex_dict = args[3]
+        
+        # 驗證收到的 Carousel content 長度為 1
+        assert flex_dict["type"] == "carousel"
+        assert len(flex_dict["contents"]) == 1
+        
+        # 驗證這唯一一張卡片中，按鈕列表只有 1 個按鈕（且其 label 為 "系統設置"，不含 "設置暱稱" 欄位）
+        bubble = flex_dict["contents"][0]
+        buttons = []
+        body = bubble.get("body", {})
+        for container in body.get("contents", []):
+            if container.get("type") == "box" and "contents" in container:
+                for item in container["contents"]:
+                    if item.get("type") == "button":
+                        buttons.append(item)
+                        
+        assert len(buttons) == 1
+        assert buttons[0]["action"]["label"] == "系統設置"
+        assert buttons[0]["action"]["text"] == "#設置"

@@ -54,7 +54,16 @@ class IntentRouter:
                 if get_nickname_session(user_id) or get_draft_time_session(user_id) or get_league_id_session(user_id) or get_prize_session(user_id):
                     is_active_session = True
             
-            is_allowed_cmd = (user_text in ["#設置", "#設定", "#Setting", "#setting"] or user_text == "#我的ID" or user_text.startswith("#設置聯盟ID"))
+            from src.utils.security import security_manager
+            is_whitelisted = security_manager.is_whitelisted(user_id) if user_id else False
+            is_help_cmd = user_text.lower().strip() in ("#幫助", "#help", "#幫忙", "#更多")
+            
+            is_allowed_cmd = (
+                user_text in ["#設置", "#設定", "#Setting", "#setting"] or 
+                user_text == "#我的ID" or 
+                user_text.startswith("#設置聯盟ID") or
+                (is_whitelisted and is_help_cmd)
+            )
             if not (is_allowed_cmd or is_active_session):
                 return False
 

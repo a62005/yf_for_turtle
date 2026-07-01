@@ -450,6 +450,25 @@ def test_should_process_unbound_silence():
         # 4. 驗證普通自然語言閒聊
         event_chat = create_mock_event("今天天氣真好", chat_type="user")
         assert router.should_process(event_chat, config) is False
+        
+        # 5. 驗證白名單管理員放行幫助指令
+        with patch("src.utils.security.security_manager") as mock_sec:
+            event_help = create_mock_event("#幫助")
+            event_help.source.user_id = "user_admin"
+            
+            # 白名單 + 幫助指令 -> 放行
+            mock_sec.is_whitelisted.return_value = True
+            assert router.should_process(event_help, config) is True
+            
+            # 非白名單 + 幫助指令 -> 攔截
+            mock_sec.is_whitelisted.return_value = False
+            assert router.should_process(event_help, config) is False
+            
+            # 白名單 + 非幫助指令（例如 #戰績） -> 攔截
+            mock_sec.is_whitelisted.return_value = True
+            event_not_help = create_mock_event("#戰績")
+            event_not_help.source.user_id = "user_admin"
+            assert router.should_process(event_not_help, config) is False
 
 
 def test_intent_router_league_id_session():

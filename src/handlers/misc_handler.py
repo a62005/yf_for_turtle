@@ -241,6 +241,66 @@ class MiscHandler(BaseHandler):
         ]
     }
 
+    DEFAULT_HELP_FLEX_NO_LEAGUE = {
+        "type": "carousel",
+        "contents": [
+            {
+                "type": "bubble",
+                "body": {
+                    "type": "box",
+                    "layout": "vertical",
+                    "spacing": "md",
+                    "contents": [
+                        {
+                            "type": "box",
+                            "layout": "vertical",
+                            "spacing": "xs",
+                            "contents": [
+                                {
+                                    "type": "text",
+                                    "text": "⚙️ 管理員專區",
+                                    "weight": "bold",
+                                    "size": "xl",
+                                    "color": "#111111"
+                                },
+                                {
+                                    "type": "text",
+                                    "text": "聯盟後台與參數配置",
+                                    "size": "sm",
+                                    "color": "#555555"
+                                }
+                            ]
+                        },
+                        {
+                            "type": "text",
+                            "text": "限聯賽白名單管理員使用",
+                            "size": "xs",
+                            "color": "#777777",
+                            "wrap": True
+                        },
+                        {
+                            "type": "box",
+                            "layout": "vertical",
+                            "spacing": "sm",
+                            "contents": [
+                                {
+                                    "type": "button",
+                                    "style": "secondary",
+                                    "height": "sm",
+                                    "action": {
+                                        "type": "message",
+                                        "label": "系統設置",
+                                        "text": "#設置"
+                                    }
+                                }
+                            ]
+                        }
+                    ]
+                }
+            }
+        ]
+    }
+
     def __init__(self):
         self.pattern = re.compile(r"^#(?:開季|選秀|獎金|幫助|幫忙|更多|[hH][eE][lL][pP])$")
 
@@ -272,11 +332,17 @@ class MiscHandler(BaseHandler):
             config = load_config()
             league_id = config.get("LEAGUE_ID")
             
+        user_text = event.message.text.strip()
+
         if not league_id:
+            user_id = event.source.user_id if event.source and hasattr(event.source, "user_id") else None
+            is_admin = security_manager.is_whitelisted(user_id) if user_id else False
+            is_help_cmd = user_text.lower().strip() in ("#幫助", "#help", "#幫忙", "#更多")
+            if is_admin and is_help_cmd:
+                self._handle_help(event, configuration)
+                return
             # 未綁定聯賽則靜默退出
             return
-
-        user_text = event.message.text.strip()
 
         # 僅限制 NBA 聯賽的指令
         if user_text == "#開季" or user_text.startswith("#傷兵"):
@@ -511,14 +577,28 @@ class MiscHandler(BaseHandler):
         user_id = event.source.user_id if event.source and hasattr(event.source, "user_id") else None
         is_admin = security_manager.is_whitelisted(user_id)
         
+        # 取得 league_id
+        league_id = None
+        if configuration:
+            if hasattr(configuration, "get"):
+                league_id = configuration.get("LEAGUE_ID")
+            else:
+                league_id = getattr(configuration, "LEAGUE_ID", None)
+        if not league_id:
+            config = load_config()
+            league_id = config.get("LEAGUE_ID")
+
         # 定義要加載的卡片檔名
-        card_files = [
-            "card_1_stats.json",
-            "card_2_players.json",
-            "card_3_info.json"
-        ]
-        if is_admin:
-            card_files.append("card_4_admin.json")
+        if not league_id:
+            card_files = ["card_4_admin.json"]
+        else:
+            card_files = [
+                "card_1_stats.json",
+                "card_2_players.json",
+                "card_3_info.json"
+            ]
+            if is_admin:
+                card_files.append("card_4_admin.json")
             
         project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         help_flex_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "help_flex")
@@ -531,6 +611,20 @@ class MiscHandler(BaseHandler):
                     raise FileNotFoundError(f"Card file not found: {file_path}")
                 with open(file_path, "r", encoding="utf-8") as f:
                     card_data = json.load(f)
+                    
+                    if not league_id or card_file == "card_4_admin.json":
+                        body = card_data.get("body", {})
+                        contents = body.get("contents", [])
+                        for container in contents:
+                            if container.get("type") == "box" and "contents" in container:
+                                btn_list = container["contents"]
+                                filtered_btns = []
+                                for btn in btn_list:
+                                    if btn.get("type") == "button" and btn.get("action", {}).get("text") == "#設置玩家暱稱":
+                                        continue
+                                    filtered_btns.append(btn)
+                                container["contents"] = filtered_btns
+                                
                     bubbles.append(card_data)
                     
             carousel_dict = {
@@ -539,7 +633,10 @@ class MiscHandler(BaseHandler):
             }
         except Exception as e:
             logging.warning(f"[MiscHandler] 載入 Flex 幫助選單失敗: {e}，改用內建預設值 Fallback。")
-            carousel_dict = self.DEFAULT_HELP_FLEX
+            if not league_id:
+                carousel_dict = self.DEFAULT_HELP_FLEX_NO_LEAGUE
+            else:
+                carousel_dict = self.DEFAULT_HELP_FLEX
             
         try:
             self.reply_flex(event, configuration, "聯賽數據助手-幫助選單", carousel_dict)
