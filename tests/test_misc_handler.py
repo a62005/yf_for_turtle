@@ -12,9 +12,10 @@ from src.handlers.misc_handler import MiscHandler
 
 @pytest.fixture
 def mock_event():
-    event = MagicMock(spec=MessageEvent)
+    event = MagicMock()
     event.reply_token = "dummy_reply_token"
     event.message = MagicMock()
+    event.source = MagicMock()
     return event
 
 @pytest.fixture
