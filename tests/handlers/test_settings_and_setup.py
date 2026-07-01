@@ -105,6 +105,7 @@ def test_set_league_id_handler_multi_league_binding():
         with patch("src.handlers.set_league_id_handler.sync_season_metadata") as mock_sync, \
              patch("src.handlers.set_league_id_handler.open", side_effect=custom_open), \
              patch("src.handlers.set_league_id_handler.os.path.exists", return_value=False), \
+             patch("src.utils.security.security_manager.set_league_owner") as mock_set_owner, \
              patch("yahoofantasy.League", return_value=mock_league) as mock_league_cls:
              
             handler.execute(event, config)
