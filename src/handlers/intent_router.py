@@ -14,7 +14,9 @@ from src.utils.session_manager import (
     get_draft_time_session,
     clear_draft_time_session,
     get_league_id_session,
-    clear_league_id_session
+    clear_league_id_session,
+    get_season_start_time_session,
+    clear_season_start_time_session
 )
 from src.utils.path_utils import get_league_team_mapping_path
 
@@ -51,7 +53,11 @@ class IntentRouter:
             is_active_session = False
             if user_id:
                 from src.utils.session_manager import get_prize_session
-                if get_nickname_session(user_id) or get_draft_time_session(user_id) or get_league_id_session(user_id) or get_prize_session(user_id):
+                if (get_nickname_session(user_id) or 
+                    get_draft_time_session(user_id) or 
+                    get_league_id_session(user_id) or 
+                    get_prize_session(user_id) or 
+                    get_season_start_time_session(user_id)):
                     is_active_session = True
             
             from src.utils.security import security_manager
@@ -79,7 +85,11 @@ class IntentRouter:
         user_id = getattr(event.source, "user_id", None)
         if user_id:
             from src.utils.session_manager import get_prize_session
-            if get_nickname_session(user_id) or get_draft_time_session(user_id) or get_league_id_session(user_id) or get_prize_session(user_id):
+            if (get_nickname_session(user_id) or 
+                get_draft_time_session(user_id) or 
+                get_league_id_session(user_id) or 
+                get_prize_session(user_id) or 
+                get_season_start_time_session(user_id)):
                 return True
 
         # 4. 群聊中必須被提及 (@提及)
@@ -122,6 +132,26 @@ class IntentRouter:
                             event, 
                             configuration, 
                             "⚠️ 無法解析您輸入的時間格式，請重新輸入（例如：2026-10-15 19:30），或輸入 # 取消"
+                        )
+                    return
+
+            # 1.5 攔截開季時間會話
+            season_session = get_season_start_time_session(user_id)
+            if season_session:
+                if user_text.startswith("#"):
+                    clear_season_start_time_session(user_id)
+                else:
+                    parsed = self.llm_agent.parse_draft_date(user_text)
+                    if parsed.get("success") and parsed.get("date"):
+                        date_val = parsed["date"]
+                        self._update_league_settings({"SEASON_START_DATE": date_val})
+                        clear_season_start_time_session(user_id)
+                        self.reply_text(event, configuration, f"✅ 成功將開季時間修改為：{date_val}")
+                    else:
+                        self.reply_text(
+                            event, 
+                            configuration, 
+                            "⚠️ 無法解析您輸入的時間格式，請重新輸入（例如：2026-10-22 08:00），或輸入 # 取消"
                         )
                     return
 
