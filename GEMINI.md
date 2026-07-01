@@ -8,6 +8,9 @@ This project is a Python scraper for Yahoo Fantasy NBA data. It uses the `yahoof
 2. **Data Format**: Currently outputs to JSON in the `data/` directory. If changing to a database, implement a new class in `storage.py` conforming to a common interface.
 3. **Authentication & Config**: Handled via `oauth2.json` and `.env`. **CRITICAL: NEVER delete, modify, or overwrite the `.env` file (especially `LEAGUE_ID`), `credentials/` directory, `.yahoofantasy` directory, or `oauth2.json` file. These contain essential configurations and user credentials and are strictly off-limits.**
 4. **Testing**: Use `pytest`. Run tests before committing.
+5. **Testing Cleanliness & Sandboxing**: All test cases MUST run in a sandboxed environment to prevent polluting the production `data/` folder.
+   - Any test writing files or creating directories MUST mock `src.utils.path_utils.DATA_DIR` or use `tmp_path` to avoid creating physical folders in the production `data/` path.
+   - A global session-scoped teardown fixture in `tests/conftest.py` is configured to delete all test-generated folders (such as `123`, `12345`, `99999`, and `default` directories under `data/league/`) immediately after the test suite completes. If new test league IDs are introduced, keep this cleanup configuration updated.
 
 ## Setup Instructions
 1. `pip install -r requirements.txt`

@@ -12,9 +12,11 @@ def cleanup_test_data_after_suite():
         "data/league/nba/123",
         "data/league/nba/12345",
         "data/league/nba/99999",
+        "data/league/nba/default",
         "data/league/mlb/123",
         "data/league/mlb/12345",
-        "data/league/mlb/99999"
+        "data/league/mlb/99999",
+        "data/league/mlb/default"
     ]
     for d in test_dirs:
         if os.path.exists(d):
