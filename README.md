@@ -59,11 +59,12 @@ LINE_CHANNEL_SECRET=您的LINE_Channel_Secret
 LINE_CHANNEL_ACCESS_TOKEN=您的LINE_Channel_Access_Token
 
 # 大語言模型 (LLM) 設定
-LLM_MODEL=gemini-2.5-flash
+# 目前僅支援 Google Gemini 系列模型
+LLM_MODEL=您的LLM模型
 LLM_API_KEY=您的LLM_API_Key
 
-# 本地伺服器的公開 URL (用於提供獎金圖片給 LINE API 下載)
-SERVER_URL=https://您的ngrok域名.ngrok-free.app
+# 本地伺服器的公開 URL (用於提供獎金圖片給 LINE API 下載，若無則留空)
+SERVER_URL=
 
 # NGROK 自動 Webhook 對接 (選填，用於本地開發調試)
 NGROK_AUTHTOKEN=您的Ngrok_Auth_Token
