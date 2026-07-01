@@ -9,6 +9,11 @@ from src.handlers.set_league_id_handler import SetLeagueIdHandler
 from src.handlers.dispatcher import CommandDispatcher
 from src.utils.security import security_manager
 
+@pytest.fixture(autouse=True)
+def mock_data_dir(tmp_path):
+    with patch("src.utils.path_utils.DATA_DIR", str(tmp_path)):
+        yield
+
 @pytest.fixture
 def mock_event():
     event = MagicMock(spec=MessageEvent)
@@ -75,7 +80,7 @@ def test_set_league_id_manager_tries_bound_by_other_manager_blocked(mock_event, 
             "⚠️ 設置失敗，該聯盟 ID (nba.l.12345) 已由其他管理員管理。"
         )
 
-def test_set_league_id_manager_binds_new_league_becomes_owner(mock_event, mock_config):
+def test_set_league_id_manager_binds_new_league_becomes_owner(mock_event, mock_config, tmp_path):
     """If a manager binds a new league ID, they become the owner."""
     handler = SetLeagueIdHandler()
     handler.reply_text = MagicMock()
@@ -103,6 +108,7 @@ def test_set_league_id_manager_binds_new_league_becomes_owner(mock_event, mock_c
     mock_league.teams.return_value = [mock_team]
 
     with patch("src.config.load_config", return_value={"YAHOO_CLIENT_ID": "id", "YAHOO_CLIENT_SECRET": "sec"}), \
+         patch("src.utils.path_utils.DATA_DIR", str(tmp_path)), \
          patch.object(security_manager, "_load_json", side_effect=mock_load), \
          patch.object(security_manager, "_save_json", side_effect=mock_save), \
          patch.object(security_manager, "is_super_admin", return_value=False), \

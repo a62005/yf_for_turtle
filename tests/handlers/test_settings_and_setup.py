@@ -3,6 +3,11 @@ from unittest.mock import MagicMock, patch, mock_open
 from src.handlers.settings_handler import SettingsHandler
 from src.handlers.set_league_id_handler import SetLeagueIdHandler
 
+@pytest.fixture(autouse=True)
+def mock_data_dir(tmp_path):
+    with patch("src.utils.path_utils.DATA_DIR", str(tmp_path)):
+        yield
+
 def test_settings_handler_shows_flex_menu():
     handler = SettingsHandler()
     handler.reply_flex = MagicMock()
@@ -47,7 +52,7 @@ def test_set_league_id_handler_success():
         )
 
 
-def test_set_league_id_handler_multi_league_binding():
+def test_set_league_id_handler_multi_league_binding(tmp_path):
     from src.config import current_chat_id
     import json
     
@@ -105,6 +110,7 @@ def test_set_league_id_handler_multi_league_binding():
         with patch("src.handlers.set_league_id_handler.sync_season_metadata") as mock_sync, \
              patch("src.handlers.set_league_id_handler.open", side_effect=custom_open), \
              patch("src.handlers.set_league_id_handler.os.path.exists", return_value=False), \
+             patch("src.utils.path_utils.DATA_DIR", str(tmp_path)), \
              patch("src.utils.security.security_manager.set_league_owner") as mock_set_owner, \
              patch("yahoofantasy.League", return_value=mock_league) as mock_league_cls:
              
@@ -180,7 +186,9 @@ def test_set_league_id_handler_interactive_session_digit(mocker):
     mock_league = MagicMock()
     mocker.patch("yahoofantasy.League", return_value=mock_league)
     mocker.patch("src.handlers.set_league_id_handler.open", mocker.mock_open())
-    mocker.patch("src.handlers.set_league_id_handler.os.path.exists", return_value=True)
+    import os
+    original_exists = os.path.exists
+    mocker.patch("src.handlers.set_league_id_handler.os.path.exists", side_effect=lambda path: True if "team_mapping.json" in str(path) else original_exists(path))
     mock_update = mocker.patch.object(handler, "_update_league_id")
     
     handler.execute(event3, MagicMock())
