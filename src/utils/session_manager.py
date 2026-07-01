@@ -98,3 +98,28 @@ def get_season_start_time_session(user_id: str) -> any | None:
 def clear_season_start_time_session(user_id: str) -> None:
     clear_session(user_id, "set_season_start_time")
 
+
+def set_add_manager_session(user_id: str, step: int, data: dict = None, duration_sec: int = 60) -> None:
+    set_session(user_id, "add_manager", {"step": step, "data": data or {}}, duration_sec)
+
+
+def get_add_manager_session(user_id: str) -> dict | None:
+    return get_session(user_id, "add_manager")
+
+
+def clear_add_manager_session(user_id: str) -> None:
+    clear_session(user_id, "add_manager")
+
+
+def set_add_whitelist_session(user_id: str, step: int, data: dict = None, duration_sec: int = 60) -> None:
+    set_session(user_id, "add_whitelist", {"step": step, "data": data or {}}, duration_sec)
+
+
+def get_add_whitelist_session(user_id: str) -> dict | None:
+    return get_session(user_id, "add_whitelist")
+
+
+def clear_add_whitelist_session(user_id: str) -> None:
+    clear_session(user_id, "add_whitelist")
+
+

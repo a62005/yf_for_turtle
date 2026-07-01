@@ -3,6 +3,7 @@ from linebot.v3.webhooks import MessageEvent
 from linebot.v3.messaging import Configuration
 from src.handlers.base_handler import BaseHandler
 from src.utils.security import security_manager
+from src.utils.session_manager import set_add_manager_session
 
 class SuperAdminHandler(BaseHandler):
     def __init__(self):
@@ -11,21 +12,14 @@ class SuperAdminHandler(BaseHandler):
         self.exclude_from_llm = True
         
     def can_handle(self, user_text: str) -> bool:
-        return user_text.strip().startswith("#新增白名單")
+        return user_text.strip() == "#新增管理員"
         
     def execute(self, event: MessageEvent, configuration: Configuration) -> None:
-        user_text = event.message.text.strip()
-        match = re.match(r"^#新增白名單\s+(U[a-fA-F0-9]{32})$", user_text)
-        if not match:
-            self.reply_text(event, configuration, "格式錯誤，請使用：#新增白名單 <LINE_ID>")
-            return
-            
-        target_id = match.group(1)
-        if security_manager.add_to_whitelist(target_id):
-            self.reply_text(event, configuration, f"成功將 ID 加入白名單：{target_id}")
-        else:
-            self.reply_text(event, configuration, f"將 ID 加入白名單失敗：{target_id}")
+        user_id = event.source.user_id
+        set_add_manager_session(user_id, step=1, duration_sec=60)
+        self.reply_text(event, configuration, "請在 60 秒內輸入欲新增的管理員 LINE ID（例如：U123456...），或輸入 # 取消：")
 
     @property
     def instruction_desc(self) -> str:
-        return "#新增白名單 <LINE_ID> : (限超級管理員) 將指定 LINE ID 加入系統白名單"
+        return "#新增管理員 : (限超級管理員) 指派並新增一名全域管理員"
+

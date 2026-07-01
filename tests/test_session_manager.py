@@ -89,3 +89,46 @@ def test_season_start_time_session():
     assert get_season_start_time_session(user_id) is None
 
 
+def test_add_manager_session():
+    user_id = "user_add_manager_test"
+    from src.utils.session_manager import (
+        set_add_manager_session,
+        get_add_manager_session,
+        clear_add_manager_session,
+    )
+    set_add_manager_session(user_id, step=1, data={"target_id": "U123"}, duration_sec=10)
+    session = get_add_manager_session(user_id)
+    assert session is not None
+    assert session["step"] == 1
+    assert session["data"] == {"target_id": "U123"}
+
+    # 測試更新/覆蓋
+    set_add_manager_session(user_id, step=2, data={"target_id": "U123", "name": "test"}, duration_sec=10)
+    session = get_add_manager_session(user_id)
+    assert session["step"] == 2
+    assert session["data"] == {"target_id": "U123", "name": "test"}
+
+    # 測試清除
+    clear_add_manager_session(user_id)
+    assert get_add_manager_session(user_id) is None
+
+
+def test_add_whitelist_session():
+    user_id = "user_add_whitelist_test"
+    from src.utils.session_manager import (
+        set_add_whitelist_session,
+        get_add_whitelist_session,
+        clear_add_whitelist_session,
+    )
+    set_add_whitelist_session(user_id, step=1, data={"target_id": "U456"}, duration_sec=10)
+    session = get_add_whitelist_session(user_id)
+    assert session is not None
+    assert session["step"] == 1
+    assert session["data"] == {"target_id": "U456"}
+
+    # 測試清除
+    clear_add_whitelist_session(user_id)
+    assert get_add_whitelist_session(user_id) is None
+
+
+

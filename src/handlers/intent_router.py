@@ -16,7 +16,11 @@ from src.utils.session_manager import (
     get_league_id_session,
     clear_league_id_session,
     get_season_start_time_session,
-    clear_season_start_time_session
+    clear_season_start_time_session,
+    get_add_manager_session,
+    clear_add_manager_session,
+    get_add_whitelist_session,
+    clear_add_whitelist_session
 )
 from src.utils.path_utils import get_league_team_mapping_path
 
@@ -41,8 +45,21 @@ class IntentRouter:
 
     def should_process(self, event: MessageEvent, configuration: Configuration) -> bool:
         """Determine if the message event should be processed by the bot."""
-        user_text = event.message.text.strip() if event.message and hasattr(event.message, 'text') else ""
+        if not (event.message and hasattr(event.message, 'text')):
+            return False
+        user_text = event.message.text.strip()
         if not user_text:
+            user_id = getattr(event.source, "user_id", None)
+            if user_id:
+                from src.utils.session_manager import get_prize_session
+                if (get_nickname_session(user_id) or 
+                    get_draft_time_session(user_id) or 
+                    get_league_id_session(user_id) or 
+                    get_prize_session(user_id) or 
+                    get_season_start_time_session(user_id) or
+                    get_add_manager_session(user_id) or
+                    get_add_whitelist_session(user_id)):
+                    return True
             return False
 
         # 多聯盟未綁定防護：若 league_id 未設定，僅放行指定設定指令或活動會話
@@ -57,7 +74,9 @@ class IntentRouter:
                     get_draft_time_session(user_id) or 
                     get_league_id_session(user_id) or 
                     get_prize_session(user_id) or 
-                    get_season_start_time_session(user_id)):
+                    get_season_start_time_session(user_id) or
+                    get_add_manager_session(user_id) or
+                    get_add_whitelist_session(user_id)):
                     is_active_session = True
             
             from src.utils.security import security_manager
@@ -89,7 +108,9 @@ class IntentRouter:
                 get_draft_time_session(user_id) or 
                 get_league_id_session(user_id) or 
                 get_prize_session(user_id) or 
-                get_season_start_time_session(user_id)):
+                get_season_start_time_session(user_id) or
+                get_add_manager_session(user_id) or
+                get_add_whitelist_session(user_id)):
                 return True
 
         # 4. 群聊中必須被提及 (@提及)
@@ -115,6 +136,50 @@ class IntentRouter:
         
         user_id = getattr(event.source, "user_id", None)
         if user_id:
+            # 0.5 攔截新增管理員會話
+            add_manager_sess = get_add_manager_session(user_id)
+            if add_manager_sess:
+                if user_text == "#":
+                    clear_add_manager_session(user_id)
+                    self.reply_text(event, configuration, "已取消新增管理員。")
+                    return
+                
+                step = add_manager_sess.get("step")
+                data = add_manager_sess.get("data") or {}
+                
+                if step == 1:
+                    # 驗證 LINE ID 格式
+                    if not re.match(r"^U[a-fA-F0-9]{32}$", user_text):
+                        self.reply_text(
+                            event, 
+                            configuration, 
+                            "⚠️ LINE ID 格式錯誤，必須為 U 開頭後接 32 位十六進位字元。\n請重新輸入，或輸入 # 取消："
+                        )
+                        return
+                    
+                    target_id = user_text
+                    from src.utils.session_manager import set_add_manager_session
+                    set_add_manager_session(user_id, step=2, data={"target_id": target_id}, duration_sec=60)
+                    self.reply_text(event, configuration, "請在 60 秒內輸入該管理員的方便識別名稱（例如：小明），或輸入 # 取消：")
+                    return
+                    
+                elif step == 2:
+                    display_name = user_text.strip()
+                    if not display_name:
+                        self.reply_text(
+                            event, 
+                            configuration, 
+                            "⚠️ 名稱不能為空，請重新輸入該管理員的方便識別名稱，或輸入 # 取消："
+                        )
+                        return
+                    
+                    target_id = data.get("target_id")
+                    from src.utils.security import security_manager
+                    security_manager.add_manager(target_id, display_name)
+                    self.reply_text(event, configuration, f"✅ 成功將管理員 {display_name} ({target_id}) 加入全域管理員名單。")
+                    clear_add_manager_session(user_id)
+                    return
+
             # 1. 攔截選秀時間會話
             draft_session = get_draft_time_session(user_id)
             if draft_session:

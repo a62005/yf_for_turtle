@@ -598,3 +598,77 @@ def test_intent_router_intercept_season_session_failure():
         args, kwargs = mock_reply.call_args
         assert "無法解析" in args[2] or "格式" in args[2] or "請重新輸入" in args[2]
 
+
+def test_intent_router_add_manager_flow():
+    from src.handlers.dispatcher import CommandDispatcher
+    from src.handlers.intent_router import IntentRouter
+    from src.utils.session_manager import (
+        set_add_manager_session, 
+        get_add_manager_session, 
+        clear_add_manager_session
+    )
+    from linebot.v3.messaging import Configuration
+    from unittest.mock import patch, MagicMock
+    
+    dispatcher = CommandDispatcher()
+    router = IntentRouter(dispatcher)
+    
+    event = MagicMock()
+    event.source.user_id = "user_mgr_test"
+    event.source.type = "user"
+    config = Configuration()
+    config.access_token = "dummy"
+
+    # 1. 測試輸入 "#" 取消
+    set_add_manager_session("user_mgr_test", step=1, data={}, duration_sec=60)
+    event.message.text = "#"
+    with patch.object(router, "reply_text") as mock_reply:
+        router.route(event, config)
+        assert get_add_manager_session("user_mgr_test") is None
+        mock_reply.assert_called_once_with(event, config, "已取消新增管理員。")
+
+    # 2. 測試 Step 1: 格式錯誤
+    set_add_manager_session("user_mgr_test", step=1, data={}, duration_sec=60)
+    event.message.text = "invalid_id"
+    with patch.object(router, "reply_text") as mock_reply:
+        router.route(event, config)
+        sess = get_add_manager_session("user_mgr_test")
+        assert sess is not None
+        assert sess["step"] == 1
+        mock_reply.assert_called_once()
+        assert "格式錯誤" in mock_reply.call_args[0][2]
+
+    # 3. 測試 Step 1: 成功，進到 Step 2
+    set_add_manager_session("user_mgr_test", step=1, data={}, duration_sec=60)
+    valid_id = "U" + "a" * 32
+    event.message.text = valid_id
+    with patch.object(router, "reply_text") as mock_reply:
+        router.route(event, config)
+        sess = get_add_manager_session("user_mgr_test")
+        assert sess is not None
+        assert sess["step"] == 2
+        assert sess["data"]["target_id"] == valid_id
+        mock_reply.assert_called_once_with(event, config, "請在 60 秒內輸入該管理員的方便識別名稱（例如：小明），或輸入 # 取消：")
+
+    # 4. 測試 Step 2: 名字為空
+    set_add_manager_session("user_mgr_test", step=2, data={"target_id": valid_id}, duration_sec=60)
+    event.message.text = "   "
+    with patch.object(router, "reply_text") as mock_reply:
+        router.route(event, config)
+        sess = get_add_manager_session("user_mgr_test")
+        assert sess is not None
+        assert sess["step"] == 2
+        mock_reply.assert_called_once()
+        assert "名稱不能為空" in mock_reply.call_args[0][2]
+
+    # 5. 測試 Step 2: 成功加入管理員
+    set_add_manager_session("user_mgr_test", step=2, data={"target_id": valid_id}, duration_sec=60)
+    event.message.text = "小華"
+    with patch.object(router, "reply_text") as mock_reply, \
+         patch("src.utils.security.security_manager.add_manager", return_value=True) as mock_add:
+        router.route(event, config)
+        mock_add.assert_called_once_with(valid_id, "小華")
+        assert get_add_manager_session("user_mgr_test") is None
+        mock_reply.assert_called_once_with(event, config, f"✅ 成功將管理員 小華 ({valid_id}) 加入全域管理員名單。")
+
+
