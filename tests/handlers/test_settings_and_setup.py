@@ -465,8 +465,10 @@ def test_set_league_id_handler_remove_expired_session_fails():
         "⚠️ 移除請求已過期或未發起，請重新輸入 #移除聯盟ID。"
     )
 
-
-
-
-
-
+def test_settings_handler_aliases():
+    handler = SettingsHandler()
+    assert handler.can_handle("#設定") is True
+    assert handler.can_handle("#Setting") is True
+    assert handler.can_handle("#setting") is True
+    assert handler.can_handle("#設置") is True
+    assert handler.can_handle("#其他") is False

@@ -485,3 +485,21 @@ def test_intent_router_league_id_session():
         clear_league_id_session("user_test_league_session")
 
 
+def test_intent_router_should_process_setting_aliases(mocker):
+    # Setup intent router
+    from src.handlers.intent_router import IntentRouter
+    from src.handlers.dispatcher import CommandDispatcher
+    dispatcher = mocker.MagicMock(spec=CommandDispatcher)
+    router = IntentRouter(dispatcher)
+    
+    # Mock configuration to return empty LEAGUE_ID
+    mocker.patch("src.handlers.intent_router.load_config", return_value={"LEAGUE_ID": None})
+    
+    # Test each alias
+    for cmd in ["#設定", "#Setting", "#setting", "#設置"]:
+        event = mocker.MagicMock()
+        event.message.text = cmd
+        event.source.user_id = "user_123"
+        
+        # Should return True since it is in allowed list
+        assert router.should_process(event, mocker.MagicMock()) is True

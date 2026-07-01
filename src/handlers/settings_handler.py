@@ -11,7 +11,7 @@ class SettingsHandler(BaseHandler):
         self.exclude_from_llm = True
         
     def can_handle(self, user_text: str) -> bool:
-        return user_text.strip() == "#設置"
+        return user_text.strip() in ["#設置", "#設定", "#Setting", "#setting"]
         
     def execute(self, event: MessageEvent, configuration: Configuration) -> None:
         config = load_config()

@@ -54,7 +54,7 @@ class IntentRouter:
                 if get_nickname_session(user_id) or get_draft_time_session(user_id) or get_league_id_session(user_id) or get_prize_session(user_id):
                     is_active_session = True
             
-            is_allowed_cmd = (user_text == "#設置" or user_text == "#我的ID" or user_text.startswith("#設置聯盟ID"))
+            is_allowed_cmd = (user_text in ["#設置", "#設定", "#Setting", "#setting"] or user_text == "#我的ID" or user_text.startswith("#設置聯盟ID"))
             if not (is_allowed_cmd or is_active_session):
                 return False
 
