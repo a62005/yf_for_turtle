@@ -809,7 +809,7 @@ def test_intent_router_remove_whitelist_flow():
             assert args[2] == "移除白名單成員選單"
             # 驗證按鈕標籤與指令
             buttons = args[3]["body"]["contents"][1]["contents"]
-            assert buttons[0]["action"]["label"] == "移除 大雄 (Ubbbbb...)"
+            assert buttons[0]["action"]["label"] == "大雄"
             assert buttons[0]["action"]["text"] == f"#確切移除白名單 {valid_id}"
 
         # 3. 測試 #確切移除白名單
@@ -820,7 +820,7 @@ def test_intent_router_remove_whitelist_flow():
             router.route(event, config)
             mock_remove.assert_called_once_with("123", valid_id)
             mock_reply.assert_called_once_with(
-                event, config, f"✅ 成功將成員 大雄 ({valid_id}) 移出白名單。"
+                event, config, "✅ 成功將成員 大雄 移出白名單。"
             )
 
 

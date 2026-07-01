@@ -344,8 +344,7 @@ class IntentRouter:
                     from src.visualizer.flex_builder import build_button_menu_card
                     buttons = []
                     for target_id, name in whitelist.items():
-                        id_slice = target_id[:6]
-                        buttons.append((f"移除 {name} ({id_slice}...)", f"#確切移除白名單 {target_id}"))
+                        buttons.append((name, f"#確切移除白名單 {target_id}"))
                     flex_dict = build_button_menu_card("移除白名單成員", "請選擇欲移除的成員：", buttons)
                     self.reply_flex(event, configuration, "移除白名單成員選單", flex_dict)
             return
@@ -371,7 +370,7 @@ class IntentRouter:
                     display_name = whitelist.get(target_id, target_id)
                     
                     security_manager.remove_from_league_whitelist(league_id, target_id)
-                    self.reply_text(event, configuration, f"✅ 成功將成員 {display_name} ({target_id}) 移出白名單。")
+                    self.reply_text(event, configuration, f"✅ 成功將成員 {display_name} 移出白名單。")
             return
 
         # 1. 優先處理標準指令
