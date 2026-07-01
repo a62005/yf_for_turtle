@@ -101,16 +101,15 @@ def process_stats_for_visual(data: dict) -> list:
     # Formatting heuristics helper
     def format_val(label, val):
         if val is None or str(val).strip() in ("", "-"):
-            return "-"
+            val = 0
             
         # 1. Percentage (e.g. FG%)
         if "%" in label:
             try:
                 num = float(val)
-                if num == 0: return "-"
                 return f"{num * 100:.1f}%"
             except (ValueError, TypeError):
-                pass
+                return "0.0%"
                 
         # 2. Baseball rate (AVG, OBP, SLG, OPS) -> 3 decimals (strip leading zero)
         if label in ["AVG", "OBP", "SLG", "OPS"]:
@@ -123,7 +122,7 @@ def process_stats_for_visual(data: dict) -> list:
                     return "-" + formatted[2:]
                 return formatted
             except (ValueError, TypeError):
-                pass
+                return ".000"
                 
         # 3. Baseball pitching (ERA, WHIP) -> 2 decimals
         if label in ["ERA", "WHIP"]:
@@ -131,7 +130,7 @@ def process_stats_for_visual(data: dict) -> list:
                 num = float(val)
                 return f"{num:.2f}"
             except (ValueError, TypeError):
-                pass
+                return "0.00"
                 
         # 其餘直接輸出整數
         try:
@@ -148,8 +147,18 @@ def process_stats_for_visual(data: dict) -> list:
             try: return float(str(val).strip('%'))
             except (ValueError, TypeError): return 0
 
-        # Sort teams according to the category rule
-        sorted_teams = sorted(team_stats, key=sort_key_func, reverse=cat["reverse"])
+        # Sort teams: first by team_id ascending (as fallback for ties)
+        def get_team_id_key(team):
+            tid = team.get("team_id", "")
+            try:
+                return int(tid)
+            except (ValueError, TypeError):
+                return 999999
+        
+        sorted_by_id = sorted(team_stats, key=get_team_id_key)
+        
+        # Then sort by the stats category value (stable sort preserves team_id order)
+        sorted_teams = sorted(sorted_by_id, key=sort_key_func, reverse=cat["reverse"])
         
         rows = []
         for rank, team in enumerate(sorted_teams, 1):

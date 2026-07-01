@@ -51,7 +51,7 @@ def test_process_stats_missing_fallback():
     pts_column = next(c for c in processed if c['label'] == 'PTS')
     assert pts_column['rows'][0]['name'] == 'Team A'
     assert pts_column['rows'][1]['name'] == 'Team B'
-    assert pts_column['rows'][1]['value'] == "-"
+    assert pts_column['rows'][1]['value'] == 0
 
 def test_process_stats_empty():
     assert process_stats_for_visual({}) == []
@@ -112,13 +112,13 @@ def test_process_stats_percentage_formatting():
     assert any(r['name'] == 'Team A' and r['value'] == '12.3%' for r in fg_pct_column['rows'])
     assert any(r['name'] == 'Team A' and r['value'] == '80.0%' for r in ft_pct_column['rows'])
     
-    # Team B: 0 -> "-", None -> "-"
-    assert any(r['name'] == 'Team B' and r['value'] == '-' for r in fg_pct_column['rows'])
-    assert any(r['name'] == 'Team B' and r['value'] == '-' for r in ft_pct_column['rows'])
+    # Team B: 0 -> "0.0%", None -> "0.0%"
+    assert any(r['name'] == 'Team B' and r['value'] == '0.0%' for r in fg_pct_column['rows'])
+    assert any(r['name'] == 'Team B' and r['value'] == '0.0%' for r in ft_pct_column['rows'])
     
-    # Team C: 0.5 -> 50.0%, 0.00 -> "-"
+    # Team C: 0.5 -> 50.0%, 0.00 -> "0.0%"
     assert any(r['name'] == 'Team C' and r['value'] == '50.0%' for r in fg_pct_column['rows'])
-    assert any(r['name'] == 'Team C' and r['value'] == '-' for r in ft_pct_column['rows'])
+    assert any(r['name'] == 'Team C' and r['value'] == '0.0%' for r in ft_pct_column['rows'])
 
 
 def test_is_mlb_pitcher_stat():
