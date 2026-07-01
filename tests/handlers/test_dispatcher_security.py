@@ -41,6 +41,7 @@ def test_dispatcher_permission_interception():
         # 情況 A: 發送者非 admin 也非 whitelist
         mock_sm.is_super_admin.return_value = False
         mock_sm.is_whitelisted.return_value = False
+        mock_sm.is_league_whitelisted.return_value = False
 
         # 嘗試執行 admin 指令
         mock_event.message.text = "#admin_cmd"
@@ -55,6 +56,7 @@ def test_dispatcher_permission_interception():
         # 情況 B: 發送者是超級管理員
         mock_sm.is_super_admin.return_value = True
         mock_sm.is_whitelisted.return_value = True # admin 自然 is whitelisted
+        mock_sm.is_league_whitelisted.return_value = True
 
         # 執行 admin 指令
         mock_event.message.text = "#admin_cmd"

@@ -13,6 +13,7 @@ class BaseHandler(ABC):
     def __init__(self):
         self.requires_super_admin: bool = False
         self.requires_whitelist: bool = False
+        self.requires_manager: bool = False
         self.exclude_from_llm: bool = False
         
         # 動態包裝子類別的 execute 方法以統一處理 LeaguePermissionError

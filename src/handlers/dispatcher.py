@@ -27,9 +27,24 @@ class CommandDispatcher:
                             logging.info(f"[Dispatcher] 使用者 {user_id} 嘗試執行 {handler.__class__.__name__}，因非超級管理員被安靜攔截")
                             return  # 安靜攔截，不作任何回覆
                     
-                    # 2. 白名單權限檢查
+                    # 2. 管理員權限檢查
+                    if getattr(handler, 'requires_manager', False):
+                        from src.config import load_config
+                        league_id = load_config().get("LEAGUE_ID")
+                        if league_id:
+                            if not security_manager.is_league_manager(user_id, league_id):
+                                logging.info(f"[Dispatcher] 使用者 {user_id} 嘗試執行 {handler.__class__.__name__}，因非該聯盟 {league_id} 管理員被安靜攔截")
+                                return
+                        else:
+                            if not security_manager.is_manager(user_id):
+                                logging.info(f"[Dispatcher] 使用者 {user_id} 嘗試執行 {handler.__class__.__name__}，因非全域管理員被安靜攔截")
+                                return
+
+                    # 3. 白名單權限檢查
                     if getattr(handler, 'requires_whitelist', False):
-                        if not security_manager.is_whitelisted(user_id):
+                        from src.config import load_config
+                        league_id = load_config().get("LEAGUE_ID")
+                        if not security_manager.is_league_whitelisted(user_id, league_id):
                             logging.info(f"[Dispatcher] 使用者 {user_id} 嘗試執行 {handler.__class__.__name__}，因非白名單被安靜攔截")
                             return  # 安靜攔截，不作 any response
 
