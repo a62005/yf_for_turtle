@@ -204,56 +204,83 @@ def test_execute_prize(mock_messaging_api, mock_api_client, mock_load_config, mo
         assert isinstance(reply_req.messages[0], ImageMessage)
         assert reply_req.messages[0].original_content_url == "https://localhost:5000/images/mlb/62358/bouns.png"
 
+@patch("src.handlers.misc_handler.security_manager")
 @patch("src.handlers.misc_handler.load_league_metadata")
 @patch("src.handlers.misc_handler.get_pacific_date")
 @patch("src.handlers.misc_handler.load_config")
 @patch("src.handlers.misc_handler.ApiClient")
 @patch("src.handlers.misc_handler.MessagingApi")
-def test_execute_help_success(mock_messaging_api, mock_api_client, mock_load_config, mock_get_pacific, mock_load_meta, mock_event, mock_config):
+def test_execute_help_success(mock_messaging_api, mock_api_client, mock_load_config, mock_get_pacific, mock_load_meta, mock_sec_manager, mock_event, mock_config):
     handler = MiscHandler()
     
     mock_load_meta.return_value = {"end_date": "2026-04-12"}
     mock_get_pacific.return_value = "2026-05-29"
+    mock_load_config.return_value = {"LEAGUE_ID": "nba.l.12345"}
     
-    # Mock builtins.open to return custom help content successfully
-    import builtins
-    mock_open_helper = MagicMock()
-    mock_open_helper.return_value.__enter__.return_value.read.return_value = "Custom Help Document"
+    # 一般使用者 (非白名單)
+    mock_sec_manager.is_whitelisted.return_value = False
+    mock_event.source.user_id = "user_regular"
+    mock_event.message.text = "#幫助"
     
-    with patch("builtins.open", mock_open_helper):
-        mock_event.message.text = "#幫助"
+    with patch.object(handler, "reply_flex") as mock_reply_flex:
         handler.execute(mock_event, mock_config)
-        
-        reply_req = mock_messaging_api.return_value.reply_message.call_args[0][0]
-        assert reply_req.reply_token == "dummy_reply_token"
-        assert reply_req.messages[0].text == "Custom Help Document"
+        mock_reply_flex.assert_called_once()
+        args = mock_reply_flex.call_args[0]
+        assert args[2] == "聯賽數據助手-幫助選單"
+        flex_dict = args[3]
+        assert flex_dict["type"] == "carousel"
+        # 預期一般用戶看見 3 張卡片
+        assert len(flex_dict["contents"]) == 3
 
-        # 測試類似詞 "#更多"
-        mock_messaging_api.reset_mock()
-        mock_event.message.text = "#更多"
-        handler.execute(mock_event, mock_config)
-        
-        reply_req = mock_messaging_api.return_value.reply_message.call_args[0][0]
-        assert reply_req.reply_token == "dummy_reply_token"
-        assert reply_req.messages[0].text == "Custom Help Document"
-
-
+@patch("src.handlers.misc_handler.security_manager")
 @patch("src.handlers.misc_handler.load_league_metadata")
 @patch("src.handlers.misc_handler.get_pacific_date")
 @patch("src.handlers.misc_handler.load_config")
 @patch("src.handlers.misc_handler.ApiClient")
 @patch("src.handlers.misc_handler.MessagingApi")
-def test_execute_help_fallback(mock_messaging_api, mock_api_client, mock_load_config, mock_get_pacific, mock_load_meta, mock_event, mock_config):
+def test_execute_help_admin(mock_messaging_api, mock_api_client, mock_load_config, mock_get_pacific, mock_load_meta, mock_sec_manager, mock_event, mock_config):
+    handler = MiscHandler()
+    
+    mock_load_meta.return_value = {"end_date": "2026-04-12"}
+    mock_get_pacific.return_value = "2026-05-29"
+    mock_load_config.return_value = {"LEAGUE_ID": "nba.l.12345"}
+    
+    # 管理員 (白名單)
+    mock_sec_manager.is_whitelisted.return_value = True
+    mock_event.source.user_id = "user_admin"
+    mock_event.message.text = "#幫助"
+    
+    with patch.object(handler, "reply_flex") as mock_reply_flex:
+        handler.execute(mock_event, mock_config)
+        mock_reply_flex.assert_called_once()
+        args = mock_reply_flex.call_args[0]
+        flex_dict = args[3]
+        # 預期管理員看見 4 張卡片
+        assert len(flex_dict["contents"]) == 4
+
+@patch("src.handlers.misc_handler.security_manager")
+@patch("src.handlers.misc_handler.load_league_metadata")
+@patch("src.handlers.misc_handler.get_pacific_date")
+@patch("src.handlers.misc_handler.load_config")
+@patch("src.handlers.misc_handler.ApiClient")
+@patch("src.handlers.misc_handler.MessagingApi")
+def test_execute_help_fallback(mock_messaging_api, mock_api_client, mock_load_config, mock_get_pacific, mock_load_meta, mock_sec_manager, mock_event, mock_config):
     handler = MiscHandler()
     mock_event.message.text = "#help"
+    mock_event.source.user_id = "user_regular"
     
     mock_load_meta.return_value = {"end_date": "2026-04-12"}
     mock_get_pacific.return_value = "2026-05-29"
+    mock_load_config.return_value = {"LEAGUE_ID": "nba.l.12345"}
+    mock_sec_manager.is_whitelisted.return_value = False
     
-    # Mock builtins.open to raise FileNotFoundError to simulate missing file
-    with patch("builtins.open", side_effect=FileNotFoundError("help.txt not found")):
+    # 模擬外部檔案均不存在，觸發 Fallback 機制
+    with patch("os.path.exists", return_value=False), \
+         patch.object(handler, "reply_flex") as mock_reply_flex:
         handler.execute(mock_event, mock_config)
-        
-        reply_req = mock_messaging_api.return_value.reply_message.call_args[0][0]
-        assert reply_req.reply_token == "dummy_reply_token"
-        assert "歡迎使用聯賽數據助手" in reply_req.messages[0].text
+        mock_reply_flex.assert_called_once()
+        args = mock_reply_flex.call_args[0]
+        flex_dict = args[3]
+        # Fallback 的常數應包含 3 個 Bubble
+        assert flex_dict["type"] == "carousel"
+        assert len(flex_dict["contents"]) == 3
