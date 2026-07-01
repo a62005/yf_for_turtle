@@ -85,3 +85,16 @@ def check_remove_league_session(user_id: str) -> str:
 
 def clear_remove_league_session(user_id: str) -> None:
     clear_session(user_id, "remove_league_id")
+
+
+def set_season_start_time_session(user_id: str, duration_sec: int = 60) -> None:
+    set_session(user_id, "set_season_start_time", {"active": True}, duration_sec)
+
+
+def get_season_start_time_session(user_id: str) -> any | None:
+    return get_session(user_id, "set_season_start_time")
+
+
+def clear_season_start_time_session(user_id: str) -> None:
+    clear_session(user_id, "set_season_start_time")
+

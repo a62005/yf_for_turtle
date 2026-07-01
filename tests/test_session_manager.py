@@ -69,3 +69,23 @@ def test_prize_session():
     clear_prize_session(user_id)
     assert get_prize_session(user_id) is None
 
+
+def test_season_start_time_session():
+    # 測試開季時間會話的設定、讀取與清除
+    user_id = "user_season_start_test"
+    
+    # 測試設定與讀取
+    from src.utils.session_manager import (
+        set_season_start_time_session,
+        get_season_start_time_session,
+        clear_season_start_time_session,
+    )
+    set_season_start_time_session(user_id, duration_sec=10)
+    data = get_season_start_time_session(user_id)
+    assert data == {"active": True}
+    
+    # 測試清除
+    clear_season_start_time_session(user_id)
+    assert get_season_start_time_session(user_id) is None
+
+
