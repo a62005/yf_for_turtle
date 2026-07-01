@@ -35,6 +35,14 @@ def test_settings_handler_execute_offseason():
         draft_time_btn = [btn for btn in buttons_box["contents"] if btn["type"] == "button" and btn["action"]["label"] == "設置選秀時間"][0]
         assert draft_time_btn["action"]["text"] == "#設置選秀時間"
 
+        # 驗證在休賽季「設置開季時間」啟用
+        assert "設置開季時間" in btn_labels
+        season_time_btn = [btn for btn in buttons_box["contents"] if btn["type"] == "button" and btn["action"]["label"] == "設置開季時間"][0]
+        assert season_time_btn["action"]["text"] == "#設置開季時間"
+
+        # 驗證「更換聯盟ID (即將推出)」已不存在
+        assert "更換聯盟ID (即將推出)" not in btn_labels
+
         # 驗證「設置獎金」按鈕存在，且位置在「設置玩家暱稱」之下，分隔線之上
         btn_labels = [btn["action"]["label"] for btn in buttons_box["contents"] if btn["type"] == "button"]
         assert "設置獎金" in btn_labels
@@ -78,12 +86,11 @@ def test_settings_handler_execute_inseason():
         buttons_box = flex_card["body"]["contents"][1]
         btn_labels = [btn["action"]["label"] for btn in buttons_box["contents"] if btn["type"] == "button"]
         
-        # 驗證在季中「設置選秀時間 (限休賽季)」反灰不可點擊
+        # 驗證在非休賽季（賽季中）時，設定選單中完全不包含「設置選秀時間」與「設置開季時間」
         assert "設置選秀時間" not in btn_labels
-        assert "設置選秀時間 (限休賽季)" in btn_labels
-        draft_time_btn = [btn for btn in buttons_box["contents"] if btn["type"] == "button" and btn["action"]["label"] == "設置選秀時間 (限休賽季)"][0]
-        assert draft_time_btn["action"]["type"] == "postback"
-        assert draft_time_btn["action"]["data"] == "action=ignore"
+        assert "設置選秀時間 (限休賽季)" not in btn_labels
+        assert "設置開季時間" not in btn_labels
+        assert "設置開季時間 (限休賽季)" not in btn_labels
 
 
 def test_settings_handler_contains_remove_league_button():

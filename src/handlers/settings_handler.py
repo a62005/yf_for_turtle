@@ -33,17 +33,17 @@ class SettingsHandler(BaseHandler):
             today_pacific = get_pacific_date()
             is_offseason = bool(end_date and today_pacific > end_date)
             
-            draft_button_label = "設置選秀時間" if is_offseason else "設置選秀時間 (限休賽季)"
-            draft_button_action = "#設置選秀時間" if is_offseason else ""
-            
-            buttons = [
-                (draft_button_label, draft_button_action),
+            buttons = []
+            if is_offseason:
+                buttons.append(("設置選秀時間", "#設置選秀時間"))
+                buttons.append(("設置開季時間", "#設置開季時間"))
+                
+            buttons.extend([
                 ("設置玩家暱稱", "#設置玩家暱稱"),
                 ("設置獎金", "#設置獎金"),
                 (None, None),
-                ("更換聯盟ID (即將推出)", ""),
                 ("移除聯盟ID", "#移除聯盟ID")
-            ]
+            ])
             
         flex_dict = build_button_menu_card(title, subtitle, buttons)
         self.reply_flex(event, configuration, "設置選單", flex_dict)
