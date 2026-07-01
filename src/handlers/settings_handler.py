@@ -17,10 +17,18 @@ class SettingsHandler(BaseHandler):
         config = load_config()
         league_id = config.get("LEAGUE_ID")
         
+        user_id = getattr(event.source, "user_id", None)
+        from src.utils.security import security_manager
+        
+        if league_id:
+            is_manager = security_manager.is_league_manager(user_id, league_id)
+        else:
+            is_manager = security_manager.is_manager(user_id)
+        
         if not league_id:
             title = "系統初始化設置"
             subtitle = None
-            buttons = [("設置聯盟 ID", "#設置聯盟ID ")]
+            buttons = [("設置聯盟 ID", "#設置聯盟ID ")] if is_manager else []
         else:
             title = f"聯盟設置 (ID: {league_id})"
             subtitle = None
@@ -40,10 +48,17 @@ class SettingsHandler(BaseHandler):
                 
             buttons.extend([
                 ("設置玩家暱稱", "#設置玩家暱稱"),
-                ("設置獎金", "#設置獎金"),
-                (None, None),
-                ("移除聯盟ID", "#移除聯盟ID")
+                ("設置獎金", "#設置獎金")
             ])
+            
+            if is_manager:
+                buttons.extend([
+                    (None, None),
+                    ("新增白名單成員", "#新增白名單成員"),
+                    ("移除白名單成員", "#移除白名單成員"),
+                    (None, None),
+                    ("移除聯盟ID", "#移除聯盟ID")
+                ])
             
         flex_dict = build_button_menu_card(title, subtitle, buttons)
         self.reply_flex(event, configuration, "設置選單", flex_dict)

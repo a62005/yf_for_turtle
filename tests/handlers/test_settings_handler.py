@@ -14,6 +14,7 @@ def test_settings_handler_execute_offseason():
     config = MagicMock()
 
     with patch("src.handlers.settings_handler.load_config", return_value={"LEAGUE_ID": "12345"}), \
+         patch("src.utils.security.security_manager.is_league_manager", return_value=True), \
          patch("src.utils.cache_utils.load_league_metadata", return_value={"end_date": "2026-04-12"}), \
          patch("src.utils.time_utils.get_pacific_date", return_value="2026-05-29"):
         handler.execute(event, config)
@@ -76,6 +77,7 @@ def test_settings_handler_execute_inseason():
     config = MagicMock()
 
     with patch("src.handlers.settings_handler.load_config", return_value={"LEAGUE_ID": "12345"}), \
+         patch("src.utils.security.security_manager.is_league_manager", return_value=True), \
          patch("src.utils.cache_utils.load_league_metadata", return_value={"end_date": "2026-04-12"}), \
          patch("src.utils.time_utils.get_pacific_date", return_value="2026-04-10"):
         handler.execute(event, config)
@@ -100,6 +102,7 @@ def test_settings_handler_contains_remove_league_button():
     config = MagicMock()
 
     with patch("src.handlers.settings_handler.load_config", return_value={"LEAGUE_ID": "12345"}), \
+         patch("src.utils.security.security_manager.is_league_manager", return_value=True), \
          patch("src.utils.cache_utils.load_league_metadata", return_value={"end_date": "2026-04-12"}), \
          patch("src.utils.time_utils.get_pacific_date", return_value="2026-04-10"):
         handler.execute(event, config)
@@ -109,6 +112,99 @@ def test_settings_handler_contains_remove_league_button():
         buttons_box = flex_card["body"]["contents"][1]
         remove_btn = [btn for btn in buttons_box["contents"] if btn["type"] == "button" and (btn["action"]["label"] == "移除聯盟ID (即將推出)" or btn["action"]["label"] == "移除聯盟ID")][0]
         assert remove_btn["action"]["text"] == "#移除聯盟ID"
+
+
+def test_settings_roles_no_league_id_manager():
+    handler = SettingsHandler()
+    handler.reply_flex = MagicMock()
+    event = MagicMock()
+    config = MagicMock()
+
+    with patch("src.handlers.settings_handler.load_config", return_value={"LEAGUE_ID": None}), \
+         patch("src.utils.security.security_manager.is_manager", return_value=True):
+        handler.execute(event, config)
+        handler.reply_flex.assert_called_once()
+        args = handler.reply_flex.call_args[0]
+        flex_card = args[3]
+        buttons_box = flex_card["body"]["contents"][1]
+        btn_labels = [btn["action"]["label"] for btn in buttons_box["contents"] if btn["type"] == "button"]
+        assert "設置聯盟 ID" in btn_labels
+
+
+def test_settings_roles_no_league_id_non_manager():
+    handler = SettingsHandler()
+    handler.reply_flex = MagicMock()
+    event = MagicMock()
+    config = MagicMock()
+
+    with patch("src.handlers.settings_handler.load_config", return_value={}), \
+         patch("src.utils.security.security_manager.is_manager", return_value=False):
+        handler.execute(event, config)
+        handler.reply_flex.assert_called_once()
+        args = handler.reply_flex.call_args[0]
+        flex_card = args[3]
+        # 當 buttons 為空時，不會有 buttons_box，body contents 只有一個元素 (header)
+        assert len(flex_card["body"]["contents"]) == 1
+
+
+def test_settings_roles_with_league_id_non_manager():
+    handler = SettingsHandler()
+    handler.reply_flex = MagicMock()
+    event = MagicMock()
+    config = MagicMock()
+
+    with patch("src.handlers.settings_handler.load_config", return_value={"LEAGUE_ID": "12345"}), \
+         patch("src.utils.security.security_manager.is_league_manager", return_value=False), \
+         patch("src.utils.cache_utils.load_league_metadata", return_value={"end_date": "2026-04-12"}), \
+         patch("src.utils.time_utils.get_pacific_date", return_value="2026-04-10"):
+        handler.execute(event, config)
+        handler.reply_flex.assert_called_once()
+        args = handler.reply_flex.call_args[0]
+        flex_card = args[3]
+        buttons_box = flex_card["body"]["contents"][1]
+        btn_labels = [btn["action"]["label"] for btn in buttons_box["contents"] if btn["type"] == "button"]
+        
+        # 普通白名單成員只會看到標準設定
+        assert "設置玩家暱稱" in btn_labels
+        assert "設置獎金" in btn_labels
+        
+        # 不應該看到管理員功能與移除聯盟ID
+        assert "新增白名單成員" not in btn_labels
+        assert "移除白名單成員" not in btn_labels
+        assert "移除聯盟ID" not in btn_labels
+        
+        # 不應該有任何分隔線
+        separators = [item for item in buttons_box["contents"] if item.get("type") == "separator"]
+        assert len(separators) == 0
+
+
+def test_settings_roles_with_league_id_manager():
+    handler = SettingsHandler()
+    handler.reply_flex = MagicMock()
+    event = MagicMock()
+    config = MagicMock()
+
+    with patch("src.handlers.settings_handler.load_config", return_value={"LEAGUE_ID": "12345"}), \
+         patch("src.utils.security.security_manager.is_league_manager", return_value=True), \
+         patch("src.utils.cache_utils.load_league_metadata", return_value={"end_date": "2026-04-12"}), \
+         patch("src.utils.time_utils.get_pacific_date", return_value="2026-04-10"):
+        handler.execute(event, config)
+        handler.reply_flex.assert_called_once()
+        args = handler.reply_flex.call_args[0]
+        flex_card = args[3]
+        buttons_box = flex_card["body"]["contents"][1]
+        btn_labels = [btn["action"]["label"] for btn in buttons_box["contents"] if btn["type"] == "button"]
+        
+        # 管理者可以看到標準設定與管理員功能
+        assert "設置玩家暱稱" in btn_labels
+        assert "設置獎金" in btn_labels
+        assert "新增白名單成員" in btn_labels
+        assert "移除白名單成員" in btn_labels
+        assert "移除聯盟ID" in btn_labels
+        
+        # 應該有分隔線
+        separators = [item for item in buttons_box["contents"] if item.get("type") == "separator"]
+        assert len(separators) > 0
 
 
 
