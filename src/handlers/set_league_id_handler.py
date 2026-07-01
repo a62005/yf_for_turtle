@@ -13,7 +13,7 @@ from src.utils.path_utils import get_league_team_mapping_path, get_league_dir
 class SetLeagueIdHandler(BaseHandler):
     def __init__(self):
         super().__init__()
-        self.requires_whitelist = True
+        self.requires_manager = True
         self.exclude_from_llm = True
         
     def can_handle(self, user_text: str) -> bool:
@@ -171,6 +171,17 @@ class SetLeagueIdHandler(BaseHandler):
                 target_id = f"nba.l.{target_id}"
             elif not target_id.startswith("nba.l.") and not target_id.startswith("mlb.l."):
                 target_id = f"nba.l.{target_id}"
+
+        # 檢查該聯盟 ID 是否已被其他管理員管理
+        from src.utils.security import security_manager
+        roles = security_manager._load_json(security_manager.league_roles_path, {})
+        league_data = roles.get(target_id)
+        if league_data and isinstance(league_data, dict):
+            manager_id = league_data.get("manager")
+            if manager_id and manager_id != user_id and not security_manager.is_super_admin(user_id):
+                self.reply_text(event, configuration, f"⚠️ 設置失敗，該聯盟 ID ({target_id}) 已由其他管理員管理。")
+                return
+
         config = load_config()
         
         # 建立 Fetcher 並嘗試同步賽季資訊以驗證 ID 效力
@@ -185,7 +196,7 @@ class SetLeagueIdHandler(BaseHandler):
         except LeaguePermissionError:
             # 即使授權尚未完成，仍先記錄綁定關係，這樣接下來的 OAuth Callback 才能找到對應的聯賽 ID
             try:
-                self._update_league_id(target_id)
+                self._update_league_id(target_id, user_id)
             except Exception as fe:
                 logging.error(f"[SetLeagueIdHandler] 寫入設定檔失敗 (LeaguePermissionError 期間): {fe}")
             raise
@@ -196,7 +207,7 @@ class SetLeagueIdHandler(BaseHandler):
             
         # 同步成功，寫入對應關係
         try:
-            self._update_league_id(target_id)
+            self._update_league_id(target_id, user_id)
                 
             # 初始化該聯賽的空對應檔
             mapping_path = get_league_team_mapping_path(target_id)
@@ -225,9 +236,10 @@ class SetLeagueIdHandler(BaseHandler):
             logging.error(f"[SetLeagueIdHandler] 寫入設定檔失敗: {fe}")
             self.reply_text(event, configuration, "⚠️ 設置成功但儲存設定時發生內部錯誤。")
 
-    def _update_league_id(self, league_id: str) -> None:
+    def _update_league_id(self, league_id: str, user_id: str = None) -> None:
         from src.config import current_chat_id
         from src.utils.path_utils import BASE_DIR
+        from src.utils.security import security_manager
         
         chat_id = current_chat_id.get() or "default"
         security_dir = os.path.join(BASE_DIR, "data", "security")
@@ -247,6 +259,9 @@ class SetLeagueIdHandler(BaseHandler):
         with open(config_path, "w", encoding="utf-8") as f:
             json.dump(mapping, f, indent=2, ensure_ascii=False)
 
+        if user_id:
+            security_manager.set_league_owner(league_id, user_id)
+
     @property
     def instruction_desc(self) -> str:
-        return "#設置聯盟ID <ID> : (限白名單) 設置並同步指定之 Yahoo 聯盟 ID"
+        return "#設置聯盟ID <ID> : (限管理員) 設置並同步指定之 Yahoo 聯盟 ID"

@@ -188,7 +188,7 @@ def test_set_league_id_handler_interactive_session_digit(mocker):
     assert session_manager.get_session("user_test_456", "set_league_id") is None
     
     # 驗證傳給 _update_league_id 的 league_id 是 "nba.l.18457"
-    mock_update.assert_called_once_with("nba.l.18457")
+    mock_update.assert_called_once_with("nba.l.18457", "user_test_456")
 
 
 def test_set_league_id_handler_permission_denied_pre_saves_mapping(mocker):
@@ -212,7 +212,7 @@ def test_set_league_id_handler_permission_denied_pre_saves_mapping(mocker):
         handler.execute(event, config)
             
         # Verify that _update_league_id was called with "nba.l.12345" even though it raised LeaguePermissionError
-        mock_update.assert_called_once_with("nba.l.12345")
+        mock_update.assert_called_once_with("nba.l.12345", event.source.user_id)
     finally:
         current_chat_id.reset(token)
 
