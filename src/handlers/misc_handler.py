@@ -1,6 +1,7 @@
 import re
 import os
 import logging
+import json
 from datetime import datetime
 import pytz
 
@@ -19,8 +20,227 @@ from src.config import load_config
 from src.utils.cache_utils import load_league_metadata, save_league_metadata
 from src.utils.time_utils import get_pacific_date
 from src.llm.llm_agent import LLMAgent
+from src.utils.security import security_manager
 
 class MiscHandler(BaseHandler):
+    DEFAULT_HELP_FLEX = {
+        "type": "carousel",
+        "contents": [
+            {
+                "type": "bubble",
+                "body": {
+                    "type": "box",
+                    "layout": "vertical",
+                    "spacing": "md",
+                    "contents": [
+                        {
+                            "type": "box",
+                            "layout": "vertical",
+                            "spacing": "xs",
+                            "contents": [
+                                {
+                                    "type": "text",
+                                    "text": "🏆 聯賽戰績板",
+                                    "weight": "bold",
+                                    "size": "xl",
+                                    "color": "#111111"
+                                },
+                                {
+                                    "type": "text",
+                                    "text": "查詢最新排名與歷史戰績",
+                                    "size": "sm",
+                                    "color": "#555555"
+                                }
+                            ]
+                        },
+                        {
+                            "type": "text",
+                            "text": "支援輸入 #戰績W3 或特定日期",
+                            "size": "xs",
+                            "color": "#777777",
+                            "wrap": True
+                        },
+                        {
+                            "type": "box",
+                            "layout": "vertical",
+                            "spacing": "sm",
+                            "contents": [
+                                {
+                                    "type": "button",
+                                    "style": "secondary",
+                                    "height": "sm",
+                                    "action": {
+                                        "type": "message",
+                                        "label": "今日戰績",
+                                        "text": "#戰績"
+                                    }
+                                },
+                                {
+                                    "type": "button",
+                                    "style": "secondary",
+                                    "height": "sm",
+                                    "action": {
+                                        "type": "message",
+                                        "label": "昨日戰績",
+                                        "text": "#戰績昨天"
+                                    }
+                                },
+                                {
+                                    "type": "button",
+                                    "style": "secondary",
+                                    "height": "sm",
+                                    "action": {
+                                        "type": "message",
+                                        "label": "上週戰績",
+                                        "text": "#戰績上週"
+                                    }
+                                }
+                            ]
+                        }
+                    ]
+                }
+            },
+            {
+                "type": "bubble",
+                "body": {
+                    "type": "box",
+                    "layout": "vertical",
+                    "spacing": "md",
+                    "contents": [
+                        {
+                            "type": "box",
+                            "layout": "vertical",
+                            "spacing": "xs",
+                            "contents": [
+                                {
+                                    "type": "text",
+                                    "text": "⚔️ 玩家與對戰",
+                                    "weight": "bold",
+                                    "size": "xl",
+                                    "color": "#111111"
+                                },
+                                {
+                                    "type": "text",
+                                    "text": "查詢本週即時比分與玩家數據",
+                                    "size": "sm",
+                                    "color": "#555555"
+                                }
+                            ]
+                        },
+                        {
+                            "type": "text",
+                            "text": "※ 球員數據請直接在對話框輸入：\n#球員 球員名字 (例：#球員 老詹)",
+                            "size": "xs",
+                            "color": "#777777",
+                            "wrap": True
+                        },
+                        {
+                            "type": "box",
+                            "layout": "vertical",
+                            "spacing": "sm",
+                            "contents": [
+                                {
+                                    "type": "button",
+                                    "style": "secondary",
+                                    "height": "sm",
+                                    "action": {
+                                        "type": "message",
+                                        "label": "即時對決",
+                                        "text": "#對戰"
+                                    }
+                                },
+                                {
+                                    "type": "button",
+                                    "style": "secondary",
+                                    "height": "sm",
+                                    "action": {
+                                        "type": "message",
+                                        "label": "玩家數據",
+                                        "text": "#玩家"
+                                    }
+                                }
+                            ]
+                        }
+                    ]
+                }
+            },
+            {
+                "type": "bubble",
+                "body": {
+                    "type": "box",
+                    "layout": "vertical",
+                    "spacing": "md",
+                    "contents": [
+                        {
+                            "type": "box",
+                            "layout": "vertical",
+                            "spacing": "xs",
+                            "contents": [
+                                {
+                                    "type": "text",
+                                    "text": "🏀 聯賽資訊",
+                                    "weight": "bold",
+                                    "size": "xl",
+                                    "color": "#111111"
+                                },
+                                {
+                                    "type": "text",
+                                    "text": "掌握賽季日程與聯賽資訊",
+                                    "size": "sm",
+                                    "color": "#555555"
+                                }
+                            ]
+                        },
+                        {
+                            "type": "text",
+                            "text": "選秀與開季倒數僅於休賽季啟用",
+                            "size": "xs",
+                            "color": "#777777",
+                            "wrap": True
+                        },
+                        {
+                            "type": "box",
+                            "layout": "vertical",
+                            "spacing": "sm",
+                            "contents": [
+                                {
+                                    "type": "button",
+                                    "style": "secondary",
+                                    "height": "sm",
+                                    "action": {
+                                        "type": "message",
+                                        "label": "聯賽獎金",
+                                        "text": "#獎金"
+                                    }
+                                },
+                                {
+                                    "type": "button",
+                                    "style": "secondary",
+                                    "height": "sm",
+                                    "action": {
+                                        "type": "message",
+                                        "label": "開季倒數",
+                                        "text": "#開季"
+                                    }
+                                },
+                                {
+                                    "type": "button",
+                                    "style": "secondary",
+                                    "height": "sm",
+                                    "action": {
+                                        "type": "message",
+                                        "label": "選秀倒數",
+                                        "text": "#選秀"
+                                    }
+                                }
+                            ]
+                        }
+                    ]
+                }
+            }
+        ]
+    }
+
     def __init__(self):
         self.pattern = re.compile(r"^#(?:開季|選秀|獎金|幫助|幫忙|更多|[hH][eE][lL][pP])$")
 
@@ -288,32 +508,64 @@ class MiscHandler(BaseHandler):
             )
 
     def _handle_help(self, event: MessageEvent, configuration: Configuration) -> None:
-        default_help = (
-            "👋 您好！歡迎使用聯賽數據助手。\n\n"
-            "【常用指令】\n"
-            "● #戰績 ：查詢當日聯賽綜合戰績\n"
-            "● #對戰 肥儒 ：查詢指定玩家當週即時 9-Cat 對決\n"
-            "● #玩家 肥儒 ：查詢指定玩家今日累積數據與排名\n"
-            "● #球員 老詹 ：查詢指定球員今日即時比賽表現\n\n"
-            "※ 提示：輸入「#幫助」可獲取完整的指令複製清單。"
-        )
+        user_id = event.source.user_id if event.source and hasattr(event.source, "user_id") else None
+        is_admin = security_manager.is_whitelisted(user_id)
         
-        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        help_file_path = os.path.join(project_root, "data", "help.txt")
-        
-        reply_content = default_help
-        try:
-            if os.path.exists(help_file_path):
-                with open(help_file_path, "r", encoding="utf-8") as f:
-                    content = f.read().strip()
-                    if content:
-                        reply_content = content
-            else:
-                logging.warning(f"Help file not found at {help_file_path}, using fallback.")
-        except Exception as e:
-            logging.error(f"Failed to read help file at {help_file_path}: {e}, using fallback.")
+        # 定義要加載的卡片檔名
+        card_files = [
+            "card_1_stats.json",
+            "card_2_players.json",
+            "card_3_info.json"
+        ]
+        if is_admin:
+            card_files.append("card_4_admin.json")
             
-        self.reply_text(event, configuration, reply_content)
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        help_flex_dir = os.path.join(project_root, "data", "help_flex")
+        
+        bubbles = []
+        try:
+            for card_file in card_files:
+                file_path = os.path.join(help_flex_dir, card_file)
+                if not os.path.exists(file_path):
+                    raise FileNotFoundError(f"Card file not found: {file_path}")
+                with open(file_path, "r", encoding="utf-8") as f:
+                    card_data = json.load(f)
+                    bubbles.append(card_data)
+                    
+            carousel_dict = {
+                "type": "carousel",
+                "contents": bubbles
+            }
+        except Exception as e:
+            logging.warning(f"[MiscHandler] 載入 Flex 幫助選單失敗: {e}，改用內建預設值 Fallback。")
+            carousel_dict = self.DEFAULT_HELP_FLEX
+            
+        try:
+            self.reply_flex(event, configuration, "聯賽數據助手-幫助選單", carousel_dict)
+        except Exception as e:
+            logging.error(f"[MiscHandler] 發送 Flex 幫助選單失敗: {e}，改用純文字 Fallback。")
+            default_help = (
+                "👋 您好！歡迎使用聯賽數據助手。\n\n"
+                "【常用指令】\n"
+                "● #戰績 ：查詢當日聯賽綜合戰績\n"
+                "● #對戰 肥儒 ：查詢指定玩家當週即時 9-Cat 對決\n"
+                "● #玩家 肥儒 ：查詢指定玩家今日累積數據與排名\n"
+                "● #球員 老詹 ：查詢指定球員今日即時比賽表現\n\n"
+                "※ 提示：輸入「#幫助」可獲取完整的指令複製清單。"
+            )
+            # 若 data/help.txt 存在，試圖讀取
+            help_txt_path = os.path.join(project_root, "data", "help.txt")
+            reply_content = default_help
+            if os.path.exists(help_txt_path):
+                try:
+                    with open(help_txt_path, "r", encoding="utf-8") as f:
+                        content = f.read().strip()
+                        if content:
+                            reply_content = content
+                except Exception:
+                    pass
+            self.reply_text(event, configuration, reply_content)
 
     def reply_text(self, event: MessageEvent, configuration: Configuration, text: str) -> None:
         with ApiClient(configuration) as api_client:
