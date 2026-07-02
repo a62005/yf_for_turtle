@@ -481,3 +481,59 @@ def test_settings_handler_aliases():
     assert handler.can_handle("#setting") is True
     assert handler.can_handle("#設置") is True
     assert handler.can_handle("#其他") is False
+
+def test_set_league_id_reuses_existing_user_token(mocker):
+    from src.config import current_chat_id
+    import json
+    
+    handler = SetLeagueIdHandler()
+    handler.reply_text = mocker.MagicMock()
+    event = mocker.MagicMock()
+    event.message.text = "#設置聯盟ID mlb.l.22222"
+    event.source.user_id = "user_abc"
+    config = mocker.MagicMock()
+    
+    written_mapping = {}
+    def mock_open_io(path, mode="r", *args, **kwargs):
+        import io
+        class MockFile(io.StringIO):
+            def __enter__(self): return self
+            def __exit__(self, exc_type, exc_val, exc_tb):
+                nonlocal written_mapping
+                val = self.getvalue()
+                if val and "chat_league_mapping.json" in str(path): 
+                    written_mapping = json.loads(val)
+        
+        path_str = str(path).replace("\\", "/")
+        if "chat_league_mapping.json" in path_str:
+            if "r" in mode:
+                return MockFile('{}')
+            return MockFile()
+        elif "league_roles.json" in path_str:
+            return MockFile('{"nba.l.11111": {"manager": "user_abc", "whitelist": {}}}')
+        elif "team_mapping.json" in path_str:
+            return MockFile()
+        return open(path, mode, *args, **kwargs)
+
+    token = current_chat_id.set("group_1")
+    try:
+        mock_exists = mocker.patch("os.path.exists", side_effect=lambda p: "11111" in str(p) or "league_roles.json" in str(p))
+        mock_makedirs = mocker.patch("os.makedirs")
+        mock_copy = mocker.patch("shutil.copy2")
+        mocker.patch("src.handlers.set_league_id_handler.open", side_effect=mock_open_io)
+        
+        # Mock security manager _load_json directly to return user roles
+        mocker.patch("src.utils.security.security_manager._load_json", return_value={"nba.l.11111": {"manager": "user_abc", "whitelist": {}}})
+        
+        mocker.patch("src.handlers.set_league_id_handler.YahooFantasyFetcher")
+        mocker.patch("src.handlers.set_league_id_handler.sync_season_metadata")
+        
+        handler.execute(event, config)
+        
+        mock_copy.assert_any_call(
+            mocker.ANY,
+            mocker.ANY
+        )
+        handler.reply_text.assert_called_once_with(event, config, "✅ 成功將此聊天室綁定至聯賽 ID：mlb.l.22222")
+    finally:
+        current_chat_id.reset(token)

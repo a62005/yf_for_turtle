@@ -182,6 +182,30 @@ class SetLeagueIdHandler(BaseHandler):
                 self.reply_text(event, configuration, f"⚠️ 設置失敗，該聯盟 ID ({target_id}) 已由其他管理員管理。")
                 return
 
+        # 憑證智慧複用：如果新聯盟目錄下尚未有憑證，則嘗試尋找此用戶已授權的其他聯盟憑證
+        target_dir = get_league_dir(target_id)
+        spec_oauth_path = os.path.join(target_dir, "oauth2.json")
+        spec_yf_path = os.path.join(target_dir, ".yahoofantasy")
+        
+        if user_id and (not os.path.exists(spec_oauth_path) or not os.path.exists(spec_yf_path)):
+            user_leagues = []
+            for lid, ldata in roles.items():
+                if isinstance(ldata, dict) and ldata.get("manager") == user_id:
+                    if lid != target_id:
+                        user_leagues.append(lid)
+            for prev_lid in user_leagues:
+                prev_dir = get_league_dir(prev_lid)
+                prev_oauth = os.path.join(prev_dir, "oauth2.json")
+                prev_yf = os.path.join(prev_dir, ".yahoofantasy")
+                
+                if os.path.exists(prev_oauth) and os.path.exists(prev_yf):
+                    os.makedirs(target_dir, exist_ok=True)
+                    import shutil
+                    shutil.copy2(prev_oauth, spec_oauth_path)
+                    shutil.copy2(prev_yf, spec_yf_path)
+                    logging.info(f"[SetLeagueIdHandler] 成功將用戶 {user_id} 在聯賽 {prev_lid} 的授權憑證複製到新聯賽 {target_id}")
+                    break
+
         config = load_config()
         
         # 建立 Fetcher 並嘗試同步賽季資訊以驗證 ID 效力
