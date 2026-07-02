@@ -190,7 +190,7 @@ class SetLeagueIdHandler(BaseHandler):
         if user_id and (not os.path.exists(spec_oauth_path) or not os.path.exists(spec_yf_path)):
             user_leagues = []
             for lid, ldata in roles.items():
-                if isinstance(ldata, dict) and ldata.get("manager") == user_id and ldata.get("authorized") is True:
+                if isinstance(ldata, dict) and ldata.get("manager") == user_id and ldata.get("authorized", True) is True:
                     if lid != target_id:
                         user_leagues.append(lid)
             for prev_lid in user_leagues:
