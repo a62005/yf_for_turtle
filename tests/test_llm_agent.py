@@ -38,6 +38,9 @@ def test_llm_agent_gemini_chat_intent(mock_generate_json, mock_generate):
         assert result["reply_text"] == "哈囉！"
         mock_generate_json.assert_called_once()
         mock_generate.assert_called_once()
+        # Verify commands_desc was formatted into CHAT_PROMPT
+        args, kwargs = mock_generate.call_args
+        assert "指令清單" in kwargs.get("system_instruction")
 
 
 @patch('requests.post')

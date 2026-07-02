@@ -47,7 +47,8 @@ class LLMAgent:
         else:
             # 閒聊意圖：使用極簡對話 Prompt，避免無謂的 Token 浪費與指令綁定
             try:
-                chat_reply = self.provider.generate(text, system_instruction=CHAT_PROMPT, temperature=0.7)
+                formatted_chat = CHAT_PROMPT.replace("{commands_desc}", commands_desc)
+                chat_reply = self.provider.generate(text, system_instruction=formatted_chat, temperature=0.7)
                 return {
                     "is_command": False,
                     "command_text": None,
