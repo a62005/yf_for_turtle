@@ -129,6 +129,12 @@ class SecurityManager:
         league_data["manager"] = manager_id
         return self._save_json(self.league_roles_path, data)
 
+    def set_league_authorized(self, league_id: str, authorized: bool) -> bool:
+        data = self._load_json(self.league_roles_path, {})
+        league_data = data.setdefault(league_id, {"manager": "", "whitelist": {}})
+        league_data["authorized"] = authorized
+        return self._save_json(self.league_roles_path, data)
+
     def add_to_league_whitelist(self, league_id: str, user_id: str, name: str) -> bool:
         data = self._load_json(self.league_roles_path, {})
         league_data = data.setdefault(league_id, {"manager": "", "whitelist": {}})

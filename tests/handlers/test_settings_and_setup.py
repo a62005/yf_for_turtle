@@ -510,7 +510,7 @@ def test_set_league_id_reuses_existing_user_token(mocker):
                 return MockFile('{}')
             return MockFile()
         elif "league_roles.json" in path_str:
-            return MockFile('{"nba.l.11111": {"manager": "user_abc", "whitelist": {}}}')
+            return MockFile('{"nba.l.11111": {"manager": "user_abc", "whitelist": {}, "authorized": true}}')
         elif "team_mapping.json" in path_str:
             return MockFile()
         return open(path, mode, *args, **kwargs)
@@ -523,7 +523,7 @@ def test_set_league_id_reuses_existing_user_token(mocker):
         mocker.patch("src.handlers.set_league_id_handler.open", side_effect=mock_open_io)
         
         # Mock security manager _load_json directly to return user roles
-        mocker.patch("src.utils.security.security_manager._load_json", return_value={"nba.l.11111": {"manager": "user_abc", "whitelist": {}}})
+        mocker.patch("src.utils.security.security_manager._load_json", return_value={"nba.l.11111": {"manager": "user_abc", "whitelist": {}, "authorized": True}})
         
         mocker.patch("src.handlers.set_league_id_handler.YahooFantasyFetcher")
         mocker.patch("src.handlers.set_league_id_handler.sync_season_metadata")
@@ -535,5 +535,36 @@ def test_set_league_id_reuses_existing_user_token(mocker):
             mocker.ANY
         )
         handler.reply_text.assert_called_once_with(event, config, "✅ 成功將此聊天室綁定至聯賽 ID：mlb.l.22222")
+    finally:
+        current_chat_id.reset(token)
+
+def test_set_league_id_does_not_reuse_unauthorized_token(mocker):
+    from src.config import current_chat_id
+    from src.fetcher import LeaguePermissionError
+    
+    handler = SetLeagueIdHandler()
+    handler.reply_text = mocker.MagicMock()
+    event = mocker.MagicMock()
+    event.message.text = "#設置聯盟ID mlb.l.22222"
+    event.source.user_id = "user_abc"
+    config = mocker.MagicMock()
+    
+    token = current_chat_id.set("group_1")
+    try:
+        mock_exists = mocker.patch("os.path.exists", return_value=False)
+        mock_copy = mocker.patch("shutil.copy2")
+        
+        mocker.patch("src.utils.security.security_manager._load_json", return_value={"nba.l.11111": {"manager": "user_abc", "whitelist": {}, "authorized": False}})
+        
+        # 預期會因為無憑證複製而直接執行 fetcher 卻拋出無權限錯誤
+        mocker.patch("src.handlers.set_league_id_handler.YahooFantasyFetcher")
+        mocker.patch("src.handlers.set_league_id_handler.sync_season_metadata", side_effect=LeaguePermissionError("Permission Denied"))
+        
+        handler.execute(event, config)
+            
+        mock_copy.assert_not_called()
+        handler.reply_text.assert_called_once()
+        args = handler.reply_text.call_args[0]
+        assert "Yahoo 帳號授權" in args[2]
     finally:
         current_chat_id.reset(token)

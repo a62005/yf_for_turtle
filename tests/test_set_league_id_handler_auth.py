@@ -120,7 +120,7 @@ def test_set_league_id_manager_binds_new_league_becomes_owner(mock_event, mock_c
         handler.execute(mock_event, mock_config)
         
         mock_sync.assert_called_once()
-        assert saved_roles.get("nba.l.12345") == {"manager": "test_user_manager", "whitelist": {}}
+        assert saved_roles.get("nba.l.12345") == {"manager": "test_user_manager", "whitelist": {}, "authorized": False}
         handler.reply_text.assert_called_once_with(
             mock_event,
             mock_config,

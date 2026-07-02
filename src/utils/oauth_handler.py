@@ -134,6 +134,10 @@ def handle_oauth_callback(
         # 同步賽季資訊
         sync_season_metadata(fetcher, league_id)
         
+        # 標記為親自授權
+        from src.utils.security import security_manager
+        security_manager.set_league_authorized(league_id, True)
+        
         # 建立/初始化隊伍名稱對照表
         mapping_path = get_league_team_mapping_path(league_id)
         if not os.path.exists(mapping_path):

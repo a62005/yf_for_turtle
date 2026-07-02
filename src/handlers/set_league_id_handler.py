@@ -190,7 +190,7 @@ class SetLeagueIdHandler(BaseHandler):
         if user_id and (not os.path.exists(spec_oauth_path) or not os.path.exists(spec_yf_path)):
             user_leagues = []
             for lid, ldata in roles.items():
-                if isinstance(ldata, dict) and ldata.get("manager") == user_id:
+                if isinstance(ldata, dict) and ldata.get("manager") == user_id and ldata.get("authorized") is True:
                     if lid != target_id:
                         user_leagues.append(lid)
             for prev_lid in user_leagues:
@@ -232,6 +232,7 @@ class SetLeagueIdHandler(BaseHandler):
         # 同步成功，寫入對應關係
         try:
             self._update_league_id(target_id, user_id)
+            security_manager.set_league_authorized(target_id, False)
                 
             # 初始化該聯賽的空對應檔
             mapping_path = get_league_team_mapping_path(target_id)
