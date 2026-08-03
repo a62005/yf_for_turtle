@@ -1,21 +1,58 @@
 import os
 import json
 import logging
-
 class SecurityManager:
-    def __init__(self, super_admin_path: str = "data/security/super_admin.json",
-                 managers_path: str = "data/security/managers.json",
-                 league_roles_path: str = "data/security/league_roles.json",
-                 whitelist_path: str = "data/security/whitelist.json"):
-        self.super_admin_path = super_admin_path
-        self.managers_path = managers_path
-        self.league_roles_path = league_roles_path
-        self.whitelist_path = whitelist_path
+    def __init__(self, super_admin_path: str = None,
+                 managers_path: str = None,
+                 league_roles_path: str = None,
+                 whitelist_path: str = None,
+                 base_dir: str = None):
+        self._base_dir = base_dir
+        self._super_admin_path = super_admin_path
+        self._managers_path = managers_path
+        self._league_roles_path = league_roles_path
+        self._whitelist_path = whitelist_path
 
         # For backward compatibility, if managers_path is passed as the old whitelist_path
         # (e.g. in test_security_manager_basic_flow), we map it correctly.
-        if "whitelist" in self.managers_path or not self.managers_path.endswith("managers.json"):
-            self.whitelist_path = self.managers_path
+        if managers_path is not None:
+            if "whitelist" in managers_path or not managers_path.endswith("managers.json"):
+                self._whitelist_path = managers_path
+
+    @property
+    def base_dir(self) -> str:
+        if self._base_dir is not None:
+            return self._base_dir
+        from src.utils.path_utils import DATA_DIR
+        return os.path.join(DATA_DIR, "security")
+
+    @property
+    def super_admin_path(self) -> str:
+        if self._super_admin_path is not None:
+            return self._super_admin_path
+        return os.path.join(self.base_dir, "super_admin.json")
+
+    @property
+    def managers_path(self) -> str:
+        if self._managers_path is not None:
+            return self._managers_path
+        return os.path.join(self.base_dir, "managers.json")
+
+    @property
+    def league_roles_path(self) -> str:
+        if self._league_roles_path is not None:
+            return self._league_roles_path
+        return os.path.join(self.base_dir, "league_roles.json")
+
+    @property
+    def whitelist_path(self) -> str:
+        if self._whitelist_path is not None:
+            return self._whitelist_path
+        return os.path.join(self.base_dir, "whitelist.json")
+
+    @whitelist_path.setter
+    def whitelist_path(self, value: str):
+        self._whitelist_path = value
 
     def _load_json(self, path: str, default: dict) -> dict:
         if not os.path.exists(path):

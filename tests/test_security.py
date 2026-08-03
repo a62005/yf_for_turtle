@@ -75,3 +75,29 @@ def test_league_role_security_flow(tmp_path):
     assert sm.remove_from_league_whitelist("nba.l.123", "Uuser789") is True
     assert sm.is_league_whitelisted("Uuser789", "nba.l.123") is False
 
+
+def test_security_manager_dynamic_path_by_data_dir(tmp_path, monkeypatch):
+    import src.utils.path_utils
+    from src.utils.security import SecurityManager
+    
+    # 建立一個測試用的臨時目錄，並將 DATA_DIR 模擬指向它
+    custom_dir = tmp_path / "custom_data_dir"
+    custom_dir.mkdir()
+    monkeypatch.setattr(src.utils.path_utils, "DATA_DIR", str(custom_dir))
+    
+    # 實例化不帶參數的 SecurityManager，它應該動態解析到新的 DATA_DIR 下
+    sm = SecurityManager()
+    
+    # 呼叫寫入操作以觸發檔案建立
+    assert sm.add_manager("Umanager999", "大雄") is True
+    
+    # 驗證檔案是否成功寫入到了模擬的臨時目錄下
+    expected_path = custom_dir / "security" / "managers.json"
+    assert expected_path.exists()
+    
+    # 讀取並確認資料內容
+    with open(expected_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    assert data["managers"]["Umanager999"] == "大雄"
+
+
