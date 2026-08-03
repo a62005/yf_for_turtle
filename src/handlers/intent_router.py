@@ -8,21 +8,7 @@ from linebot.v3.messaging import Configuration, ApiClient, MessagingApi, ReplyMe
 from src.handlers.dispatcher import CommandDispatcher
 from src.llm.llm_agent import LLMAgent
 from src.config import load_config
-from src.utils.session_manager import (
-    get_nickname_session, 
-    clear_nickname_session,
-    get_draft_time_session,
-    clear_draft_time_session,
-    get_league_id_session,
-    clear_league_id_session,
-    get_season_start_time_session,
-    clear_season_start_time_session,
-    get_add_manager_session,
-    clear_add_manager_session,
-    get_add_whitelist_session,
-    clear_add_whitelist_session,
-    set_add_whitelist_session
-)
+from src.utils.session_manager import get_active_session, clear_active_session
 from src.utils.path_utils import get_league_team_mapping_path
 
 class IntentRouter:
@@ -49,17 +35,10 @@ class IntentRouter:
         if not (event.message and hasattr(event.message, 'text')):
             return False
         user_text = event.message.text.strip()
+        user_id = getattr(event.source, "user_id", None)
         if not user_text:
-            user_id = getattr(event.source, "user_id", None)
             if user_id:
-                from src.utils.session_manager import get_prize_session
-                if (get_nickname_session(user_id) or 
-                    get_draft_time_session(user_id) or 
-                    get_league_id_session(user_id) or 
-                    get_prize_session(user_id) or 
-                    get_season_start_time_session(user_id) or
-                    get_add_manager_session(user_id) or
-                    get_add_whitelist_session(user_id)):
+                if get_active_session(user_id):
                     return True
             return False
 
@@ -70,14 +49,7 @@ class IntentRouter:
             user_id = getattr(event.source, "user_id", None)
             is_active_session = False
             if user_id:
-                from src.utils.session_manager import get_prize_session
-                if (get_nickname_session(user_id) or 
-                    get_draft_time_session(user_id) or 
-                    get_league_id_session(user_id) or 
-                    get_prize_session(user_id) or 
-                    get_season_start_time_session(user_id) or
-                    get_add_manager_session(user_id) or
-                    get_add_whitelist_session(user_id)):
+                if get_active_session(user_id):
                     is_active_session = True
             
             from src.utils.security import security_manager
@@ -102,16 +74,8 @@ class IntentRouter:
             return True
 
         # 3. 活動中 Session 優先（在群組也不需要被 @提及）
-        user_id = getattr(event.source, "user_id", None)
         if user_id:
-            from src.utils.session_manager import get_prize_session
-            if (get_nickname_session(user_id) or 
-                get_draft_time_session(user_id) or 
-                get_league_id_session(user_id) or 
-                get_prize_session(user_id) or 
-                get_season_start_time_session(user_id) or
-                get_add_manager_session(user_id) or
-                get_add_whitelist_session(user_id)):
+            if get_active_session(user_id):
                 return True
 
         # 4. 群聊中必須被提及 (@提及)
@@ -137,172 +101,16 @@ class IntentRouter:
         
         user_id = getattr(event.source, "user_id", None)
         if user_id:
-            # 0.5 攔截新增管理員會話
-            add_manager_sess = get_add_manager_session(user_id)
-            if add_manager_sess:
-                if user_text == "#":
-                    clear_add_manager_session(user_id)
-                    self.reply_text(event, configuration, "已取消新增管理員。")
-                    return
-                
-                step = add_manager_sess.get("step")
-                data = add_manager_sess.get("data") or {}
-                
-                if step == 1:
-                    # 驗證 LINE ID 格式
-                    if not re.match(r"^U[a-fA-F0-9]{32}$", user_text):
-                        self.reply_text(
-                            event, 
-                            configuration, 
-                            "⚠️ LINE ID 格式錯誤，必須為 U 開頭後接 32 位十六進位字元。\n請重新輸入，或輸入 # 取消："
-                        )
-                        return
-                    
-                    target_id = user_text
-                    from src.utils.session_manager import set_add_manager_session
-                    set_add_manager_session(user_id, step=2, data={"target_id": target_id}, duration_sec=60)
-                    self.reply_text(event, configuration, "請在 60 秒內輸入該管理員的方便識別名稱（例如：小明），或輸入 # 取消：")
-                    return
-                    
-                elif step == 2:
-                    display_name = user_text.strip()
-                    if not display_name:
-                        self.reply_text(
-                            event, 
-                            configuration, 
-                            "⚠️ 名稱不能為空，請重新輸入該管理員的方便識別名稱，或輸入 # 取消："
-                        )
-                        return
-                    
-                    target_id = data.get("target_id")
-                    from src.utils.security import security_manager
-                    security_manager.add_manager(target_id, display_name)
-                    self.reply_text(event, configuration, f"✅ 成功將管理員 {display_name} ({target_id}) 加入全域管理員名單。")
-                    clear_add_manager_session(user_id)
-                    return
-
-            # 0.6 攔截新增白名單成員會話
-            add_whitelist_sess = get_add_whitelist_session(user_id)
-            if add_whitelist_sess:
-                if user_text == "#":
-                    clear_add_whitelist_session(user_id)
-                    self.reply_text(event, configuration, "已取消新增成員。")
-                    return
-                
-                step = add_whitelist_sess.get("step")
-                data = add_whitelist_sess.get("data") or {}
-                
-                if step == 1:
-                    # 驗證 LINE ID 格式
-                    if not re.match(r"^U[a-fA-F0-9]{32}$", user_text):
-                        self.reply_text(
-                            event, 
-                            configuration, 
-                            "⚠️ LINE ID 格式錯誤，必須為 U 開頭後接 32 位十六進位字元。\n請重新輸入，或輸入 # 取消："
-                        )
-                        return
-                    
-                    target_id = user_text
-                    set_add_whitelist_session(user_id, step=2, data={"target_id": target_id}, duration_sec=60)
-                    self.reply_text(event, configuration, "請在 60 秒內輸入該成員的方便識別名稱（例如：大雄），或輸入 # 取消：")
-                    return
-                    
-                elif step == 2:
-                    display_name = user_text.strip()
-                    if not display_name:
-                        self.reply_text(
-                            event, 
-                            configuration, 
-                            "⚠️ 名稱不能為空，請重新輸入該成員的方便識別名稱，或輸入 # 取消："
-                        )
-                        return
-                    
-                    target_id = data.get("target_id")
-                    from src.utils.security import security_manager
-                    config = load_config()
-                    league_id = config.get("LEAGUE_ID")
-                    if league_id:
-                        security_manager.add_to_league_whitelist(league_id, target_id, display_name)
-                        self.reply_text(event, configuration, f"✅ 成功將成員 {display_name} ({target_id}) 加入此聯盟的白名單成員。")
-                    else:
-                        self.reply_text(event, configuration, "⚠️ 尚未設置聯盟 ID，無法新增白名單成員。")
-                    clear_add_whitelist_session(user_id)
-                    return
-
-            # 1. 攔截選秀時間會話
-            draft_session = get_draft_time_session(user_id)
-            if draft_session:
-                if user_text.startswith("#"):
-                    clear_draft_time_session(user_id)
+            active_sess = get_active_session(user_id)
+            if active_sess:
+                from src.utils.session_manager import RemoveLeagueSession
+                is_expected = isinstance(active_sess, RemoveLeagueSession) and user_text == "#確定移除聯盟ID"
+                if user_text.startswith("#") and user_text != "#" and not is_expected:
+                    clear_active_session(user_id)
                 else:
-                    parsed = self.llm_agent.parse_draft_date(user_text)
-                    if parsed.get("success") and parsed.get("date"):
-                        date_val = parsed["date"]
-                        self._update_league_settings({"DRAFT_DATE": date_val})
-                        clear_draft_time_session(user_id)
-                        self.reply_text(event, configuration, f"✅ 成功將選秀時間修改為：{date_val}")
-                    else:
-                        self.reply_text(
-                            event, 
-                            configuration, 
-                            "⚠️ 無法解析您輸入的時間格式，請重新輸入（例如：2026-10-15 19:30），或輸入 # 取消"
-                        )
-                    return
-
-            # 1.5 攔截開季時間會話
-            season_session = get_season_start_time_session(user_id)
-            if season_session:
-                if user_text.startswith("#"):
-                    clear_season_start_time_session(user_id)
-                else:
-                    parsed = self.llm_agent.parse_draft_date(user_text)
-                    if parsed.get("success") and parsed.get("date"):
-                        date_val = parsed["date"]
-                        self._update_league_settings({"SEASON_START_DATE": date_val})
-                        clear_season_start_time_session(user_id)
-                        self.reply_text(event, configuration, f"✅ 成功將開季時間修改為：{date_val}")
-                    else:
-                        self.reply_text(
-                            event, 
-                            configuration, 
-                            "⚠️ 無法解析您輸入的時間格式，請重新輸入（例如：2026-10-22 08:00），或輸入 # 取消"
-                        )
-                    return
-
-            # 2. 攔截暱稱設定會話
-            session = get_nickname_session(user_id)
-            if session:
-                # 用戶發送標準指令 (# 開頭) 則主動重置會話，不進行攔截
-                if user_text.startswith("#"):
-                    clear_nickname_session(user_id)
-                else:
-                    team_id = session["team_id"]
-                    self._update_team_nickname(team_id, user_text)
-                    clear_nickname_session(user_id)
-                    self.reply_text(event, configuration, f"✅ 成功將暱稱修改為：{user_text}")
-                    return
-
-            # 3. 攔截聯盟 ID 設定會話
-            league_session = get_league_id_session(user_id)
-            if league_session:
-                if user_text.startswith("#"):
-                    clear_league_id_session(user_id)
-                else:
-                    event.message.text = f"#設置聯盟ID {user_text}"
-                    self.dispatcher.handle(event, configuration)
-                    return
-
-            # 4. 攔截獎金設定會話中的文字輸入
-            from src.utils.session_manager import get_prize_session, clear_prize_session
-            prize_session = get_prize_session(user_id)
-            if prize_session:
-                if user_text.startswith("#"):
-                    clear_prize_session(user_id)
-                    if user_text == "#":
-                        self.reply_text(event, configuration, "已取消設定。")
-                        return
-                else:
-                    self.reply_text(event, configuration, "⚠️ 設置獎金模式中，請傳送獎金圖片，或輸入 # 取消設定。")
+                    should_continue = active_sess.handle_message(event, configuration, user_text, self.dispatcher)
+                    if not should_continue:
+                        clear_active_session(user_id)
                     return
         # 0.7 攔截白名單成員管理指令
         from src.utils.security import security_manager
@@ -318,7 +126,8 @@ class IntentRouter:
                     if league_id and security_manager.is_league_manager(user_id, league_id):
                         is_manager = True
             if is_manager:
-                set_add_whitelist_session(user_id, step=1, duration_sec=60)
+                from src.utils.session_manager import register_session, AddWhitelistSession
+                register_session(AddWhitelistSession(user_id, duration_sec=60))
                 self.reply_text(event, configuration, "請在 60 秒內輸入欲新增的白名單成員 LINE ID（例如：U123456...），或輸入 # 取消：")
             return
 
@@ -546,18 +355,17 @@ class IntentRouter:
         if not user_id:
             return
 
-        from src.utils.session_manager import get_prize_session
-        if get_prize_session(user_id):
-            from src.handlers.set_prize_handler import SetPrizeHandler
-            handler = self.dispatcher.get_handler(SetPrizeHandler)
-            if handler:
-                try:
-                    from linebot.v3.messaging import MessagingApiBlob
-                    with ApiClient(configuration) as api_client:
-                        blob_api = MessagingApiBlob(api_client)
-                        image_bytes = blob_api.get_message_content(event.message.id)
-                    
-                    handler.handle_image(event, configuration, image_bytes)
-                except Exception as e:
-                    logging.error(f"[IntentRouter] 下載圖片或處理失敗: {e}")
-                    self.reply_text(event, configuration, "⚠️ 圖片下載或儲存失敗，請稍後重試。")
+        active_sess = get_active_session(user_id)
+        if active_sess:
+            try:
+                from linebot.v3.messaging import MessagingApiBlob
+                with ApiClient(configuration) as api_client:
+                    blob_api = MessagingApiBlob(api_client)
+                    image_bytes = blob_api.get_message_content(event.message.id)
+                
+                should_continue = active_sess.handle_image(event, configuration, image_bytes, self.dispatcher)
+                if not should_continue:
+                    clear_active_session(user_id)
+            except Exception as e:
+                logging.error(f"[IntentRouter] 下載圖片或處理失敗: {e}")
+                self.reply_text(event, configuration, "⚠️ 圖片下載或儲存失敗，請稍後重試。")

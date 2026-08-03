@@ -3,7 +3,7 @@ import shutil
 import pytest
 from unittest.mock import MagicMock, patch
 from src.handlers.set_prize_handler import SetPrizeHandler
-from src.utils.session_manager import get_prize_session, clear_prize_session
+from src.utils.session_manager import get_active_session, clear_active_session, PrizeSession
 
 def test_set_prize_handler_can_handle():
     handler = SetPrizeHandler()
@@ -31,8 +31,9 @@ def test_set_prize_handler_execute_success():
          patch.object(handler, "reply_text") as mock_reply:
         handler.execute(event, config)
         mock_reply.assert_called_once_with(event, config, "👉 請在 60 秒內直接傳送新的獎金圖片：")
-        assert get_prize_session("user1") is not None
-        clear_prize_session("user1")
+        assert get_active_session("user1") is not None
+        assert isinstance(get_active_session("user1"), PrizeSession)
+        clear_active_session("user1")
 
 def test_set_prize_handler_handle_image():
     handler = SetPrizeHandler()

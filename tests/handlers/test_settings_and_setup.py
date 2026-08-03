@@ -157,9 +157,10 @@ def test_set_league_id_handler_interactive_flow(mocker):
     handler.execute(event2, MagicMock())
     
     # 驗證是否設定了對話會話 (session_manager)
-    session = session_manager.get_session("user_test_123", "set_league_id")
+    session = session_manager.get_active_session("user_test_123")
     assert session is not None
-    assert session.get("sport") == "nba"
+    assert isinstance(session, session_manager.LeagueIdSession)
+    assert session.sport == "nba"
     
     # 驗證回覆了引導提示文字
     mock_reply_text.assert_called_once()
@@ -174,7 +175,7 @@ def test_set_league_id_handler_interactive_session_digit(mocker):
     mock_reply_text = mocker.patch.object(handler, "reply_text")
     
     # 設定一個 active session，使用者已選擇 nba
-    session_manager.set_session("user_test_456", "set_league_id", {"sport": "nba"}, duration_sec=60)
+    session_manager.register_session(session_manager.LeagueIdSession("user_test_456", "nba", duration_sec=60))
     
     # 模擬 IntentRouter 攔截純數字後轉發的事件，也就是 text 變成 "#設置聯盟ID 18457"
     event3 = MagicMock()
@@ -194,7 +195,7 @@ def test_set_league_id_handler_interactive_session_digit(mocker):
     handler.execute(event3, MagicMock())
     
     # 驗證 session 是否被清除
-    assert session_manager.get_session("user_test_456", "set_league_id") is None
+    assert session_manager.get_active_session("user_test_456") is None
     
     # 驗證傳給 _update_league_id 的 league_id 是 "nba.l.18457"
     mock_update.assert_called_once_with("nba.l.18457", "user_test_456")
@@ -257,13 +258,13 @@ def test_set_league_id_handler_shows_remove_confirm_card():
 
 def test_set_league_id_handler_remove_success_with_others():
     from src.config import current_chat_id
-    from src.utils.session_manager import set_session
+    from src.utils.session_manager import register_session, RemoveLeagueSession
     import json
     
     handler = SetLeagueIdHandler()
     handler.reply_text = MagicMock()
     
-    set_session("user_test_remove_1", "remove_league_id", {"active": True}, duration_sec=60)
+    register_session(RemoveLeagueSession("user_test_remove_1", duration_sec=60))
     
     event = MagicMock()
     event.message.text = "#確定移除聯盟ID"
@@ -312,14 +313,14 @@ def test_set_league_id_handler_remove_success_with_others():
 
 def test_set_league_id_handler_remove_success_and_delete_directory():
     from src.config import current_chat_id
-    from src.utils.session_manager import set_session
+    from src.utils.session_manager import register_session, RemoveLeagueSession
     import json
     import os
     
     handler = SetLeagueIdHandler()
     handler.reply_text = MagicMock()
     
-    set_session("user_test_remove_2", "remove_league_id", {"active": True}, duration_sec=60)
+    register_session(RemoveLeagueSession("user_test_remove_2", duration_sec=60))
     
     event = MagicMock()
     event.message.text = "#確定移除聯盟ID"
@@ -369,14 +370,14 @@ def test_set_league_id_handler_remove_success_and_delete_directory():
 
 def test_set_league_id_handler_remove_success_preserves_auth():
     from src.config import current_chat_id
-    from src.utils.session_manager import set_session
+    from src.utils.session_manager import register_session, RemoveLeagueSession
     import json
     import os
     
     handler = SetLeagueIdHandler()
     handler.reply_text = MagicMock()
     
-    set_session("user_test_remove_3", "remove_league_id", {"active": True}, duration_sec=60)
+    register_session(RemoveLeagueSession("user_test_remove_3", duration_sec=60))
     
     event = MagicMock()
     event.message.text = "#確定移除聯盟ID"
@@ -436,12 +437,12 @@ def test_set_league_id_handler_remove_success_preserves_auth():
         current_chat_id.reset(token)
 
 def test_set_league_id_handler_remove_direct_call_without_session_fails():
-    from src.utils.session_manager import clear_remove_league_session
+    from src.utils.session_manager import clear_active_session
     handler = SetLeagueIdHandler()
     handler.reply_text = MagicMock()
     
     # 確保沒有 remove_league_id 的 session
-    clear_remove_league_session("user_no_session")
+    clear_active_session("user_no_session")
     
     event = MagicMock()
     event.message.text = "#確定移除聯盟ID"
@@ -454,12 +455,12 @@ def test_set_league_id_handler_remove_direct_call_without_session_fails():
     handler.reply_text.assert_not_called()
 
 def test_set_league_id_handler_remove_expired_session_fails():
-    from src.utils.session_manager import set_remove_league_session
+    from src.utils.session_manager import register_session, RemoveLeagueSession
     handler = SetLeagueIdHandler()
     handler.reply_text = MagicMock()
     
     # 模擬已過期的 session
-    set_remove_league_session("user_expired", duration_sec=-10)
+    register_session(RemoveLeagueSession("user_expired", duration_sec=-10))
     
     event = MagicMock()
     event.message.text = "#確定移除聯盟ID"
@@ -468,11 +469,8 @@ def test_set_league_id_handler_remove_expired_session_fails():
     
     handler.execute(event, config)
     
-    handler.reply_text.assert_called_once_with(
-        event,
-        config,
-        "⚠️ 移除請求已過期或未發起，請重新輸入 #移除聯盟ID。"
-    )
+    # 過期會話自動失效，直接無視不回覆
+    handler.reply_text.assert_not_called()
 
 def test_settings_handler_aliases():
     handler = SettingsHandler()

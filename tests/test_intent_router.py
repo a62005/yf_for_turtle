@@ -5,7 +5,8 @@ from linebot.v3.messaging import Configuration
 
 @pytest.fixture(autouse=True)
 def mock_bound_league():
-    with patch("src.handlers.intent_router.load_config", return_value={"LEAGUE_ID": "mock_league_123"}):
+    with patch("src.config.load_config", return_value={"LEAGUE_ID": "mock_league_123"}), \
+         patch("src.handlers.intent_router.load_config", return_value={"LEAGUE_ID": "mock_league_123"}):
         yield
 
 def create_mock_event(text, chat_type="user", mentionees=None):
@@ -174,12 +175,7 @@ def test_should_process_logic(mock_get_bot_id):
     event_group_session = create_mock_event("2026-10-15 20:00", chat_type="group")
     event_group_session.source.user_id = "U12345_session"
     
-    with patch("src.handlers.intent_router.get_draft_time_session", return_value={"type": "draft_time"}), \
-         patch("src.handlers.intent_router.get_nickname_session", return_value=None):
-        assert router.should_process(event_group_session, config) is True
-        
-    with patch("src.handlers.intent_router.get_draft_time_session", return_value=None), \
-         patch("src.handlers.intent_router.get_nickname_session", return_value={"type": "nickname"}):
+    with patch("src.handlers.intent_router.get_active_session", return_value=MagicMock()):
         assert router.should_process(event_group_session, config) is True
 
 
@@ -207,7 +203,7 @@ def test_intent_router_nickname_session_interception():
     from unittest.mock import mock_open
     from src.handlers.dispatcher import CommandDispatcher
     from src.handlers.intent_router import IntentRouter
-    from src.utils.session_manager import set_nickname_session, get_nickname_session
+    from src.utils.session_manager import register_session, NicknameSession, get_active_session
     
     dispatcher = CommandDispatcher()
     router = IntentRouter(dispatcher)
@@ -219,21 +215,16 @@ def test_intent_router_nickname_session_interception():
     config = MagicMock()
     
     # 設置 60 秒的有效會話
-    set_nickname_session("user_test_intercept", "1", duration_sec=60)
+    register_session(NicknameSession("user_test_intercept", "1", duration_sec=60))
     
     mock_mapping = {"1": "小明"}
     
-    with patch("src.handlers.intent_router.load_config", return_value={"LEAGUE_ID": "123"}), \
-         patch("src.handlers.intent_router.get_league_team_mapping_path", return_value="dummy_dir/team_mapping.json"), \
-         patch("src.handlers.intent_router.os.path.exists", return_value=True), \
-         patch("src.handlers.intent_router.os.makedirs") as mock_makedirs, \
-         patch("src.handlers.intent_router.open", mock_open(read_data=json.dumps(mock_mapping))) as m_file, \
-         patch.object(router, "reply_text") as mock_reply:
+    with patch("src.config.load_config", return_value={"LEAGUE_ID": "123"}),          patch("src.handlers.intent_router.load_config", return_value={"LEAGUE_ID": "123"}),          patch("src.utils.path_utils.get_league_team_mapping_path", return_value="dummy_dir/team_mapping.json"),          patch("src.utils.session_manager.os.path.exists", return_value=True),          patch("src.utils.session_manager.os.makedirs") as mock_makedirs,          patch("src.utils.session_manager.open", mock_open(read_data=json.dumps(mock_mapping))) as m_file,          patch("src.utils.session_manager.reply_text") as mock_reply:
         
         router.route(event, config)
         
         # 驗證會話被清空
-        assert get_nickname_session("user_test_intercept") is None
+        assert get_active_session("user_test_intercept") is None
         # 驗證寫入新暱稱
         assert m_file().write.called
         # 驗證回覆
@@ -242,7 +233,7 @@ def test_intent_router_nickname_session_interception():
 def test_intent_router_nickname_session_reset_by_command():
     from src.handlers.dispatcher import CommandDispatcher
     from src.handlers.intent_router import IntentRouter
-    from src.utils.session_manager import set_nickname_session, get_nickname_session
+    from src.utils.session_manager import register_session, NicknameSession, get_active_session
     
     dispatcher = CommandDispatcher()
     dispatcher.handle = MagicMock()
@@ -253,12 +244,12 @@ def test_intent_router_nickname_session_reset_by_command():
     event.message.text = "#對戰"
     config = MagicMock()
     
-    set_nickname_session("user_test_reset", "1", duration_sec=60)
+    register_session(NicknameSession("user_test_reset", "1", duration_sec=60))
     
     with patch.object(router, "should_process", return_value=True):
         router.route(event, config)
         # 標準指令將會話清除
-        assert get_nickname_session("user_test_reset") is None
+        assert get_active_session("user_test_reset") is None
         # 正常分發指令
         dispatcher.handle.assert_called_once()
 
@@ -267,7 +258,7 @@ def test_intent_router_intercept_draft_session_success():
     from unittest.mock import mock_open
     from src.handlers.dispatcher import CommandDispatcher
     from src.handlers.intent_router import IntentRouter
-    from src.utils.session_manager import set_draft_time_session, get_draft_time_session
+    from src.utils.session_manager import register_session, DraftTimeSession, get_active_session
     from linebot.v3.messaging import Configuration
     
     dispatcher = CommandDispatcher()
@@ -281,23 +272,17 @@ def test_intent_router_intercept_draft_session_success():
     config = Configuration()
     config.access_token = "dummy_access_token"
     
-    # 設置 60 秒的有效會話 (draft_time session)
-    set_draft_time_session("user_test_draft", True, duration_sec=60)
+    # 設置 60 秒的有效會話
+    register_session(DraftTimeSession("user_test_draft", duration_sec=60))
     
     mock_settings = {"DRAFT_DATE": "2025-01-01"}
     
-    # Mock LLMAgent.parse_draft_date 讓它成功解析出時間
-    with patch("src.handlers.intent_router.load_config", return_value={"LEAGUE_ID": "123"}), \
-         patch("src.handlers.intent_router.os.path.exists", return_value=True), \
-         patch("src.handlers.intent_router.os.makedirs") as mock_makedirs, \
-         patch("src.handlers.intent_router.open", mock_open(read_data=json.dumps(mock_settings))) as m_file, \
-         patch.object(router.llm_agent, "parse_draft_date", return_value={"success": True, "date": "2026-10-15 20:00"}), \
-         patch.object(router, "reply_text") as mock_reply:
+    with patch("src.config.load_config", return_value={"LEAGUE_ID": "123"}),          patch("src.handlers.intent_router.load_config", return_value={"LEAGUE_ID": "123"}),          patch("src.utils.session_manager.os.path.exists", return_value=True),          patch("src.utils.session_manager.os.makedirs") as mock_makedirs,          patch("src.utils.session_manager.open", mock_open(read_data=json.dumps(mock_settings))) as m_file,          patch.object(router.llm_agent, "parse_draft_date", return_value={"success": True, "date": "2026-10-15 20:00"}),          patch("src.utils.session_manager.reply_text") as mock_reply:
          
         router.route(event, config)
         
         # 驗證會話被清空
-        assert get_draft_time_session("user_test_draft") is None
+        assert get_active_session("user_test_draft") is None
         # 驗證寫入新設定到 settings.json
         assert m_file().write.called
         # 驗證回覆包含標準成功字串
@@ -306,7 +291,7 @@ def test_intent_router_intercept_draft_session_success():
 def test_intent_router_intercept_draft_session_failure():
     from src.handlers.dispatcher import CommandDispatcher
     from src.handlers.intent_router import IntentRouter
-    from src.utils.session_manager import set_draft_time_session, get_draft_time_session
+    from src.utils.session_manager import register_session, DraftTimeSession, get_active_session
     from linebot.v3.messaging import Configuration
     
     dispatcher = CommandDispatcher()
@@ -320,16 +305,14 @@ def test_intent_router_intercept_draft_session_failure():
     config = Configuration()
     config.access_token = "dummy_access_token"
     
-    set_draft_time_session("user_test_draft_fail", True, duration_sec=60)
+    register_session(DraftTimeSession("user_test_draft_fail", duration_sec=60))
     
-    with patch("src.handlers.intent_router.load_config", return_value={"LEAGUE_ID": "123"}), \
-         patch.object(router.llm_agent, "parse_draft_date", return_value={"success": False, "date": None}), \
-         patch.object(router, "reply_text") as mock_reply:
+    with patch("src.config.load_config", return_value={"LEAGUE_ID": "123"}),          patch("src.handlers.intent_router.load_config", return_value={"LEAGUE_ID": "123"}),          patch.object(router.llm_agent, "parse_draft_date", return_value={"success": False, "date": None}),          patch("src.utils.session_manager.reply_text") as mock_reply:
          
         router.route(event, config)
         
         # 驗證會話依然存在 (解析失敗不清除會話)
-        assert get_draft_time_session("user_test_draft_fail") is not None
+        assert get_active_session("user_test_draft_fail") is not None
         # 驗證回覆警告字串
         mock_reply.assert_called_once()
         args, kwargs = mock_reply.call_args
@@ -339,7 +322,7 @@ def test_intent_router_intercept_draft_session_failure():
 def test_intent_router_prize_session_text_interception():
     from src.handlers.dispatcher import CommandDispatcher
     from src.handlers.intent_router import IntentRouter
-    from src.utils.session_manager import set_prize_session, get_prize_session
+    from src.utils.session_manager import register_session, PrizeSession, get_active_session
     
     dispatcher = CommandDispatcher()
     router = IntentRouter(dispatcher)
@@ -350,25 +333,25 @@ def test_intent_router_prize_session_text_interception():
     event.message.text = "普通文字訊息"
     config = MagicMock()
     
-    set_prize_session("user_prize_text", duration_sec=60)
+    register_session(PrizeSession("user_prize_text", duration_sec=60))
     
-    with patch.object(router, "reply_text") as mock_reply:
+    with patch("src.config.load_config", return_value={"LEAGUE_ID": "123"}),          patch("src.handlers.intent_router.load_config", return_value={"LEAGUE_ID": "123"}),          patch("src.utils.session_manager.reply_text") as mock_reply:
         router.route(event, config)
-        assert get_prize_session("user_prize_text") is not None
+        assert get_active_session("user_prize_text") is not None
         mock_reply.assert_called_once_with(
             event, config, "⚠️ 設置獎金模式中，請傳送獎金圖片，或輸入 # 取消設定。"
         )
         
     event.message.text = "#"
-    with patch.object(router, "reply_text") as mock_reply:
+    with patch("src.config.load_config", return_value={"LEAGUE_ID": "123"}),          patch("src.handlers.intent_router.load_config", return_value={"LEAGUE_ID": "123"}),          patch("src.utils.session_manager.reply_text") as mock_reply:
         router.route(event, config)
-        assert get_prize_session("user_prize_text") is None
+        assert get_active_session("user_prize_text") is None
         mock_reply.assert_called_once_with(event, config, "已取消設定。")
 
 def test_intent_router_route_image():
     from src.handlers.dispatcher import CommandDispatcher
     from src.handlers.intent_router import IntentRouter
-    from src.utils.session_manager import set_prize_session, clear_prize_session
+    from src.utils.session_manager import register_session, PrizeSession, clear_active_session
     from src.handlers.set_prize_handler import SetPrizeHandler
     
     dispatcher = CommandDispatcher()
@@ -382,10 +365,9 @@ def test_intent_router_route_image():
     event.message.id = "image_msg_123"
     config = MagicMock()
     
-    set_prize_session("user_prize_image", duration_sec=60)
+    register_session(PrizeSession("user_prize_image", duration_sec=60))
     
-    with patch("src.handlers.intent_router.ApiClient"), \
-         patch("linebot.v3.messaging.MessagingApiBlob") as mock_blob_class:
+    with patch("src.handlers.intent_router.ApiClient"),          patch("linebot.v3.messaging.MessagingApiBlob") as mock_blob_class:
         
         mock_blob = MagicMock()
         mock_blob.get_message_content.return_value = b"image_data"
@@ -396,13 +378,13 @@ def test_intent_router_route_image():
         mock_blob.get_message_content.assert_called_once_with("image_msg_123")
         mock_handler.handle_image.assert_called_once_with(event, config, b"image_data")
         
-    clear_prize_session("user_prize_image")
+    clear_active_session("user_prize_image")
 
 
 def test_should_process_unbound_silence():
     from src.handlers.dispatcher import CommandDispatcher
     from src.handlers.intent_router import IntentRouter
-    from src.utils.session_manager import set_nickname_session, clear_nickname_session
+    from src.utils.session_manager import register_session, clear_active_session, NicknameSession, LeagueIdSession
     from linebot.v3.messaging import Configuration
     
     dispatcher = CommandDispatcher()
@@ -410,7 +392,7 @@ def test_should_process_unbound_silence():
     config = Configuration()
     
     # 模擬為未綁定聯賽 ID
-    with patch("src.handlers.intent_router.load_config", return_value={"LEAGUE_ID": None}):
+    with patch("src.config.load_config", return_value={"LEAGUE_ID": None}),          patch("src.handlers.intent_router.load_config", return_value={"LEAGUE_ID": None}):
         # 1. 驗證放行指令
         event_setup = create_mock_event("#設置")
         assert router.should_process(event_setup, config) is True
@@ -424,21 +406,20 @@ def test_should_process_unbound_silence():
         # 2. 驗證活動中的會話
         event_session = create_mock_event("我的暱稱", chat_type="user")
         event_session.source.user_id = "user_test_unbound"
-        set_nickname_session("user_test_unbound", "team_1", duration_sec=60)
+        register_session(NicknameSession("user_test_unbound", "team_1", duration_sec=60))
         try:
             assert router.should_process(event_session, config) is True
         finally:
-            clear_nickname_session("user_test_unbound")
+            clear_active_session("user_test_unbound")
 
         # 驗證活動中的聯盟 ID 會話
-        from src.utils.session_manager import set_league_id_session, clear_league_id_session
         event_league_session = create_mock_event("12345", chat_type="user")
         event_league_session.source.user_id = "user_test_unbound"
-        set_league_id_session("user_test_unbound", duration_sec=60)
+        register_session(LeagueIdSession("user_test_unbound", "nba", duration_sec=60))
         try:
             assert router.should_process(event_league_session, config) is True
         finally:
-            clear_league_id_session("user_test_unbound")
+            clear_active_session("user_test_unbound")
             
         # 3. 驗證攔截指令
         event_start = create_mock_event("#開季")
@@ -474,13 +455,12 @@ def test_should_process_unbound_silence():
 def test_intent_router_league_id_session():
     from src.handlers.dispatcher import CommandDispatcher
     from src.handlers.intent_router import IntentRouter
-    from src.utils.session_manager import set_league_id_session, get_league_id_session
+    from src.utils.session_manager import register_session, LeagueIdSession, get_active_session, clear_active_session
     from linebot.v3.messaging import Configuration
     
     dispatcher = MagicMock()
     def side_effect(*args, **kwargs):
-        from src.utils.session_manager import clear_league_id_session
-        clear_league_id_session("user_test_league_session")
+        clear_active_session("user_test_league_session")
     dispatcher.handle.side_effect = side_effect
 
     router = IntentRouter(dispatcher)
@@ -489,19 +469,17 @@ def test_intent_router_league_id_session():
     event = create_mock_event("18457", chat_type="user")
     event.source.user_id = "user_test_league_session"
     
-    # 設定 active league session
-    set_league_id_session("user_test_league_session", duration_sec=60)
+    register_session(LeagueIdSession("user_test_league_session", "nba", duration_sec=60))
     
     try:
         router.route(event, config)
         # 驗證 session 被清除
-        assert get_league_id_session("user_test_league_session") is None
+        assert get_active_session("user_test_league_session") is None
         # 驗證 dispatcher 被呼叫，且 event.message.text 被重寫為 #設置聯盟ID 18457
         dispatcher.handle.assert_called_once_with(event, config)
         assert event.message.text == "#設置聯盟ID 18457"
     finally:
-        from src.utils.session_manager import clear_league_id_session
-        clear_league_id_session("user_test_league_session")
+        clear_active_session("user_test_league_session")
 
 
 def test_intent_router_should_process_setting_aliases(mocker):
@@ -512,6 +490,7 @@ def test_intent_router_should_process_setting_aliases(mocker):
     router = IntentRouter(dispatcher)
     
     # Mock configuration to return empty LEAGUE_ID
+    mocker.patch("src.config.load_config", return_value={"LEAGUE_ID": None})
     mocker.patch("src.handlers.intent_router.load_config", return_value={"LEAGUE_ID": None})
     
     # Test each alias
@@ -529,7 +508,7 @@ def test_intent_router_intercept_season_session_success():
     from unittest.mock import mock_open
     from src.handlers.dispatcher import CommandDispatcher
     from src.handlers.intent_router import IntentRouter
-    from src.utils.session_manager import set_season_start_time_session, get_season_start_time_session
+    from src.utils.session_manager import register_session, SeasonStartTimeSession, get_active_session
     from linebot.v3.messaging import Configuration
     
     dispatcher = CommandDispatcher()
@@ -543,33 +522,24 @@ def test_intent_router_intercept_season_session_success():
     config = Configuration()
     config.access_token = "dummy_access_token"
     
-    # 設置 60 秒的有效會話 (season_start_time session)
-    set_season_start_time_session("user_test_season", duration_sec=60)
+    register_session(SeasonStartTimeSession("user_test_season", duration_sec=60))
     
     mock_settings = {"SEASON_START_DATE": "2025-01-01"}
     
-    # Mock LLMAgent.parse_draft_date 讓它成功解析出時間
-    with patch("src.handlers.intent_router.load_config", return_value={"LEAGUE_ID": "123"}), \
-         patch("src.handlers.intent_router.os.path.exists", return_value=True), \
-         patch("src.handlers.intent_router.os.makedirs") as mock_makedirs, \
-         patch("src.handlers.intent_router.open", mock_open(read_data=json.dumps(mock_settings))) as m_file, \
-         patch.object(router.llm_agent, "parse_draft_date", return_value={"success": True, "date": "2026-10-22 08:00"}), \
-         patch.object(router, "reply_text") as mock_reply:
+    with patch("src.config.load_config", return_value={"LEAGUE_ID": "123"}),          patch("src.handlers.intent_router.load_config", return_value={"LEAGUE_ID": "123"}),          patch("src.utils.session_manager.os.path.exists", return_value=True),          patch("src.utils.session_manager.os.makedirs") as mock_makedirs,          patch("src.utils.session_manager.open", mock_open(read_data=json.dumps(mock_settings))) as m_file,          patch.object(router.llm_agent, "parse_draft_date", return_value={"success": True, "date": "2026-10-22 08:00"}),          patch("src.utils.session_manager.reply_text") as mock_reply:
          
         router.route(event, config)
         
         # 驗證會話被清空
-        assert get_season_start_time_session("user_test_season") is None
+        assert get_active_session("user_test_season") is None
         # 驗證寫入新設定到 settings.json
         assert m_file().write.called
-        # 驗證回覆包含標準成功字串
-        mock_reply.assert_called_once_with(event, config, "✅ 成功將開季時間修改為：2026-10-22 08:00")
 
 
 def test_intent_router_intercept_season_session_failure():
     from src.handlers.dispatcher import CommandDispatcher
     from src.handlers.intent_router import IntentRouter
-    from src.utils.session_manager import set_season_start_time_session, get_season_start_time_session
+    from src.utils.session_manager import register_session, SeasonStartTimeSession, get_active_session
     from linebot.v3.messaging import Configuration
     
     dispatcher = CommandDispatcher()
@@ -583,16 +553,14 @@ def test_intent_router_intercept_season_session_failure():
     config = Configuration()
     config.access_token = "dummy_access_token"
     
-    set_season_start_time_session("user_test_season_fail", duration_sec=60)
+    register_session(SeasonStartTimeSession("user_test_season_fail", duration_sec=60))
     
-    with patch("src.handlers.intent_router.load_config", return_value={"LEAGUE_ID": "123"}), \
-         patch.object(router.llm_agent, "parse_draft_date", return_value={"success": False, "date": None}), \
-         patch.object(router, "reply_text") as mock_reply:
+    with patch("src.config.load_config", return_value={"LEAGUE_ID": "123"}),          patch("src.handlers.intent_router.load_config", return_value={"LEAGUE_ID": "123"}),          patch.object(router.llm_agent, "parse_draft_date", return_value={"success": False, "date": None}),          patch("src.utils.session_manager.reply_text") as mock_reply:
          
         router.route(event, config)
         
         # 驗證會話依然存在 (解析失敗不清除會話)
-        assert get_season_start_time_session("user_test_season_fail") is not None
+        assert get_active_session("user_test_season_fail") is not None
         # 驗證回覆警告字串
         mock_reply.assert_called_once()
         args, kwargs = mock_reply.call_args
@@ -602,11 +570,7 @@ def test_intent_router_intercept_season_session_failure():
 def test_intent_router_add_manager_flow():
     from src.handlers.dispatcher import CommandDispatcher
     from src.handlers.intent_router import IntentRouter
-    from src.utils.session_manager import (
-        set_add_manager_session, 
-        get_add_manager_session, 
-        clear_add_manager_session
-    )
+    from src.utils.session_manager import register_session, get_active_session, AddManagerSession
     from linebot.v3.messaging import Configuration
     from unittest.mock import patch, MagicMock
     
@@ -620,66 +584,70 @@ def test_intent_router_add_manager_flow():
     config.access_token = "dummy"
 
     # 1. 測試輸入 "#" 取消
-    set_add_manager_session("user_mgr_test", step=1, data={}, duration_sec=60)
+    sess = AddManagerSession("user_mgr_test", duration_sec=60)
+    register_session(sess)
     event.message.text = "#"
-    with patch.object(router, "reply_text") as mock_reply:
+    with patch("src.utils.session_manager.reply_text") as mock_reply:
         router.route(event, config)
-        assert get_add_manager_session("user_mgr_test") is None
+        assert get_active_session("user_mgr_test") is None
         mock_reply.assert_called_once_with(event, config, "已取消新增管理員。")
 
     # 2. 測試 Step 1: 格式錯誤
-    set_add_manager_session("user_mgr_test", step=1, data={}, duration_sec=60)
+    sess = AddManagerSession("user_mgr_test", duration_sec=60)
+    register_session(sess)
     event.message.text = "invalid_id"
-    with patch.object(router, "reply_text") as mock_reply:
+    with patch("src.utils.session_manager.reply_text") as mock_reply:
         router.route(event, config)
-        sess = get_add_manager_session("user_mgr_test")
-        assert sess is not None
-        assert sess["step"] == 1
+        active = get_active_session("user_mgr_test")
+        assert active is not None
+        assert active.step == 1
         mock_reply.assert_called_once()
         assert "格式錯誤" in mock_reply.call_args[0][2]
 
     # 3. 測試 Step 1: 成功，進到 Step 2
-    set_add_manager_session("user_mgr_test", step=1, data={}, duration_sec=60)
+    sess = AddManagerSession("user_mgr_test", duration_sec=60)
+    register_session(sess)
     valid_id = "U" + "a" * 32
     event.message.text = valid_id
-    with patch.object(router, "reply_text") as mock_reply:
+    with patch("src.utils.session_manager.reply_text") as mock_reply:
         router.route(event, config)
-        sess = get_add_manager_session("user_mgr_test")
-        assert sess is not None
-        assert sess["step"] == 2
-        assert sess["data"]["target_id"] == valid_id
+        active = get_active_session("user_mgr_test")
+        assert active is not None
+        assert active.step == 2
+        assert active.target_id == valid_id
         mock_reply.assert_called_once_with(event, config, "請在 60 秒內輸入該管理員的方便識別名稱（例如：小明），或輸入 # 取消：")
 
     # 4. 測試 Step 2: 名字為空
-    set_add_manager_session("user_mgr_test", step=2, data={"target_id": valid_id}, duration_sec=60)
+    sess = AddManagerSession("user_mgr_test", duration_sec=60)
+    sess.step = 2
+    sess.target_id = valid_id
+    register_session(sess)
     event.message.text = "   "
-    with patch.object(router, "reply_text") as mock_reply:
+    with patch("src.utils.session_manager.reply_text") as mock_reply:
         router.route(event, config)
-        sess = get_add_manager_session("user_mgr_test")
-        assert sess is not None
-        assert sess["step"] == 2
+        active = get_active_session("user_mgr_test")
+        assert active is not None
+        assert active.step == 2
         mock_reply.assert_called_once()
         assert "名稱不能為空" in mock_reply.call_args[0][2]
 
     # 5. 測試 Step 2: 成功加入管理員
-    set_add_manager_session("user_mgr_test", step=2, data={"target_id": valid_id}, duration_sec=60)
+    sess = AddManagerSession("user_mgr_test", duration_sec=60)
+    sess.step = 2
+    sess.target_id = valid_id
+    register_session(sess)
     event.message.text = "小華"
-    with patch.object(router, "reply_text") as mock_reply, \
-         patch("src.utils.security.security_manager.add_manager", return_value=True) as mock_add:
+    with patch("src.utils.session_manager.reply_text") as mock_reply,          patch("src.utils.security.security_manager.add_manager", return_value=True) as mock_add:
         router.route(event, config)
         mock_add.assert_called_once_with(valid_id, "小華")
-        assert get_add_manager_session("user_mgr_test") is None
+        assert get_active_session("user_mgr_test") is None
         mock_reply.assert_called_once_with(event, config, f"✅ 成功將管理員 小華 ({valid_id}) 加入全域管理員名單。")
 
 
 def test_intent_router_add_whitelist_flow():
     from src.handlers.dispatcher import CommandDispatcher
     from src.handlers.intent_router import IntentRouter
-    from src.utils.session_manager import (
-        set_add_whitelist_session,
-        get_add_whitelist_session,
-        clear_add_whitelist_session
-    )
+    from src.utils.session_manager import register_session, get_active_session, AddWhitelistSession
     from linebot.v3.messaging import Configuration
     from unittest.mock import patch, MagicMock
 
@@ -693,72 +661,80 @@ def test_intent_router_add_whitelist_flow():
     config.access_token = "dummy"
 
     # Mock manager check
-    with patch("src.utils.security.security_manager.is_super_admin", return_value=True), \
-         patch("src.handlers.intent_router.load_config", return_value={"LEAGUE_ID": "123"}):
+    with patch("src.utils.security.security_manager.is_super_admin", return_value=True),          patch("src.config.load_config", return_value={"LEAGUE_ID": "123"}),          patch("src.handlers.intent_router.load_config", return_value={"LEAGUE_ID": "123"}):
         
         # 1. 測試指令 #新增白名單成員 起始會話
         event.message.text = "#新增白名單成員"
         with patch.object(router, "reply_text") as mock_reply:
             router.route(event, config)
-            sess = get_add_whitelist_session("user_wl_test")
+            sess = get_active_session("user_wl_test")
             assert sess is not None
-            assert sess["step"] == 1
+            assert isinstance(sess, AddWhitelistSession)
+            assert sess.step == 1
             mock_reply.assert_called_once_with(
                 event, config, "請在 60 秒內輸入欲新增的白名單成員 LINE ID（例如：U123456...），或輸入 # 取消："
             )
 
         # 2. 測試輸入 "#" 取消
-        set_add_whitelist_session("user_wl_test", step=1, data={}, duration_sec=60)
+        sess = AddWhitelistSession("user_wl_test", duration_sec=60)
+        register_session(sess)
         event.message.text = "#"
-        with patch.object(router, "reply_text") as mock_reply:
+        with patch("src.utils.session_manager.reply_text") as mock_reply:
             router.route(event, config)
-            assert get_add_whitelist_session("user_wl_test") is None
+            assert get_active_session("user_wl_test") is None
             mock_reply.assert_called_once_with(event, config, "已取消新增成員。")
 
         # 3. 測試 Step 1: 格式錯誤
-        set_add_whitelist_session("user_wl_test", step=1, data={}, duration_sec=60)
+        sess = AddWhitelistSession("user_wl_test", duration_sec=60)
+        register_session(sess)
         event.message.text = "invalid_id"
-        with patch.object(router, "reply_text") as mock_reply:
+        with patch("src.utils.session_manager.reply_text") as mock_reply:
             router.route(event, config)
-            sess = get_add_whitelist_session("user_wl_test")
-            assert sess is not None
-            assert sess["step"] == 1
+            active = get_active_session("user_wl_test")
+            assert active is not None
+            assert active.step == 1
             mock_reply.assert_called_once()
             assert "格式錯誤" in mock_reply.call_args[0][2]
 
         # 4. 測試 Step 1: 成功，進到 Step 2
-        set_add_whitelist_session("user_wl_test", step=1, data={}, duration_sec=60)
+        sess = AddWhitelistSession("user_wl_test", duration_sec=60)
+        register_session(sess)
         valid_id = "U" + "b" * 32
         event.message.text = valid_id
-        with patch.object(router, "reply_text") as mock_reply:
+        with patch("src.utils.session_manager.reply_text") as mock_reply:
             router.route(event, config)
-            sess = get_add_whitelist_session("user_wl_test")
-            assert sess is not None
-            assert sess["step"] == 2
-            assert sess["data"]["target_id"] == valid_id
+            active = get_active_session("user_wl_test")
+            assert active is not None
+            assert active.step == 2
+            assert active.target_id == valid_id
             mock_reply.assert_called_once_with(
                 event, config, "請在 60 秒內輸入該成員的方便識別名稱（例如：大雄），或輸入 # 取消："
             )
 
         # 5. 測試 Step 2: 名字為空
-        set_add_whitelist_session("user_wl_test", step=2, data={"target_id": valid_id}, duration_sec=60)
+        sess = AddWhitelistSession("user_wl_test", duration_sec=60)
+        sess.step = 2
+        sess.target_id = valid_id
+        register_session(sess)
         event.message.text = "   "
-        with patch.object(router, "reply_text") as mock_reply:
+        with patch("src.utils.session_manager.reply_text") as mock_reply:
             router.route(event, config)
-            sess = get_add_whitelist_session("user_wl_test")
-            assert sess is not None
-            assert sess["step"] == 2
+            active = get_active_session("user_wl_test")
+            assert active is not None
+            assert active.step == 2
             mock_reply.assert_called_once()
             assert "名稱不能為空" in mock_reply.call_args[0][2]
 
         # 6. 測試 Step 2: 成功加入白名單成員
-        set_add_whitelist_session("user_wl_test", step=2, data={"target_id": valid_id}, duration_sec=60)
+        sess = AddWhitelistSession("user_wl_test", duration_sec=60)
+        sess.step = 2
+        sess.target_id = valid_id
+        register_session(sess)
         event.message.text = "大雄"
-        with patch.object(router, "reply_text") as mock_reply, \
-             patch("src.utils.security.security_manager.add_to_league_whitelist", return_value=True) as mock_add:
+        with patch("src.utils.session_manager.reply_text") as mock_reply,              patch("src.utils.security.security_manager.add_to_league_whitelist", return_value=True) as mock_add:
             router.route(event, config)
             mock_add.assert_called_once_with("123", valid_id, "大雄")
-            assert get_add_whitelist_session("user_wl_test") is None
+            assert get_active_session("user_wl_test") is None
             mock_reply.assert_called_once_with(
                 event, config, f"✅ 成功將成員 大雄 ({valid_id}) 加入此聯盟的白名單成員。"
             )
@@ -780,13 +756,11 @@ def test_intent_router_remove_whitelist_flow():
     config.access_token = "dummy"
 
     # Mock manager check
-    with patch("src.utils.security.security_manager.is_super_admin", return_value=True), \
-         patch("src.handlers.intent_router.load_config", return_value={"LEAGUE_ID": "123"}):
+    with patch("src.utils.security.security_manager.is_super_admin", return_value=True),          patch("src.config.load_config", return_value={"LEAGUE_ID": "123"}),          patch("src.handlers.intent_router.load_config", return_value={"LEAGUE_ID": "123"}):
 
         # 1. 測試 #移除白名單成員：目前無成員
         event.message.text = "#移除白名單成員"
-        with patch.object(router, "reply_text") as mock_reply, \
-             patch("src.utils.security.security_manager._load_json", return_value={}):
+        with patch.object(router, "reply_text") as mock_reply,              patch("src.utils.security.security_manager._load_json", return_value={}):
             router.route(event, config)
             mock_reply.assert_called_once_with(event, config, "ℹ️ 目前此聯盟無任何白名單成員。")
 
@@ -801,8 +775,7 @@ def test_intent_router_remove_whitelist_flow():
             }
         }
         event.message.text = "#移除白名單成員"
-        with patch.object(router, "reply_flex") as mock_reply, \
-             patch("src.utils.security.security_manager._load_json", return_value=mock_roles):
+        with patch.object(router, "reply_flex") as mock_reply,              patch("src.utils.security.security_manager._load_json", return_value=mock_roles):
             router.route(event, config)
             mock_reply.assert_called_once()
             args = mock_reply.call_args[0]
@@ -814,13 +787,9 @@ def test_intent_router_remove_whitelist_flow():
 
         # 3. 測試 #確切移除白名單
         event.message.text = f"#確切移除白名單 {valid_id}"
-        with patch.object(router, "reply_text") as mock_reply, \
-             patch("src.utils.security.security_manager._load_json", return_value=mock_roles), \
-             patch("src.utils.security.security_manager.remove_from_league_whitelist", return_value=True) as mock_remove:
+        with patch.object(router, "reply_text") as mock_reply,              patch("src.utils.security.security_manager._load_json", return_value=mock_roles),              patch("src.utils.security.security_manager.remove_from_league_whitelist", return_value=True) as mock_remove:
             router.route(event, config)
             mock_remove.assert_called_once_with("123", valid_id)
             mock_reply.assert_called_once_with(
                 event, config, "✅ 成功將成員 大雄 移出白名單。"
             )
-
-

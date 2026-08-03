@@ -4,7 +4,7 @@ from linebot.v3.webhooks import MessageEvent
 from linebot.v3.messaging import Configuration
 from src.handlers.base_handler import BaseHandler
 from src.config import load_config
-from src.utils.session_manager import set_prize_session, clear_prize_session
+from src.utils.session_manager import register_session, clear_active_session, PrizeSession
 
 class SetPrizeHandler(BaseHandler):
     def __init__(self):
@@ -26,7 +26,7 @@ class SetPrizeHandler(BaseHandler):
         if not user_id:
             return
 
-        set_prize_session(user_id, duration_sec=60)
+        register_session(PrizeSession(user_id, duration_sec=60))
         self.reply_text(event, configuration, "👉 請在 60 秒內直接傳送新的獎金圖片：")
 
     def handle_image(self, event: MessageEvent, configuration: Configuration, image_bytes: bytes) -> None:
@@ -37,7 +37,7 @@ class SetPrizeHandler(BaseHandler):
         config = load_config()
         league_id = config.get("LEAGUE_ID")
         if not league_id:
-            clear_prize_session(user_id)
+            clear_active_session(user_id)
             self.reply_text(event, configuration, "⚠️ 聯賽 ID 尚未綁定。")
             return
 
@@ -67,11 +67,11 @@ class SetPrizeHandler(BaseHandler):
                         except Exception as e:
                             logging.warning(f"Failed to remove old prize file {f} due to Windows file lock: {e}")
 
-            clear_prize_session(user_id)
+            clear_active_session(user_id)
             self.reply_text(event, configuration, "✅ 成功設定獎金圖片！")
         except Exception as e:
             logging.error(f"[SetPrizeHandler] 儲存獎金圖片失敗: {e}")
-            clear_prize_session(user_id)
+            clear_active_session(user_id)
             self.reply_text(event, configuration, "⚠️ 儲存圖片時發生錯誤，請稍後重試。")
 
     @property

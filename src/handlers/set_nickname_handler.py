@@ -8,7 +8,7 @@ from src.handlers.base_handler import BaseHandler
 from src.config import load_config
 from src.utils.path_utils import get_league_team_mapping_path
 from src.visualizer.flex_builder import build_button_menu_card
-from src.utils.session_manager import set_nickname_session
+from src.utils.session_manager import register_session, NicknameSession
 
 class SetNicknameHandler(BaseHandler):
     def __init__(self):
@@ -82,7 +82,7 @@ class SetNicknameHandler(BaseHandler):
             
             # 註冊 60 秒的改名 Session 狀態
             user_id = event.source.user_id
-            set_nickname_session(user_id, team_id, duration_sec=60)
+            register_session(NicknameSession(user_id, team_id, duration_sec=60))
             
             self.reply_text(event, configuration, f"👉 請在 60 秒內直接輸入 {curr_name} 的新暱稱：")
 

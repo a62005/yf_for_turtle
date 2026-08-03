@@ -9,6 +9,13 @@ from src.config import load_config
 from src.fetcher import YahooFantasyFetcher, LeaguePermissionError
 from src.utils.season_utils import sync_season_metadata
 from src.utils.path_utils import get_league_team_mapping_path, get_league_dir
+from src.utils.session_manager import (
+    register_session,
+    get_active_session,
+    clear_active_session,
+    LeagueIdSession,
+    RemoveLeagueSession
+)
 
 class SetLeagueIdHandler(BaseHandler):
     def __init__(self):
@@ -30,8 +37,7 @@ class SetLeagueIdHandler(BaseHandler):
         
         if user_text == "#移除聯盟ID":
             if user_id:
-                from src.utils.session_manager import set_remove_league_session
-                set_remove_league_session(user_id, duration_sec=60)
+                register_session(RemoveLeagueSession(user_id, duration_sec=60))
             else:
                 self.reply_text(event, configuration, "⚠️ 無法獲取您的 User ID，請重新嘗試。")
                 return
@@ -47,21 +53,13 @@ class SetLeagueIdHandler(BaseHandler):
             return
 
         if user_text == "#確定移除聯盟ID":
-            from src.utils.session_manager import check_remove_league_session, clear_remove_league_session
-            status = "not_found"
-            if user_id:
-                status = check_remove_league_session(user_id)
-                
-            if status == "not_found":
+            session = get_active_session(user_id) if user_id else None
+            if not isinstance(session, RemoveLeagueSession):
                 # 若不存在則直接無視（安靜攔截，不作 any response）
                 return
                 
-            if status == "expired":
-                self.reply_text(event, configuration, "⚠️ 移除請求已過期或未發起，請重新輸入 #移除聯盟ID。")
-                return
-                
             if user_id:
-                clear_remove_league_session(user_id)
+                clear_active_session(user_id)
 
             from src.config import current_chat_id
             from src.utils.path_utils import BASE_DIR
@@ -141,8 +139,7 @@ class SetLeagueIdHandler(BaseHandler):
         if len(parts) == 2 and parts[1].lower() in ["nba", "mlb"]:
             sport = parts[1].lower()
             if user_id:
-                from src.utils.session_manager import set_session
-                set_session(user_id, "set_league_id", {"sport": sport}, duration_sec=60)
+                register_session(LeagueIdSession(user_id, sport, duration_sec=60))
                 sport_name = "NBA 籃球" if sport == "nba" else "MLB 棒球"
                 self.reply_text(event, configuration, f"您選擇了 {sport_name}。請在 60 秒內輸入您的聯盟 ID（純數字，例如 18457）：")
             else:
@@ -152,14 +149,12 @@ class SetLeagueIdHandler(BaseHandler):
         # 3. 處理使用者輸入的數字 ID (互動會話中)
         session = None
         if user_id:
-            from src.utils.session_manager import get_session
-            session = get_session(user_id, "set_league_id")
+            session = get_active_session(user_id)
 
-        if session and len(parts) == 2 and parts[1].isdigit():
-            sport = session.get("sport", "nba")
+        if isinstance(session, LeagueIdSession) and len(parts) == 2 and parts[1].isdigit():
+            sport = session.sport
             target_id = f"{sport}.l.{parts[1]}"
-            from src.utils.session_manager import clear_session
-            clear_session(user_id, "set_league_id")
+            clear_active_session(user_id)
         else:
             # 4. 直接輸入參數或是其他情況
             if len(parts) < 2:

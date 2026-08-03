@@ -2,7 +2,7 @@ import os
 import json
 from unittest.mock import MagicMock, patch, mock_open
 from src.handlers.set_nickname_handler import SetNicknameHandler
-from src.utils.session_manager import get_nickname_session
+from src.utils.session_manager import get_active_session, NicknameSession
 
 def test_set_nickname_handler_can_handle():
     handler = SetNicknameHandler()
@@ -51,6 +51,7 @@ def test_set_nickname_handler_select_team_flow():
         handler.reply_text.assert_called_once_with(
             event, config, "👉 請在 60 秒內直接輸入 小明 的新暱稱："
         )
-        session = get_nickname_session("user_abc")
+        session = get_active_session("user_abc")
         assert session is not None
-        assert session["team_id"] == "1"
+        assert isinstance(session, NicknameSession)
+        assert session.team_id == "1"

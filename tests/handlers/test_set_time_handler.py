@@ -27,6 +27,7 @@ def test_set_time_handler_no_league_id():
 
 def test_set_time_handler_success_draft():
     from src.handlers.set_time_handler import SetTimeHandler
+    from src.utils.session_manager import DraftTimeSession
     handler = SetTimeHandler()
     handler.reply_text = MagicMock()
 
@@ -36,15 +37,19 @@ def test_set_time_handler_success_draft():
     config = MagicMock()
 
     with patch("src.handlers.set_time_handler.load_config", return_value={"LEAGUE_ID": "12345"}):
-        with patch("src.handlers.set_time_handler.set_draft_time_session") as mock_set_session:
+        with patch("src.handlers.set_time_handler.register_session") as mock_register:
             handler.execute(event, config)
-            mock_set_session.assert_called_once_with("user123", True, duration_sec=60)
+            mock_register.assert_called_once()
+            args = mock_register.call_args[0]
+            assert isinstance(args[0], DraftTimeSession)
+            assert args[0].user_id == "user123"
             handler.reply_text.assert_called_once()
             args, kwargs = handler.reply_text.call_args
             assert "請在 60 秒內直接輸入新的選秀時間" in args[2]
 
 def test_set_time_handler_success_season_start():
     from src.handlers.set_time_handler import SetTimeHandler
+    from src.utils.session_manager import SeasonStartTimeSession
     handler = SetTimeHandler()
     handler.reply_text = MagicMock()
 
@@ -54,9 +59,12 @@ def test_set_time_handler_success_season_start():
     config = MagicMock()
 
     with patch("src.handlers.set_time_handler.load_config", return_value={"LEAGUE_ID": "12345"}):
-        with patch("src.handlers.set_time_handler.set_season_start_time_session") as mock_set_session:
+        with patch("src.handlers.set_time_handler.register_session") as mock_register:
             handler.execute(event, config)
-            mock_set_session.assert_called_once_with("user123", duration_sec=60)
+            mock_register.assert_called_once()
+            args = mock_register.call_args[0]
+            assert isinstance(args[0], SeasonStartTimeSession)
+            assert args[0].user_id == "user123"
             handler.reply_text.assert_called_once()
             args, kwargs = handler.reply_text.call_args
             assert "請在 60 秒內直接輸入開季時間" in args[2]
