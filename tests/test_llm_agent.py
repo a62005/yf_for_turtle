@@ -118,3 +118,55 @@ def test_parse_draft_date_success(mock_generate_json):
         args, kwargs = mock_generate_json.call_args
         assert "10月15號晚上8點30分" in args[0]
 
+
+@patch('src.llm.gemini.GeminiProvider.generate_json')
+def test_llm_agent_dynamic_context_loading(mock_generate_json):
+    # Mocking classification response
+    mock_generate_json.side_effect = [
+        {"category": "league_query"},
+        {
+            "is_command": True,
+            "command_text": "#戰績",
+            "reply_text": None
+        }
+    ]
+
+    # Setup dispatcher mock
+    mock_dispatcher = MagicMock()
+    mock_dispatcher.get_all_instruction_descs.return_value = "mocked_commands_desc"
+
+    # Setup team mapping mock
+    mock_mapping = {"team_1": "韋哥", "team_2": "小明"}
+
+    # Setup metadata mock
+    mock_meta = {
+        "end_week": 21,
+        "date_to_week": {
+            "2026-10-15": 2
+        }
+    }
+
+    with patch.dict('os.environ', {'LLM_API_KEY': 'fake_key', 'LLM_MODEL': 'gemini-2.5-flash'}, clear=True), \
+         patch("src.llm.llm_agent.LLMAgent._load_team_mapping", return_value=mock_mapping), \
+         patch("src.utils.cache_utils.load_league_metadata", return_value=mock_meta), \
+         patch("src.utils.time_utils.get_pacific_date", return_value="2026-10-15"), \
+         patch("src.config.load_config", return_value={"LEAGUE_ID": "nba.l.123"}):
+         
+        agent = LLMAgent()
+        # Call with only text and dispatcher (other contexts are None)
+        result = agent.analyze_intent("幫我查戰績", dispatcher=mock_dispatcher)
+        
+        assert result["is_command"] is True
+        assert result["command_text"] == "#戰績"
+        
+        # Verify the context values resolved dynamically and were passed to generate_json
+        args, kwargs = mock_generate_json.call_args
+        system_prompt = kwargs.get("system_instruction")
+        
+        assert "mocked_commands_desc" in system_prompt
+        assert "韋哥, 小明" in system_prompt
+        assert "今天的太平洋時間日期為：2026-10-15。" in system_prompt
+        assert "目前聯賽進行到第 2 週。" in system_prompt
+        assert "聯賽的最後一週（例行賽結束週）為第 21 週。" in system_prompt
+
+

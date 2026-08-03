@@ -12,7 +12,7 @@ class LLMAgent:
 
         self.system_prompt = SYSTEM_PROMPT
 
-    def analyze_intent(self, text: str, commands_desc: str, players_list: str = "", temporal_context: str = "") -> dict:
+    def analyze_intent(self, text: str, commands_desc: str = None, players_list: str = None, temporal_context: str = None, dispatcher = None) -> dict:
         if not self.provider:
             return {
                 "is_command": False, 
@@ -20,6 +20,39 @@ class LLMAgent:
                 "reply_text": "系統目前未配置 AI 金鑰，無法為您服務。",
                 "error": True
             }
+
+        # Dynamic fallback loading of contexts
+        if commands_desc is None:
+            if dispatcher is not None:
+                commands_desc = dispatcher.get_all_instruction_descs()
+            else:
+                commands_desc = ""
+
+        if players_list is None:
+            mapping = self._load_team_mapping()
+            players_list = ", ".join(mapping.values()) if mapping else ""
+
+        if temporal_context is None:
+            temporal_context = ""
+            try:
+                from src.utils.cache_utils import load_league_metadata
+                from src.utils.time_utils import get_pacific_date
+                from src.config import load_config as _load_config
+                
+                _league_id = _load_config().get("LEAGUE_ID")
+                meta = load_league_metadata(_league_id)
+                today_str = get_pacific_date()
+                current_week = meta.get("date_to_week", {}).get(today_str)
+                end_week = meta.get("end_week")
+                
+                parts = [f"今天的太平洋時間日期為：{today_str}。"]
+                if current_week:
+                    parts.append(f"目前聯賽進行到第 {current_week} 週。")
+                if end_week:
+                    parts.append(f"聯賽的最後一週（例行賽結束週）為第 {end_week} 週。")
+                temporal_context = "".join(parts)
+            except Exception as te:
+                logging.error(f"[LLM] 獲取時間/週數上下文失敗: {te}")
 
         # 第一階段：意圖分類
         from .prompts.intent_router_prompt import CLASSIFIER_PROMPT, CHAT_PROMPT
@@ -192,6 +225,20 @@ class LLMAgent:
                 "confidence": 0.0,
                 "reason": f"API 呼叫失敗: {str(e)}"
             }
+
+    def _load_team_mapping(self) -> dict:
+        """Load and return the team mapping from json config file."""
+        import os
+        import json
+        from src.utils.path_utils import get_league_team_mapping_path
+        mapping_file = get_league_team_mapping_path()
+        if os.path.exists(mapping_file):
+            try:
+                with open(mapping_file, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception as e:
+                logging.error(f"Failed to load team mapping in LLMAgent: {e}")
+        return {}
 
 
 

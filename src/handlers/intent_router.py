@@ -202,33 +202,7 @@ class IntentRouter:
         return re.sub(r'(?i)@(?:bot|linebot)\s*', '', text).strip()
 
     def _handle_llm_flow(self, event: MessageEvent, configuration: Configuration, text: str, is_mentioned: bool = False) -> None:
-        commands_desc = self.dispatcher.get_all_instruction_descs()
-        mapping = self._load_team_mapping()
-        players_list = ", ".join(mapping.values()) if mapping else ""
-        
-        # Load league metadata to provide dynamic temporal context to LLM
-        temporal_context = ""
-        try:
-            from src.utils.cache_utils import load_league_metadata
-            from src.utils.time_utils import get_pacific_date
-            from src.config import load_config as _load_config
-            
-            _league_id = _load_config().get("LEAGUE_ID")
-            meta = load_league_metadata(_league_id)
-            today_str = get_pacific_date()
-            current_week = meta.get("date_to_week", {}).get(today_str)
-            end_week = meta.get("end_week")
-            
-            parts = [f"今天的太平洋時間日期為：{today_str}。"]
-            if current_week:
-                parts.append(f"目前聯賽進行到第 {current_week} 週。")
-            if end_week:
-                parts.append(f"聯賽的最後一週（例行賽結束週）為第 {end_week} 週。")
-            temporal_context = "".join(parts)
-        except Exception as te:
-            logging.error(f"[IntentRouter] 獲取時間/週數上下文失敗: {te}")
-            
-        result = self.llm_agent.analyze_intent(text, commands_desc, players_list, temporal_context)
+        result = self.llm_agent.analyze_intent(text, dispatcher=self.dispatcher)
         
         if result.get("is_command") and result.get("command_text"):
             command_text = result["command_text"]
