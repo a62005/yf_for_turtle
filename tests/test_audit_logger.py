@@ -87,3 +87,14 @@ def test_delete_data_file(tmp_path):
         # 刪除不存在之檔案應回傳 False 且不寫入日誌
         fail_delete = delete_data_file(str(target_file))
         assert fail_delete is False
+
+def test_save_json_file_failsafe_when_logging_fails(tmp_path):
+    target_json = tmp_path / "data" / "failsafe.json"
+    
+    with patch("src.utils.audit_logger.record_data_change", side_effect=RuntimeError("Disk full or log failed")):
+        result_path = save_json_file(str(target_json), {"status": "ok"})
+        assert result_path == str(target_json)
+        assert os.path.exists(target_json)
+        with open(target_json, "r", encoding="utf-8") as f:
+            assert json.load(f) == {"status": "ok"}
+

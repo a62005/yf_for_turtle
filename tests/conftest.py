@@ -24,3 +24,31 @@ def cleanup_test_data_after_suite():
                 shutil.rmtree(d, ignore_errors=True)
             except Exception:
                 pass
+
+    # Clean up test audit log if created during unmocked test runs
+    import logging
+    audit_logger = logging.getLogger("data_audit")
+    for h in list(audit_logger.handlers):
+        try:
+            h.close()
+            audit_logger.removeHandler(h)
+        except Exception:
+            pass
+
+    test_log_files = [
+        "logs/data_audit.log",
+        "logs/data_audit.log.1",
+        "logs/data_audit.log.2",
+    ]
+    for f in test_log_files:
+        if os.path.exists(f):
+            try:
+                os.remove(f)
+            except Exception:
+                pass
+    if os.path.exists("logs") and not os.listdir("logs"):
+        try:
+            os.rmdir("logs")
+        except Exception:
+            pass
+
