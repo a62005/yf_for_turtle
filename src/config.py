@@ -20,7 +20,8 @@ def load_config() -> dict:
     league_id = None
     chat_id = current_chat_id.get() or os.environ.get("LINE_REPLY_TO")
     if chat_id:
-        mapping_file = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "security", "chat_league_mapping.json"))
+        from src.utils.path_utils import DATA_DIR
+        mapping_file = os.path.join(DATA_DIR, "security", "chat_league_mapping.json")
         if os.path.exists(mapping_file):
             try:
                 with open(mapping_file, "r", encoding="utf-8") as f:

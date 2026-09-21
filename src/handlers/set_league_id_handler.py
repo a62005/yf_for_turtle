@@ -62,11 +62,11 @@ class SetLeagueIdHandler(BaseHandler):
                 clear_active_session(user_id)
 
             from src.config import current_chat_id
-            from src.utils.path_utils import BASE_DIR
+            from src.utils.path_utils import DATA_DIR
             import shutil
             
             chat_id = current_chat_id.get() or "default"
-            security_dir = os.path.join(BASE_DIR, "data", "security")
+            security_dir = os.path.join(DATA_DIR, "security")
             config_path = os.path.join(security_dir, "chat_league_mapping.json")
             
             mapping = {}
@@ -289,11 +289,11 @@ class SetLeagueIdHandler(BaseHandler):
 
     def _update_league_id(self, league_id: str, user_id: str = None) -> None:
         from src.config import current_chat_id
-        from src.utils.path_utils import BASE_DIR
+        from src.utils.path_utils import DATA_DIR
         from src.utils.security import security_manager
         
         chat_id = current_chat_id.get() or "default"
-        security_dir = os.path.join(BASE_DIR, "data", "security")
+        security_dir = os.path.join(DATA_DIR, "security")
         os.makedirs(security_dir, exist_ok=True)
         config_path = os.path.join(security_dir, "chat_league_mapping.json")
         

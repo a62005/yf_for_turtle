@@ -69,7 +69,8 @@ def handle_oauth_callback(
         
     # 2. 獲取該 chat_id 綁定的 LEAGUE_ID
     league_id = None
-    mapping_path = os.path.join(BASE_DIR, "data", "security", "chat_league_mapping.json")
+    from src.utils.path_utils import DATA_DIR
+    mapping_path = os.path.join(DATA_DIR, "security", "chat_league_mapping.json")
     if os.path.exists(mapping_path):
         try:
             with open(mapping_path, "r", encoding="utf-8") as f:
