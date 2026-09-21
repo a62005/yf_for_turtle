@@ -64,6 +64,14 @@ class SetNicknameHandler(BaseHandler):
             mapping = {}
             
         if user_text == "#設置玩家暱稱":
+            if not mapping:
+                self.reply_text(
+                    event,
+                    configuration,
+                    "⚠️ 目前聯賽尚未有隊伍名單。\n請使用指令「#設置暱稱_隊伍 <隊伍ID>」（例如：#設置暱稱_隊伍 1）來新增隊伍與暱稱！"
+                )
+                return
+
             buttons = []
             for team_id, nickname in mapping.items():
                 buttons.append((nickname, f"#設置暱稱_隊伍 {team_id}"))
