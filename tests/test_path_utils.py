@@ -20,3 +20,8 @@ def test_path_utils_dynamic_routing():
         assert get_league_dir().replace("\\", "/").endswith("data/league/nba/99999")
         assert get_league_metadata_path().replace("\\", "/").endswith("data/league/nba/99999/metadata.json")
         assert get_league_team_mapping_path().replace("\\", "/").endswith("data/league/nba/99999/team_mapping.json")
+
+def test_get_logs_dir():
+    from src.utils.path_utils import get_logs_dir, LOGS_DIR
+    assert get_logs_dir() == LOGS_DIR
+    assert get_logs_dir().replace("\\", "/").endswith("/logs")

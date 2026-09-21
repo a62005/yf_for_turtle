@@ -6,6 +6,12 @@ from src.config import load_config
 # 根目錄 C:\Users\HsiehLink\Python\yf_for_turtle
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 DATA_DIR = os.path.join(BASE_DIR, "data")
+LOGS_DIR = os.path.join(BASE_DIR, "logs")
+
+def get_logs_dir() -> str:
+    """獲取系統日誌目錄，支援動態載入與 Mock 隔離。"""
+    from src.utils import path_utils
+    return path_utils.LOGS_DIR
 
 def get_league_id() -> str | None:
     """動態獲取當前配置的聯盟 ID，優先從 JSON 載入，否則從環境變數載入。"""

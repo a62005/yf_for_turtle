@@ -15,6 +15,7 @@ __pycache__/
 
 # Data and Secrets
 data/
+logs/
 oauth2.json
 *.sqlite3
 
