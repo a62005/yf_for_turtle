@@ -1,6 +1,7 @@
 import os
 import inspect
 import logging
+import json
 from logging.handlers import RotatingFileHandler
 from src.utils.path_utils import get_logs_dir, DATA_DIR, BASE_DIR
 
@@ -94,3 +95,51 @@ def record_data_change(action: str, filepath: str, size: int = 0, caller_tag: st
         logger.info(f"action={action} path={rel_path} size={size_str} caller={caller}")
     except Exception as e:
         logging.warning(f"[DataAuditLogger Warning] Failed to record data audit log: {e}")
+
+def save_json_file(filepath: str, data: dict, indent: int = 4, caller_tag: str = None) -> str:
+    """
+    通用安全寫入 JSON 函式：
+    1. 判定檔案是否存在（CREATE vs OVERWRITE）。
+    2. 自動建立目錄。
+    3. 序列化並寫入檔案。
+    4. 自動記錄稽核日誌（Fail-Safe 保護）。
+    """
+    existed = os.path.exists(filepath)
+    action = "OVERWRITE" if existed else "CREATE"
+    
+    target_dir = os.path.dirname(filepath)
+    if target_dir and not os.path.exists(target_dir):
+        os.makedirs(target_dir, exist_ok=True)
+        
+    with open(filepath, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=indent, ensure_ascii=False)
+        
+    try:
+        size = os.path.getsize(filepath)
+    except OSError:
+        size = 0
+        
+    try:
+        record_data_change(action=action, filepath=filepath, size=size, caller_tag=caller_tag)
+    except Exception as e:
+        logging.warning(f"[DataAuditLogger Warning] Non-blocking audit error: {e}")
+        
+    return filepath
+
+def delete_data_file(filepath: str, caller_tag: str = None) -> bool:
+    """
+    通用安全刪除資料檔案函式：
+    1. 檢查檔案是否存在。
+    2. 執行刪除。
+    3. 記錄 DELETE 稽核日誌（size=0B）。
+    """
+    if not os.path.exists(filepath):
+        return False
+        
+    try:
+        os.remove(filepath)
+        record_data_change(action="DELETE", filepath=filepath, size=0, caller_tag=caller_tag)
+        return True
+    except OSError as e:
+        logging.warning(f"[DataAuditLogger Warning] Failed to delete file {filepath}: {e}")
+        return False
