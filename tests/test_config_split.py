@@ -87,3 +87,44 @@ def test_load_config_settings_override(monkeypatch):
     assert config["NEXT_SEASON_START_DATE"] == "2025-11-22"
 
 
+def test_load_config_with_standard_league_id_and_settings(monkeypatch):
+    monkeypatch.delenv("LEAGUE_ID", raising=False)
+    monkeypatch.delenv("DRAFT_DATE", raising=False)
+    monkeypatch.delenv("NEXT_SEASON_START_DATE", raising=False)
+
+    mock_settings_content = '{"DRAFT_DATE": "2026-10-03 22:00", "NEXT_SEASON_START_DATE": "2026-10-22 08:00"}'
+    mock_chat_league_mapping_content = '{"test_chat_id": "nba.l.49432"}'
+
+    from unittest.mock import patch, mock_open
+    from src.config import current_chat_id
+
+    def custom_exists(path):
+        normalized_path = path.replace("\\", "/")
+        if "data/security/chat_league_mapping.json" in normalized_path:
+            return True
+        if "data/league/nba/49432/settings.json" in normalized_path:
+            return True
+        return False
+
+    def custom_open(path, *args, **kwargs):
+        normalized_path = path.replace("\\", "/")
+        if "data/security/chat_league_mapping.json" in normalized_path:
+            return mock_open(read_data=mock_chat_league_mapping_content)()
+        if "data/league/nba/49432/settings.json" in normalized_path:
+            return mock_open(read_data=mock_settings_content)()
+        return mock_open()()
+
+    with patch("os.path.exists", side_effect=custom_exists):
+        with patch("builtins.open", side_effect=custom_open):
+            token = current_chat_id.set("test_chat_id")
+            try:
+                config = load_config()
+            finally:
+                current_chat_id.reset(token)
+
+    assert config["LEAGUE_ID"] == "nba.l.49432"
+    assert config["DRAFT_DATE"] == "2026-10-03 22:00"
+    assert config["NEXT_SEASON_START_DATE"] == "2026-10-22 08:00"
+
+
+

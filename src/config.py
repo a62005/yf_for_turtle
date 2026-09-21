@@ -38,9 +38,13 @@ def load_config() -> dict:
     next_season_start_date = os.getenv("NEXT_SEASON_START_DATE")
     
     # 讀取聯盟目錄下的 settings.json 來覆寫 DRAFT_DATE 與 next_season_start_date
-    lid = league_id or "default"
-    base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-    settings_file = os.path.join(base_dir, "data", "league", lid, "settings.json")
+    from src.utils.path_utils import get_league_dir, DATA_DIR
+    settings_file = os.path.join(get_league_dir(league_id or "default"), "settings.json")
+    if not os.path.exists(settings_file):
+        lid = league_id or "default"
+        legacy_file = os.path.join(DATA_DIR, "league", str(lid), "settings.json")
+        if os.path.exists(legacy_file):
+            settings_file = legacy_file
     if os.path.exists(settings_file):
         try:
             with open(settings_file, "r", encoding="utf-8") as f:
