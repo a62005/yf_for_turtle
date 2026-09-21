@@ -566,3 +566,37 @@ def test_set_league_id_does_not_reuse_unauthorized_token(mocker):
         assert "Yahoo 帳號授權" in args[2]
     finally:
         current_chat_id.reset(token)
+
+def test_set_league_id_same_league_manager_rebinding_skips_verification(mocker):
+    from src.config import current_chat_id
+    
+    handler = SetLeagueIdHandler()
+    handler.reply_text = mocker.MagicMock()
+    event = mocker.MagicMock()
+    event.message.text = "#設置聯盟ID nba.l.49432"
+    event.source.user_id = "user_manager_123"
+    config = mocker.MagicMock()
+    
+    token = current_chat_id.set("group_2")
+    try:
+        # 模擬本地已存在 .yahoofantasy 憑證，且 roles 中 manager 即為當前使用者
+        mocker.patch("os.path.exists", side_effect=lambda p: ".yahoofantasy" in str(p) or "league_roles.json" in str(p))
+        mocker.patch("os.makedirs")
+        mocker.patch("builtins.open", mocker.mock_open())
+        mocker.patch("src.utils.security.security_manager._load_json", return_value={
+            "nba.l.49432": {"manager": "user_manager_123", "whitelist": {}, "authorized": True}
+        })
+        mock_update = mocker.patch.object(handler, "_update_league_id")
+        mock_fetcher = mocker.patch("src.handlers.set_league_id_handler.YahooFantasyFetcher")
+        mock_sync = mocker.patch("src.handlers.set_league_id_handler.sync_season_metadata")
+        
+        handler.execute(event, config)
+        
+        # 驗證無需呼叫 Fetcher 與 sync_season_metadata，直接綁定成功
+        mock_fetcher.assert_not_called()
+        mock_sync.assert_not_called()
+        mock_update.assert_called_once_with("nba.l.49432", "user_manager_123")
+        handler.reply_text.assert_called_once_with(event, config, "✅ 成功將此聊天室綁定至聯賽 ID：nba.l.49432")
+    finally:
+        current_chat_id.reset(token)
+

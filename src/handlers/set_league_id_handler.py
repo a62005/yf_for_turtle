@@ -181,8 +181,32 @@ class SetLeagueIdHandler(BaseHandler):
         target_dir = get_league_dir(target_id)
         spec_oauth_path = os.path.join(target_dir, "oauth2.json")
         spec_yf_path = os.path.join(target_dir, ".yahoofantasy")
-        
-        if user_id and (not os.path.exists(spec_oauth_path) or not os.path.exists(spec_yf_path)):
+
+        # 情況 1：相同聯盟且目前使用者已經是管理員且已有本地憑證，直接完成綁定，免除二次驗證
+        if user_id and os.path.exists(spec_yf_path):
+            is_manager = False
+            if league_data and isinstance(league_data, dict):
+                manager_id = league_data.get("manager")
+                if manager_id == user_id or security_manager.is_super_admin(user_id):
+                    is_manager = True
+            if is_manager:
+                try:
+                    self._update_league_id(target_id, user_id)
+                    mapping_path = get_league_team_mapping_path(target_id)
+                    if not os.path.exists(mapping_path):
+                        os.makedirs(os.path.dirname(mapping_path), exist_ok=True)
+                        with open(mapping_path, "w", encoding="utf-8") as mf:
+                            json.dump({}, mf, ensure_ascii=False, indent=2)
+                    self.reply_text(event, configuration, f"✅ 成功將此聊天室綁定至聯賽 ID：{target_id}")
+                    return
+                except Exception as fe:
+                    logging.error(f"[SetLeagueIdHandler] 相同聯盟綁定失敗: {fe}")
+                    self.reply_text(event, configuration, "⚠️ 設置成功但儲存設定時發生內部錯誤。")
+                    return
+
+        # 情況 2：憑證智慧複用：如果新聯盟目錄下尚未有憑證，則嘗試尋找此用戶已授權的其他聯盟憑證
+        reused_token = False
+        if user_id and not os.path.exists(spec_yf_path):
             user_leagues = []
             for lid, ldata in roles.items():
                 if isinstance(ldata, dict) and ldata.get("manager") == user_id and ldata.get("authorized", True) is True:
@@ -193,12 +217,14 @@ class SetLeagueIdHandler(BaseHandler):
                 prev_oauth = os.path.join(prev_dir, "oauth2.json")
                 prev_yf = os.path.join(prev_dir, ".yahoofantasy")
                 
-                if os.path.exists(prev_oauth) and os.path.exists(prev_yf):
+                if os.path.exists(prev_yf):
                     os.makedirs(target_dir, exist_ok=True)
                     import shutil
-                    shutil.copy2(prev_oauth, spec_oauth_path)
+                    if os.path.exists(prev_oauth):
+                        shutil.copy2(prev_oauth, spec_oauth_path)
                     shutil.copy2(prev_yf, spec_yf_path)
                     logging.info(f"[SetLeagueIdHandler] 成功將用戶 {user_id} 在聯賽 {prev_lid} 的授權憑證複製到新聯賽 {target_id}")
+                    reused_token = True
                     break
 
         config = load_config()
@@ -227,7 +253,12 @@ class SetLeagueIdHandler(BaseHandler):
         # 同步成功，寫入對應關係
         try:
             self._update_league_id(target_id, user_id)
-            security_manager.set_league_authorized(target_id, False)
+            if reused_token:
+                security_manager.set_league_authorized(target_id, False)
+            elif league_data and league_data.get("authorized") is True:
+                pass
+            else:
+                security_manager.set_league_authorized(target_id, False)
                 
             # 初始化該聯賽的空對應檔
             mapping_path = get_league_team_mapping_path(target_id)

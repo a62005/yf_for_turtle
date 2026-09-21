@@ -85,6 +85,12 @@ class BaseHandler(ABC):
                 logging.error(f"Failed to load team mapping in BaseHandler: {e}")
         else:
             logging.warning(f"Team mapping file does not exist: {mapping_file}")
+            try:
+                os.makedirs(os.path.dirname(mapping_file), exist_ok=True)
+                with open(mapping_file, "w", encoding="utf-8") as f:
+                    json.dump({}, f, ensure_ascii=False, indent=2)
+            except Exception as e:
+                logging.error(f"Failed to auto-create empty team mapping: {e}")
         return {}
 
     def reply_flex(self, event: MessageEvent, configuration: Configuration, alt_text: str, flex_dict: dict) -> None:

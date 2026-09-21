@@ -85,3 +85,50 @@ def test_oauth_callback_success(mock_app):
         
         # 驗證是否對群組調用 Push Message 推播成功訊息
         mock_api_cls.assert_called_once()
+
+def test_oauth_callback_creates_team_mapping_even_if_sync_fails(mock_app):
+    mapping_data = {"C_test_group": "nba.l.49432"}
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {
+        "access_token": "mock_access_token_123",
+        "refresh_token": "mock_refresh_token_123",
+        "expires_in": 3600
+    }
+    
+    written_files = {}
+    def mock_write(path, mode="r", *args, **kwargs):
+        import io
+        class MockFile(io.StringIO):
+            def __enter__(self): return self
+            def __exit__(self, exc_type, exc_val, exc_tb):
+                written_files[str(path)] = self.getvalue()
+        return MockFile()
+
+    with patch("src.utils.oauth_handler.requests.post", return_value=mock_response), \
+         patch("src.utils.oauth_handler.open", side_effect=mock_write), \
+         patch("src.utils.oauth_handler.os.path.exists", side_effect=lambda p: "chat_league_mapping" in str(p)), \
+         patch("src.utils.oauth_handler.json.load", return_value=mapping_data), \
+         patch("src.utils.oauth_handler.os.makedirs"), \
+         patch("src.utils.oauth_handler.pickle.dump"), \
+         patch("src.utils.oauth_handler.YahooFantasyFetcher") as mock_fetcher_cls, \
+         patch("src.utils.oauth_handler.sync_season_metadata", side_effect=Exception("API 403")), \
+         patch("src.utils.security.security_manager.set_league_authorized") as mock_set_auth, \
+         patch("yahoofantasy.League") as mock_league_cls, \
+         patch("linebot.v3.messaging.MessagingApi") as mock_api_cls:
+         
+        mock_fetcher = MagicMock()
+        mock_fetcher._normalize_league_id.return_value = "nba.l.49432"
+        mock_fetcher_cls.return_value = mock_fetcher
+        
+        # 即使抓 teams 也拋例外
+        mock_league_cls.side_effect = Exception("API error")
+
+        res = mock_app.get("/oauth/callback?code=code_123&state=C_test_group")
+        
+        assert res.status_code == 200
+        # 驗證即使 sync_season_metadata 失敗，set_league_authorized 仍被呼叫
+        mock_set_auth.assert_called_once_with("nba.l.49432", True)
+        # 驗證 team_mapping.json 確實有被寫入
+        assert any("team_mapping.json" in str(f) for f in written_files.keys())
+

@@ -124,41 +124,54 @@ def handle_oauth_callback(
         return f"⚠️ 儲存聯賽憑證失敗: {e}", 500
         
     # 4. 初始化聯賽資料與隊伍名稱對照表
+    fetcher = None
     try:
         fetcher = YahooFantasyFetcher(
             client_id=client_id,
             client_secret=client_secret,
             league_id=league_id
         )
-        
-        # 同步賽季資訊
-        sync_season_metadata(fetcher, league_id)
-        
-        # 標記為親自授權
+    except Exception as e:
+        logging.error(f"[OAUTH] 建立 Fetcher 失敗: {e}")
+
+    # 4.1 標記為親自授權
+    try:
         from src.utils.security import security_manager
         security_manager.set_league_authorized(league_id, True)
-        
-        # 建立/初始化隊伍名稱對照表
+    except Exception as e:
+        logging.error(f"[OAUTH] 標記授權狀態失敗: {e}")
+
+    # 4.2 建立/初始化隊伍名稱對照表（確保 team_mapping.json 必然被建立）
+    try:
         mapping_path = get_league_team_mapping_path(league_id)
         if not os.path.exists(mapping_path):
             os.makedirs(os.path.dirname(mapping_path), exist_ok=True)
             default_mapping = {}
-            try:
-                import yahoofantasy
-                normalized_id = fetcher._normalize_league_id(league_id)
-                league = yahoofantasy.League(fetcher.ctx, normalized_id)
-                for team in league.teams():
-                    team_id = str(getattr(team, "team_id", ""))
-                    team_name = str(getattr(team, "name", ""))
-                    if team_id and team_name:
-                        default_mapping[team_id] = team_name
-            except Exception as ex:
-                logging.error(f"[OAUTH] 無法取得官方暱稱，將初始化為空對應: {ex}")
+            if fetcher:
+                try:
+                    import yahoofantasy
+                    normalized_id = fetcher._normalize_league_id(league_id)
+                    league = yahoofantasy.League(fetcher.ctx, normalized_id)
+                    for team in league.teams():
+                        team_id = str(getattr(team, "team_id", ""))
+                        team_name = str(getattr(team, "name", ""))
+                        if team_id and team_name:
+                            default_mapping[team_id] = team_name
+                except Exception as ex:
+                    logging.warning(f"[OAUTH] 無法取得官方暱稱，將初始化為空對應: {ex}")
             
             with open(mapping_path, "w", encoding="utf-8") as mf:
                 json.dump(default_mapping, mf, ensure_ascii=False, indent=2)
+            logging.info(f"[OAUTH] 隊伍對應表已建立: {mapping_path}")
     except Exception as e:
-        logging.error(f"[OAUTH] 初始化聯賽資料與對照表失敗: {e}")
+        logging.error(f"[OAUTH] 建立隊伍對應表失敗: {e}")
+
+    # 4.3 同步賽季資訊（即使失敗也不影響授權與對照表）
+    if fetcher:
+        try:
+            sync_season_metadata(fetcher, league_id)
+        except Exception as e:
+            logging.warning(f"[OAUTH] 初始化賽季中繼資料失敗 (將於後續需要時重試): {e}")
         
     # 5. 主動推播 LINE 通知使用者授權成功
     try:
