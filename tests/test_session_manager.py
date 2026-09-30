@@ -9,6 +9,7 @@ from src.utils.session_manager import (
     SeasonStartTimeSession,
     LeagueIdSession,
     PrizeSession,
+    get_prize_session,
     RemoveLeagueSession,
     AddManagerSession,
     AddWhitelistSession
@@ -118,6 +119,23 @@ def test_prize_session_handle(mock_reply):
     
     assert sess.handle_image(MagicMock(), MagicMock(), b"imagebytes", dispatcher) is False
     mock_handler.handle_image.assert_called_once()
+
+def test_get_prize_session():
+    user_id = "user_prize_get"
+    assert get_prize_session(user_id) is None
+
+    # Register other session
+    sess_nick = NicknameSession(user_id, "team123", duration_sec=60)
+    register_session(sess_nick)
+    assert get_prize_session(user_id) is None
+
+    # Register prize session
+    sess_prize = PrizeSession(user_id, duration_sec=60)
+    register_session(sess_prize)
+    assert get_prize_session(user_id) is sess_prize
+
+    clear_active_session(user_id)
+    assert get_prize_session(user_id) is None
 
 def test_remove_league_session_handle():
     user_id = "user_remove"

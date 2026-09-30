@@ -212,6 +212,13 @@ class PrizeSession(ConversationSession):
             handler.handle_image(event, configuration, image_bytes)
         return False
 
+def get_prize_session(user_id: str) -> PrizeSession | None:
+    """獲取指定使用者的獎金設定會話（若非 PrizeSession 則回傳 None）"""
+    session = get_active_session(user_id)
+    if isinstance(session, PrizeSession):
+        return session
+    return None
+
 class RemoveLeagueSession(ConversationSession):
     def handle_message(self, event: MessageEvent, configuration: Configuration, user_text: str, dispatcher: any) -> bool:
         if user_text == "#確定移除聯盟ID":
