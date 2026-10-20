@@ -29,9 +29,11 @@ from src.handlers.id_handler import IdHandler
 from src.handlers.super_admin_handler import SuperAdminHandler
 from src.handlers.settings_handler import SettingsHandler
 from src.handlers.set_league_id_handler import SetLeagueIdHandler
+from src.handlers.web_set_league_id_handler import WebSetLeagueIdHandler
 from src.handlers.set_nickname_handler import SetNicknameHandler
 from src.handlers.set_time_handler import SetTimeHandler
 from src.handlers.set_prize_handler import SetPrizeHandler
+from src.web_login_bridge import web_login_bp
 
 # Load env
 load_dotenv()
@@ -40,6 +42,7 @@ LINE_CHANNEL_ACCESS_TOKEN = os.getenv('LINE_CHANNEL_ACCESS_TOKEN', 'dummy_token'
 SERVER_URL = os.getenv('SERVER_URL', 'http://localhost:5000')
 
 app = Flask(__name__)
+app.register_blueprint(web_login_bp)
 configuration = Configuration(access_token=LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
@@ -47,25 +50,27 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 # 抑制 Flask/Werkzeug 的 HTTP 存取 log，只保留應用程式 log
 logging.getLogger("werkzeug").setLevel(logging.WARNING)
 
-# Initialize Dispatcher
+# Initialize Dispatcher (僅保留基礎 ID 查詢、管理員與網頁版設置聯盟 ID 功能，其餘功能因 Yahoo API 政策改變不再串接)
 dispatcher = CommandDispatcher()
 dispatcher.register(IdHandler())
-dispatcher.register(StatsHandler())
-dispatcher.register(PlayerHandler())
-dispatcher.register(UserStatsHandler())
-dispatcher.register(MatchupHandler())
-dispatcher.register(MiscHandler())
-dispatcher.register(FootballHandler())
-dispatcher.register(InjuryHandler())
+# dispatcher.register(StatsHandler())
+# dispatcher.register(PlayerHandler())
+# dispatcher.register(UserStatsHandler())
+# dispatcher.register(MatchupHandler())
+# dispatcher.register(MiscHandler())
+# dispatcher.register(FootballHandler())
+# dispatcher.register(InjuryHandler())
 dispatcher.register(SuperAdminHandler())
-dispatcher.register(SettingsHandler())
-dispatcher.register(SetLeagueIdHandler())
-dispatcher.register(SetNicknameHandler())
-dispatcher.register(SetTimeHandler())
-dispatcher.register(SetPrizeHandler())
+# dispatcher.register(SettingsHandler())
+# dispatcher.register(SetLeagueIdHandler())
+dispatcher.register(WebSetLeagueIdHandler())
+# dispatcher.register(SetNicknameHandler())
+# dispatcher.register(SetTimeHandler())
+# dispatcher.register(SetPrizeHandler())
 
-# Initialize IntentRouter
+# Initialize IntentRouter (關閉一般 LLM 對話回覆，僅處理上述已註冊之指令與其會話)
 intent_router = IntentRouter(dispatcher)
+intent_router._handle_llm_flow = lambda *args, **kwargs: None
 
 
 @app.route("/callback", methods=['POST'])
@@ -206,5 +211,8 @@ if __name__ == "__main__":
             logging.info("Falling back to manual SERVER_URL.")
     else:
         logging.info("No NGROK_AUTHTOKEN found. Using existing SERVER_URL.")
+
+    from src.scheduler import start_daily_scheduler
+    start_daily_scheduler()
 
     app.run(host="0.0.0.0", port=port)
