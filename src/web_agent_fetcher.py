@@ -556,11 +556,14 @@ def _split_mlb_stats(processed_list: list) -> tuple[list, list]:
 
 
 def clean_old_images(image_dir: str) -> None:
-    """清除目錄中所有舊的暫存 PNG 圖片，確保不保留任何歷史戰績圖檔。"""
+    """清除目錄中所有舊的暫存戰績 PNG 圖片，保留獎金圖片 (bonus*)，確保不保留歷史戰績圖檔。"""
     if not os.path.exists(image_dir):
         return
     for fname in os.listdir(image_dir):
-        if fname.lower().endswith(".png"):
+        low = fname.lower()
+        if low.startswith("bonus") or low.startswith("bouns"):
+            continue
+        if low.endswith(".png"):
             fpath = os.path.join(image_dir, fname)
             try:
                 os.remove(fpath)
