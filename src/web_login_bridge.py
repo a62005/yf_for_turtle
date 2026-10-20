@@ -106,10 +106,8 @@ def is_page_authorized_for_league(page, league_id: str) -> tuple[bool, str]:
     return ok, reason
 
 
-def save_discovered_team_mapping(league_id: str, teams: dict[str, str]) -> None:
-    """當從網頁擷取到官方隊伍名稱時，若 team_mapping.json 尚未建立或為空，則自動寫入以支援 #設置玩家暱稱。"""
-    if not teams:
-        return
+def save_discovered_team_mapping(league_id: str, teams: dict[str, str] = None, page=None) -> dict[str, str]:
+    """若該聯盟尚未有 team_mapping.json 或內容為空，則優先使用 AI Agent 瀏覽網頁獲取隊伍清單並更新 team_mapping.json。"""
     mapping_path = get_league_team_mapping_path(league_id)
     existing = {}
     if os.path.exists(mapping_path):
@@ -119,10 +117,25 @@ def save_discovered_team_mapping(league_id: str, teams: dict[str, str]) -> None:
         except Exception:
             existing = {}
 
-    if not existing:
+    if existing and isinstance(existing, dict) and len(existing) >= 2:
+        return existing
+
+    # 使用 AI Agent 瀏覽網頁並解析更新 team_mapping.json
+    try:
+        from src.web_agent_fetcher import WebAgentFetcher
+        fetcher = WebAgentFetcher(league_id=league_id)
+        agent_teams = fetcher.ensure_team_mapping_via_agent(league_id=league_id, page=page)
+        if agent_teams and len(agent_teams) >= 2:
+            return agent_teams
+    except Exception as e:
+        logging.warning(f"[WEB_LOGIN] AI Agent 自動獲取 team_mapping 失敗，改用備援隊伍清單: {e}")
+
+    if teams:
         os.makedirs(os.path.dirname(mapping_path), exist_ok=True)
         with open(mapping_path, "w", encoding="utf-8") as f:
             json.dump(teams, f, ensure_ascii=False, indent=2)
+        return teams
+    return {}
 
 
 def verify_league_web_access(league_id: str, headless: bool = True) -> tuple[bool, dict[str, str]]:
@@ -146,8 +159,9 @@ def verify_league_web_access(league_id: str, headless: bool = True) -> tuple[boo
                 ok, _, teams = extract_teams_and_check_auth(page, league_id)
                 if ok:
                     context.storage_state(path=state_path)
-                    save_discovered_team_mapping(league_id, teams)
-                return ok, teams
+                    final_teams = save_discovered_team_mapping(league_id, teams, page=page)
+                    return True, final_teams or teams
+                return False, {}
             finally:
                 browser.close()
     except Exception as e:
@@ -158,8 +172,10 @@ def verify_league_web_access(league_id: str, headless: bool = True) -> tuple[boo
 def bind_web_login_to_set_league_handler(handler):
     """
     在不修改 src/handlers/set_league_id_handler.py 原始碼的前提下，
-    將 bot.py 中註冊的 SetLeagueIdHandler 實例之 API 驗證替換為「網頁登入狀態驗證」，
-    並於未登入時回覆手機端遠端網頁登入網址。
+    將 bot.py 中註冊的 SetLeagueIdHandler 實例之 API 驗證替換為「網頁登入狀態驗證」：
+    1. 已設置過且已有 yahoo_web_state.json 的聯盟 ID 不需再次登入。
+    2. 若無 team_mapping.json (或為空)，自動透過 AI Agent 瀏覽網頁獲取並更新 team_mapping.json。
+    3. 若尚未登入或登入已失效導致獲取資料失敗，主動提示使用者點擊連結重新登入。
     """
     raw_execute = type(handler).execute.__get__(handler, type(handler))
     real_exists = os.path.exists
@@ -170,10 +186,22 @@ def bind_web_login_to_set_league_handler(handler):
             return False
         return real_exists(path)
 
+    def _load_existing_mapping(lid: str) -> dict:
+        m_path = get_league_team_mapping_path(lid)
+        if real_exists(m_path):
+            try:
+                with open(m_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    if isinstance(data, dict):
+                        return data
+            except Exception:
+                pass
+        return {}
+
     def web_wrapped_execute(event, configuration):
         user_id = getattr(event.source, "user_id", None)
         discovered_teams_holder = {}
-        verified_state = {"target_id": None, "ok": False}
+        verified_state = {"target_id": None, "ok": False, "had_state": False}
 
         def web_sync_season_metadata(_fetcher, target_id):
             verified_state["target_id"] = target_id
@@ -190,13 +218,23 @@ def bind_web_login_to_set_league_handler(handler):
                             except Exception:
                                 pass
 
+            has_state = real_exists(state_path)
+            verified_state["had_state"] = has_state
+            existing_map = _load_existing_mapping(target_id)
+
+            # 已設置過且已有登入狀態與 team_mapping 的聯盟 ID，直接免除二次驗證與登入
+            if has_state and len(existing_map) >= 2:
+                verified_state["ok"] = True
+                discovered_teams_holder.update(existing_map)
+                return
+
             res = verify_league_web_access(target_id)
             if isinstance(res, tuple):
                 ok, teams = res
             else:
                 ok, teams = bool(res), {}
             if not ok:
-                raise LeaguePermissionError(f"Web login required for {target_id}")
+                raise LeaguePermissionError(f"Web login required or expired for {target_id}")
             verified_state["ok"] = True
             if teams:
                 discovered_teams_holder.update(teams)
@@ -220,7 +258,12 @@ def bind_web_login_to_set_league_handler(handler):
                 mock_fetcher_cls.return_value._normalize_league_id.side_effect = lambda x: x
                 raw_execute(event, configuration)
             if verified_state["ok"] and verified_state["target_id"]:
-                security_manager.set_league_authorized(verified_state["target_id"], True)
+                tid = verified_state["target_id"]
+                security_manager.set_league_authorized(tid, True)
+                # 確保設置完聯盟 ID 後，若 team_mapping 仍為空，使用 AI Agent 或已探索之隊伍寫入 team_mapping.json
+                cur_map = _load_existing_mapping(tid)
+                if len(cur_map) < 2:
+                    save_discovered_team_mapping(tid, discovered_teams_holder)
         except Exception as e:
             if isinstance(e, LeaguePermissionError) or e.__class__.__name__ == "LeaguePermissionError":
                 chat_id = current_chat_id.get() or "default"
@@ -237,11 +280,18 @@ def bind_web_login_to_set_league_handler(handler):
                 if bound_league_id:
                     security_manager.set_league_authorized(bound_league_id, False)
                 login_url = build_mobile_web_login_url(bound_league_id or "", chat_id)
-                msg = (
-                    "⚠️ 機器人目前尚未具備此聯盟的網頁存取權限。\n"
-                    "請點擊以下連結於手機登入 Yahoo 帳號以啟用此聯賽：\n"
-                    f"👉 {login_url}"
-                )
+                if verified_state.get("had_state"):
+                    msg = (
+                        "⚠️ 獲取聯盟資料失敗：Yahoo 網頁登入狀態已失效或無存取權限。\n"
+                        "請點擊以下連結於手機重新登入 Yahoo 帳號：\n"
+                        f"👉 {login_url}"
+                    )
+                else:
+                    msg = (
+                        "⚠️ 機器人目前尚未具備此聯盟的網頁存取權限。\n"
+                        "請點擊以下連結於手機登入 Yahoo 帳號以啟用此聯賽：\n"
+                        f"👉 {login_url}"
+                    )
                 handler.reply_text(event, configuration, msg)
             else:
                 raise
@@ -572,7 +622,7 @@ class RemoteLoginWorker:
                         self.status_msg = reason
                         if ok:
                             context.storage_state(path=state_path)
-                            save_discovered_team_mapping(self.league_id, teams)
+                            save_discovered_team_mapping(self.league_id, teams, page=page)
                             security_manager.set_league_authorized(self.league_id, True)
                             self.authorized = True
                             self.closed = True

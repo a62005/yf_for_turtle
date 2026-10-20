@@ -24,6 +24,10 @@ from src.web_login_bridge import (
 )
 
 
+DEFAULT_AGENT_MODEL = "gemini-3-flash-preview"
+FALLBACK_AGENT_MODEL = "gemini-2.5-flash"
+
+
 class LeagueWebAuthError(RuntimeError):
     """當瀏覽器未登入 Yahoo 或登入帳號無該聯盟檢視權限時拋出。"""
     pass
@@ -111,13 +115,152 @@ class WebAgentFetcher:
         self.league_id = league_id or config.get("LEAGUE_ID")
         self.team_mapping = team_mapping or {}
         self.api_key = api_key or config.get("LLM_API_KEY") or os.getenv("LLM_API_KEY")
-        self.model_name = model_name or config.get("LLM_MODEL") or os.getenv("LLM_MODEL") or "gemini-2.5-flash"
+        self.model_name = model_name or DEFAULT_AGENT_MODEL
 
         if headless is None:
             env_headless = os.getenv("HEADLESS_BROWSER", "true").lower()
             self.headless = env_headless not in ("false", "0", "no")
         else:
             self.headless = headless
+
+    def _call_gemini_json(self, prompt: str, system_instruction: str) -> dict:
+        """使用最新可用之 Gemini 模型 (預設 gemini-3-flash-preview) 解析 JSON，若遇配額限制自動降級至備援模型。"""
+        if not self.api_key:
+            raise RuntimeError("未設定 LLM_API_KEY，無法啟動 Gemini AI Agent。")
+
+        models_to_try = [self.model_name]
+        if FALLBACK_AGENT_MODEL not in models_to_try:
+            models_to_try.append(FALLBACK_AGENT_MODEL)
+
+        last_err = None
+        for m_name in models_to_try:
+            try:
+                provider = GeminiProvider(api_key=self.api_key, model_name=m_name)
+                res = provider.generate_json(prompt=prompt, system_instruction=system_instruction, temperature=0.0)
+                if res:
+                    return res
+            except Exception as e:
+                last_err = e
+                logging.warning(f"[WEB_AGENT] 模型 {m_name} 呼叫失敗，嘗試備援模型: {e}")
+        if last_err:
+            raise last_err
+        return {}
+
+    def fetch_team_mapping_via_agent(self, league_id: str = None, page=None) -> dict[str, str]:
+        """透過 AI Agent 瀏覽聯盟首頁擷取所有隊伍 ID 與名稱，回傳 {team_id: team_name}。若登入失效則拋出 LeagueWebAuthError。"""
+        lid = league_id or self.league_id
+        if not lid:
+            raise ValueError("LEAGUE_ID 未設定，無法透過 AI Agent 獲取隊伍清單。")
+
+        sport, raw_id, base_url = build_league_url(lid)
+        sport_slug = "b1" if sport == "mlb" else "nba"
+
+        def _extract_raw_from_page(active_page) -> dict:
+            ok, reason = is_page_authorized_for_league(active_page, lid)
+            if not ok:
+                raise LeagueWebAuthError(
+                    f"無法存取聯盟 {lid} 網頁 ({reason})，Yahoo 登入狀態已失效或尚未登入。"
+                )
+            return active_page.evaluate(
+                """({ sportSlug, rawId }) => {
+                    const teamRegex = new RegExp(`/${sportSlug}/${rawId}/(\\\\d+)$`);
+                    const links = [];
+                    for (const a of Array.from(document.querySelectorAll('a[href]'))) {
+                        try {
+                            const u = new URL(a.href, window.location.origin);
+                            const m = u.pathname.match(teamRegex);
+                            if (m && !u.search) {
+                                const text = a.innerText.trim();
+                                if (text) {
+                                    links.push({ team_id: m[1], text });
+                                }
+                            }
+                        } catch (e) {}
+                    }
+                    const tables = Array.from(document.querySelectorAll('table')).map(
+                        t => t.innerText.replace(/\\s+/g, ' ').trim()
+                    ).filter(Boolean);
+                    return { links, tables };
+                }""",
+                {"sportSlug": sport_slug, "rawId": raw_id}
+            )
+
+        if page is not None:
+            raw_page_data = _extract_raw_from_page(page)
+        else:
+            state_path = get_league_storage_state_path(lid)
+            if not os.path.exists(state_path):
+                raise LeagueWebAuthError(f"聯盟 {lid} 尚未有登入狀態檔，請重新登入 Yahoo 帳號。")
+            with sync_playwright() as p:
+                browser = p.chromium.launch(headless=self.headless)
+                try:
+                    context = browser.new_context(
+                        storage_state=state_path,
+                        viewport={"width": 1280, "height": 900}
+                    )
+                    new_page = context.new_page()
+                    new_page.goto(base_url, wait_until="domcontentloaded", timeout=45000)
+                    new_page.wait_for_timeout(1500)
+                    raw_page_data = _extract_raw_from_page(new_page)
+                finally:
+                    browser.close()
+
+        fallback_map = {}
+        for item in raw_page_data.get("links", []):
+            tid = str(item.get("team_id", "")).strip()
+            txt = str(item.get("text", "")).strip()
+            if tid and txt and txt.lower() != "my team" and tid not in fallback_map:
+                fallback_map[tid] = txt
+
+        if self.api_key:
+            sys_inst = (
+                "你是 Yahoo Fantasy 聯盟網頁解析 AI Agent。\n"
+                "請根據提供的聯盟網頁隊伍連結與戰績表文字，提取該聯盟所有隊伍的編號 (team_id，純數字字串如 '1', '2'...) 與對應的真實隊伍名稱。\n"
+                "注意：忽略導覽列上的 'My Team' 字樣，必須使用該隊伍真正的名稱。\n"
+                '請嚴格輸出 JSON 格式：{"teams": {"1": "隊伍名稱1", "2": "隊伍名稱2"}}'
+            )
+            prompt = f"聯盟 ID: {lid}\n網頁擷取資料:\n{json.dumps(raw_page_data, ensure_ascii=False)}"
+            try:
+                logging.info(f"[WEB_AGENT] 正在使用 Gemini AI Agent ({self.model_name}) 解析聯盟 {lid} 的隊伍清單...")
+                parsed = self._call_gemini_json(prompt=prompt, system_instruction=sys_inst)
+                ai_teams = parsed.get("teams") if isinstance(parsed, dict) else None
+                if isinstance(ai_teams, dict) and len(ai_teams) >= 2:
+                    cleaned = {
+                        str(k).strip(): str(v).strip()
+                        for k, v in ai_teams.items()
+                        if str(k).strip() and str(v).strip() and str(v).strip().lower() != "my team"
+                    }
+                    if len(cleaned) >= 2:
+                        return dict(sorted(cleaned.items(), key=lambda x: int(x[0]) if x[0].isdigit() else 999))
+            except Exception as e:
+                logging.warning(f"[WEB_AGENT] Gemini 解析 team_mapping 失敗，改用網頁連結解析結果: {e}")
+
+        if len(fallback_map) < 2:
+            raise LeagueWebAuthError(f"無法從聯盟 {lid} 網頁擷取到隊伍清單，登入狀態可能已失效。")
+        return dict(sorted(fallback_map.items(), key=lambda x: int(x[0]) if x[0].isdigit() else 999))
+
+    def ensure_team_mapping_via_agent(self, league_id: str = None, page=None) -> dict[str, str]:
+        """檢查聯盟是否有 team_mapping.json；若無或為空，則透過 AI Agent 瀏覽網頁獲取並寫入 team_mapping.json。"""
+        lid = league_id or self.league_id
+        mapping_path = get_league_team_mapping_path(lid)
+        existing = {}
+        if os.path.exists(mapping_path):
+            try:
+                with open(mapping_path, "r", encoding="utf-8") as f:
+                    existing = json.load(f)
+            except Exception:
+                existing = {}
+
+        if existing and isinstance(existing, dict) and len(existing) >= 2:
+            return existing
+
+        teams = self.fetch_team_mapping_via_agent(league_id=lid, page=page)
+        if teams:
+            os.makedirs(os.path.dirname(mapping_path), exist_ok=True)
+            with open(mapping_path, "w", encoding="utf-8") as f:
+                json.dump(teams, f, ensure_ascii=False, indent=2)
+            logging.info(f"[WEB_AGENT] 已透過 AI Agent 自動更新聯盟 {lid} 的 team_mapping.json (共 {len(teams)} 隊)")
+        return teams
 
     def _scrape_league_pages(self, league_id: str, target_date: str) -> dict:
         """透過已登入的 Playwright 瀏覽器開啟聯盟頁面，驗證權限後擷取當週對戰表與各隊當日數據表格內容。"""
@@ -272,11 +415,6 @@ class WebAgentFetcher:
 
     def _parse_with_gemini(self, scraped_data: dict, sport: str, target_date: str) -> dict:
         """將擷取到的網頁表格文字交由 Gemini AI 解析為結構化當日與當週戰績 JSON。"""
-        if not self.api_key:
-            raise RuntimeError("未設定 LLM_API_KEY，無法啟動 Gemini AI Agent 解析網頁戰績。")
-
-        provider = GeminiProvider(api_key=self.api_key, model_name=self.model_name)
-
         if sport == "mlb":
             categories_hint = (
                 'MLB 統計項目鍵名請使用: "H/AB", "R", "H", "HR", "RBI", "SB", "BB", "AVG", "OPS", '
@@ -326,8 +464,8 @@ class WebAgentFetcher:
             f"網頁擷取內容:\n{json.dumps(scraped_data, ensure_ascii=False)}"
         )
 
-        logging.info("[WEB_AGENT] 正在呼叫 Gemini AI 解析當日與當週戰績數據...")
-        return provider.generate_json(prompt=prompt, system_instruction=system_instruction, temperature=0.0)
+        logging.info(f"[WEB_AGENT] 正在呼叫 Gemini AI ({self.model_name}) 解析當日與當週戰績數據...")
+        return self._call_gemini_json(prompt=prompt, system_instruction=system_instruction)
 
     def _normalize_team_list(self, team_stats: list) -> list:
         """標準化各隊名稱對應、百分比格式與欄位別名，以完全相容 process_stats_for_visual。"""
@@ -403,6 +541,8 @@ class WebAgentFetcher:
 
         daily_raw = (parsed.get("daily_stats") or {}).get("team_stats", [])
         weekly_raw = (parsed.get("weekly_stats") or {}).get("team_stats", [])
+        if not daily_raw and not weekly_raw:
+            raise LeagueWebAuthError(f"無法從聯賽 {lid} 網頁獲取有效數據，Yahoo 網頁登入狀態可能已失效。")
 
         daily_stats = {"team_stats": self._normalize_team_list(daily_raw)}
         weekly_stats = {"team_stats": self._normalize_team_list(weekly_raw)}
@@ -451,20 +591,25 @@ def run_web_agent_push(league_id: str = None, reply_to: str = None, target_date:
         team_mapping=team_mapping,
         league_id=lid,
         api_key=config.get("LLM_API_KEY"),
-        model_name=config.get("LLM_MODEL")
+        model_name=DEFAULT_AGENT_MODEL
     )
 
     try:
         logging.info(f"[WEB_AGENT] 正在從網站擷取聯盟 {lid} 於 {today_str} 的當日與當週戰績 (不落盤模式)...")
         daily_stats, weekly_stats = fetcher.fetch_daily_and_weekly_stats(lid, today_str)
     except LeagueWebAuthError as auth_err:
-        logging.warning(f"[WEB_AGENT] 網頁未登入或無權限: {auth_err}")
+        logging.warning(f"[WEB_AGENT] 網頁未登入或登入已失效: {auth_err}")
+        try:
+            from src.utils.security import security_manager
+            security_manager.set_league_authorized(lid, False)
+        except Exception:
+            pass
         if target_chat and config.get("LINE_CHANNEL_ACCESS_TOKEN"):
             from linebot.v3.messaging import Configuration, ApiClient, MessagingApi, PushMessageRequest, TextMessage
             login_url = build_mobile_web_login_url(lid, target_chat)
             msg_text = (
-                f"⚠️ 無法獲取聯賽 {lid} 戰績（尚未登入 Yahoo 或該帳號無此聯賽檢視權限）。\n"
-                f"請點擊下方網址於手機完成 Yahoo 帳號登入：\n{login_url}"
+                f"⚠️ 獲取聯賽 {lid} 資料失敗（Yahoo 網頁登入狀態已失效或尚未登入）。\n"
+                f"請點擊以下連結重新登入 Yahoo 帳號：\n👉 {login_url}"
             )
             line_config = Configuration(access_token=config["LINE_CHANNEL_ACCESS_TOKEN"])
             with ApiClient(line_config) as api_client:

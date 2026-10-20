@@ -279,3 +279,94 @@ def test_inspect_yahoo_login_stage_detects_username_password_and_otp():
             assert s3["stage"] == "otp"
         finally:
             browser.close()
+
+
+def test_default_agent_model_is_gemini_3_flash_preview():
+    from src.web_agent_fetcher import DEFAULT_AGENT_MODEL
+    fetcher = WebAgentFetcher(league_id="nba.l.49432", api_key="dummy")
+    assert DEFAULT_AGENT_MODEL == "gemini-3-flash-preview"
+    assert fetcher.model_name == "gemini-3-flash-preview"
+
+
+def test_already_set_league_id_skips_relogin_when_state_and_mapping_exist(tmp_path):
+    league_dir = tmp_path / "league" / "nba" / "49432"
+    league_dir.mkdir(parents=True)
+    (league_dir / "yahoo_web_state.json").write_text('{"cookies": []}', encoding="utf-8")
+    (league_dir / "team_mapping.json").write_text(
+        json.dumps({"1": "隊伍一", "2": "隊伍二"}, ensure_ascii=False),
+        encoding="utf-8"
+    )
+
+    handler = bind_web_login_to_set_league_handler(SetLeagueIdHandler())
+    handler.reply_text = MagicMock()
+
+    event = MagicMock()
+    event.message.text = "#設置聯盟ID 49432"
+    event.source.user_id = "U_manager_1"
+    config = MagicMock()
+
+    token = current_chat_id.set("C_group_test")
+    try:
+        with patch("src.web_login_bridge.DATA_DIR", str(tmp_path)), \
+             patch("src.utils.path_utils.DATA_DIR", str(tmp_path)), \
+             patch("src.web_login_bridge.verify_league_web_access") as mock_verify, \
+             patch("src.utils.security.security_manager._load_json", return_value={}), \
+             patch("src.utils.security.security_manager.set_league_owner"), \
+             patch("src.utils.security.security_manager.set_league_authorized"):
+            handler.execute(event, config)
+
+        # 已設置過且已有 yahoo_web_state.json 與 team_mapping.json，不需再次觸發瀏覽器登入驗證
+        mock_verify.assert_not_called()
+        handler.reply_text.assert_called_once_with(
+            event, config, "✅ 成功將此聊天室綁定至聯賽 ID：nba.l.49432"
+        )
+    finally:
+        current_chat_id.reset(token)
+
+
+def test_set_league_id_without_mapping_uses_agent_to_populate_team_mapping(tmp_path):
+    from src.web_login_bridge import save_discovered_team_mapping
+
+    with patch("src.utils.path_utils.DATA_DIR", str(tmp_path)), \
+         patch("src.web_agent_fetcher.WebAgentFetcher.fetch_team_mapping_via_agent", return_value={"1": "AI擷取隊伍A", "2": "AI擷取隊伍B"}):
+        result = save_discovered_team_mapping("nba.l.49432")
+
+    assert result == {"1": "AI擷取隊伍A", "2": "AI擷取隊伍B"}
+    mapping_file = tmp_path / "league" / "nba" / "49432" / "team_mapping.json"
+    assert mapping_file.exists()
+    saved = json.loads(mapping_file.read_text(encoding="utf-8"))
+    assert saved["1"] == "AI擷取隊伍A"
+
+
+def test_set_league_id_when_login_expired_prompts_user_to_relogin(tmp_path):
+    league_dir = tmp_path / "league" / "nba" / "49432"
+    league_dir.mkdir(parents=True)
+    # 有舊的登入檔，但沒有 team_mapping 且登入已失效
+    (league_dir / "yahoo_web_state.json").write_text('{"cookies": []}', encoding="utf-8")
+
+    handler = bind_web_login_to_set_league_handler(SetLeagueIdHandler())
+    handler.reply_text = MagicMock()
+
+    event = MagicMock()
+    event.message.text = "#設置聯盟ID 49432"
+    event.source.user_id = "U_manager_1"
+    config = MagicMock()
+
+    token = current_chat_id.set("C_group_test")
+    try:
+        with patch("src.web_login_bridge.DATA_DIR", str(tmp_path)), \
+             patch("src.utils.path_utils.DATA_DIR", str(tmp_path)), \
+             patch("src.web_login_bridge.verify_league_web_access", return_value=(False, {})), \
+             patch("src.web_login_bridge.load_config", return_value={"SERVER_URL": "https://my-bot.ngrok.app"}), \
+             patch("src.utils.security.security_manager._load_json", return_value={}), \
+             patch("src.utils.security.security_manager.set_league_owner"), \
+             patch("src.utils.security.security_manager.set_league_authorized"):
+            handler.execute(event, config)
+
+        handler.reply_text.assert_called_once()
+        reply_msg = handler.reply_text.call_args[0][2]
+        assert "登入狀態已失效" in reply_msg
+        assert "重新登入" in reply_msg
+        assert "https://my-bot.ngrok.app/yahoo/web-login?league_id=nba.l.49432&chat_id=C_group_test" in reply_msg
+    finally:
+        current_chat_id.reset(token)
