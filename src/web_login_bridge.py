@@ -77,7 +77,7 @@ def extract_teams_and_check_auth(page, league_id: str) -> tuple[bool, str, dict[
                         if (m && !u.search) {
                             const tid = m[1];
                             const name = a.innerText.trim();
-                            if (name && !teams[tid]) {
+                            if (name && name.toLowerCase() !== 'my team' && !teams[tid]) {
                                 teams[tid] = name;
                             }
                         }
