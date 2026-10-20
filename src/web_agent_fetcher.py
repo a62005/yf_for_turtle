@@ -24,7 +24,7 @@ from src.web_login_bridge import (
 )
 
 
-DEFAULT_AGENT_MODEL = "gemini-3-flash-preview"
+DEFAULT_AGENT_MODEL = "gemini-3.5-flash"
 FALLBACK_AGENT_MODEL = "gemini-2.5-flash"
 
 

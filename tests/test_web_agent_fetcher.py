@@ -281,11 +281,11 @@ def test_inspect_yahoo_login_stage_detects_username_password_and_otp():
             browser.close()
 
 
-def test_default_agent_model_is_gemini_3_flash_preview():
+def test_default_agent_model_is_gemini_3_5_flash():
     from src.web_agent_fetcher import DEFAULT_AGENT_MODEL
     fetcher = WebAgentFetcher(league_id="nba.l.49432", api_key="dummy")
-    assert DEFAULT_AGENT_MODEL == "gemini-3-flash-preview"
-    assert fetcher.model_name == "gemini-3-flash-preview"
+    assert DEFAULT_AGENT_MODEL == "gemini-3.5-flash"
+    assert fetcher.model_name == "gemini-3.5-flash"
 
 
 def test_already_set_league_id_skips_relogin_when_state_and_mapping_exist(tmp_path):
