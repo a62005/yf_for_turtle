@@ -250,8 +250,123 @@ def bind_web_login_to_set_league_handler(handler):
     return handler
 
 
+def inspect_yahoo_login_stage(page) -> dict:
+    """自動偵測當前 Yahoo 登入頁面的所在步驟，讓前端每次只顯示該步驟對應的輸入欄位或按鈕。"""
+    try:
+        return page.evaluate(
+            """() => {
+                const isVisible = (el) => {
+                    if (!el) return false;
+                    const style = window.getComputedStyle(el);
+                    if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+                    const r = el.getBoundingClientRect();
+                    return r.width > 5 && r.height > 5;
+                };
+
+                // 擷取頁面上的錯誤訊息
+                let errorMsg = '';
+                const errEls = document.querySelectorAll('#username-error, #password-error, .error-msg, p.error, [data-error]');
+                for (const el of Array.from(errEls)) {
+                    if (isVisible(el) && el.innerText.trim()) {
+                        errorMsg = el.innerText.trim();
+                        break;
+                    }
+                }
+
+                // 擷取提示說明文字
+                let hintMsg = '';
+                const descEls = document.querySelectorAll('.challenge-desc, .txt-align-center, h2.challenge-heading, . Yahoo-login-desc');
+                for (const el of Array.from(descEls)) {
+                    if (isVisible(el) && el.innerText.trim()) {
+                        hintMsg = el.innerText.trim();
+                        break;
+                    }
+                }
+
+                const pwInput = document.querySelector('#login-passwd, input[name="password"], input[type="password"]');
+                if (isVisible(pwInput)) {
+                    return {
+                        stage: 'password',
+                        step_title: '步驟 2：輸入 Yahoo 密碼',
+                        hint: hintMsg || '帳號已確認，請輸入您的 Yahoo 登入密碼',
+                        placeholder: '請輸入密碼',
+                        input_type: 'password',
+                        button_label: '登入',
+                        error: errorMsg,
+                        options: []
+                    };
+                }
+
+                const otpInput = document.querySelector('#verification-code-field, input[name="code"], input[name="otpCode"], input[autocomplete="one-time-code"]');
+                if (isVisible(otpInput)) {
+                    return {
+                        stage: 'otp',
+                        step_title: '步驟 2：輸入驗證碼',
+                        hint: hintMsg || 'Yahoo 已發送驗證碼至您的手機或信箱，請收到後輸入',
+                        placeholder: '請輸入收到的驗證碼',
+                        input_type: 'text',
+                        button_label: '驗證並登入',
+                        error: errorMsg,
+                        options: []
+                    };
+                }
+
+                const userInput = document.querySelector('#login-username, input[name="username"], input[name="identifier"]');
+                if (isVisible(userInput)) {
+                    return {
+                        stage: 'username',
+                        step_title: '步驟 1：輸入 Yahoo 帳號',
+                        hint: '請先輸入您的 Yahoo 帳號或 Email，按下一步後才會要求密碼或發送驗證碼',
+                        placeholder: '請輸入 Yahoo 帳號或 Email',
+                        input_type: 'email',
+                        button_label: '下一步',
+                        error: errorMsg,
+                        options: []
+                    };
+                }
+
+                // 若無標準輸入框，收集畫面上可見的驗證方式按鈕（例如：選擇寄送簡訊、使用 Yahoo App 推播、使用密碼等）
+                const btns = [];
+                const candidates = document.querySelectorAll('button, input[type="submit"], a.pure-button, .challenge-selector li button');
+                candidates.forEach((btn) => {
+                    if (isVisible(btn)) {
+                        const txt = (btn.innerText || btn.value || '').trim().replace(/\\s+/g, ' ');
+                        if (txt && txt.length <= 40 && !btns.includes(txt)) {
+                            btns.push(txt);
+                        }
+                    }
+                });
+
+                return {
+                    stage: 'challenge_select',
+                    step_title: '步驟 2：完成雙重驗證或選擇登入方式',
+                    hint: hintMsg || '請點擊下方按鈕選擇驗證方式，或直接點擊下方即時網頁畫面操作',
+                    placeholder: '若畫面要求輸入文字可在此輸入...',
+                    input_type: 'text',
+                    button_label: '送出',
+                    error: errorMsg,
+                    options: btns.slice(0, 6)
+                };
+            }"""
+        )
+    except Exception:
+        return {
+            "stage": "username",
+            "step_title": "步驟 1：輸入 Yahoo 帳號",
+            "hint": "請先輸入您的 Yahoo 帳號或 Email",
+            "placeholder": "請輸入 Yahoo 帳號或 Email",
+            "input_type": "email",
+            "button_label": "下一步",
+            "error": "",
+            "options": []
+        }
+
+
 class RemoteLoginWorker:
     """在獨立執行緒中管理單一聯盟的遠端登入 Playwright 瀏覽器會話。"""
+
+    VIEWPORT_W = 414
+    VIEWPORT_H = 720
 
     def __init__(self, league_id: str, chat_id: str):
         self.league_id = league_id
@@ -296,6 +411,52 @@ class RemoteLoginWorker:
         except Exception as e:
             logging.error(f"[WEB_LOGIN] 推送 LINE 登入成功通知失敗: {e}")
 
+    def _submit_step_input(self, page, stage: str, text: str):
+        """根據當前步驟自動填入對應的 Yahoo 欄位並送出。"""
+        if not text:
+            return
+        selectors_by_stage = {
+            "username": ["#login-username", 'input[name="username"]', 'input[name="identifier"]'],
+            "password": ["#login-passwd", 'input[name="password"]', 'input[type="password"]'],
+            "otp": ["#verification-code-field", 'input[name="code"]', 'input[name="otpCode"]', 'input[autocomplete="one-time-code"]'],
+        }
+        filled = False
+        for sel in selectors_by_stage.get(stage, []):
+            try:
+                loc = page.locator(sel).first
+                if loc.is_visible(timeout=800):
+                    loc.click()
+                    loc.fill(text)
+                    filled = True
+                    break
+            except Exception:
+                continue
+
+        if not filled:
+            page.keyboard.type(text)
+
+        submit_selectors = [
+            "#login-signin",
+            "#verify-code-button",
+            'button[type="submit"]',
+            'input[type="submit"]',
+        ]
+        submitted = False
+        for sub_sel in submit_selectors:
+            try:
+                btn = page.locator(sub_sel).first
+                if btn.is_visible(timeout=600):
+                    btn.click()
+                    submitted = True
+                    break
+            except Exception:
+                continue
+
+        if not submitted:
+            page.keyboard.press("Enter")
+
+        page.wait_for_timeout(1800)
+
     def _run(self):
         _, _, target_url = build_league_web_url(self.league_id)
         state_path = get_league_storage_state_path(self.league_id)
@@ -305,7 +466,9 @@ class RemoteLoginWorker:
             with sync_playwright() as p:
                 browser = p.chromium.launch(headless=headless)
                 try:
-                    ctx_kwargs = {"viewport": {"width": 1280, "height": 900}}
+                    ctx_kwargs = {
+                        "viewport": {"width": self.VIEWPORT_W, "height": self.VIEWPORT_H},
+                    }
                     if os.path.exists(state_path):
                         ctx_kwargs["storage_state"] = state_path
                     context = browser.new_context(**ctx_kwargs)
@@ -327,7 +490,16 @@ class RemoteLoginWorker:
 
                         action = cmd.get("action", "snapshot")
                         try:
-                            if action == "click":
+                            if action == "submit_step":
+                                stage = str(cmd.get("stage", "username"))
+                                text = str(cmd.get("text", "")).strip()
+                                self._submit_step_input(page, stage, text)
+                            elif action == "click_option":
+                                label = str(cmd.get("label", "")).strip()
+                                if label:
+                                    page.get_by_text(label, exact=False).first.click(timeout=3000)
+                                    page.wait_for_timeout(1500)
+                            elif action == "click":
                                 x = float(cmd.get("x", 0))
                                 y = float(cmd.get("y", 0))
                                 page.mouse.click(x, y)
@@ -339,18 +511,15 @@ class RemoteLoginWorker:
                                     page.keyboard.type(text)
                                 if press_enter:
                                     page.keyboard.press("Enter")
-                                page.wait_for_timeout(1200)
+                                page.wait_for_timeout(1500)
                             elif action == "key":
                                 key_name = str(cmd.get("key", "Enter"))
                                 page.keyboard.press(key_name)
                                 page.wait_for_timeout(800)
                             elif action == "scroll":
-                                dy = float(cmd.get("delta_y", 300))
+                                dy = float(cmd.get("delta_y", 250))
                                 page.mouse.wheel(0, dy)
-                                page.wait_for_timeout(500)
-                            elif action == "goto_league":
-                                page.goto(target_url, wait_until="domcontentloaded", timeout=30000)
-                                page.wait_for_timeout(1500)
+                                page.wait_for_timeout(400)
                         except Exception as act_err:
                             logging.warning(f"[WEB_LOGIN] 執行動作 {action} 異常: {act_err}")
 
@@ -378,12 +547,16 @@ class RemoteLoginWorker:
                             self._notify_line_success()
                             break
 
+                        stage_info = inspect_yahoo_login_stage(page)
                         png_bytes = page.screenshot(type="png")
                         b64_img = base64.b64encode(png_bytes).decode("ascii")
                         reply_q.put({
                             "authorized": False,
                             "url": page.url,
                             "status": reason,
+                            "stage_info": stage_info,
+                            "viewport_w": self.VIEWPORT_W,
+                            "viewport_h": self.VIEWPORT_H,
                             "image_b64": b64_img
                         })
                 finally:
@@ -414,42 +587,57 @@ REMOTE_LOGIN_HTML = """<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Yahoo Fantasy 網頁登入授權</title>
+<title>Yahoo Fantasy 聯盟登入授權</title>
 <style>
-  body { font-family: -apple-system, BlinkMacSystemFont, "Microsoft JhengHei", sans-serif; margin: 0; background: #f4f6f8; color: #222; }
-  .topbar { position: sticky; top: 0; z-index: 10; background: #fff; padding: 10px 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
-  .title { font-size: 15px; font-weight: bold; margin-bottom: 6px; color: #400090; }
-  .status { font-size: 12px; color: #666; margin-bottom: 8px; }
-  .controls { display: flex; gap: 6px; flex-wrap: wrap; }
-  .controls input { flex: 1; min-width: 160px; padding: 8px 10px; font-size: 15px; border: 1px solid #ccc; border-radius: 6px; }
-  .controls button { padding: 8px 12px; font-size: 14px; font-weight: bold; border: none; border-radius: 6px; background: #6001d2; color: #fff; cursor: pointer; }
-  .controls button.secondary { background: #e4e7eb; color: #333; }
-  .viewer { padding: 10px; text-align: center; }
-  #screen { width: 100%; max-width: 900px; border: 1px solid #ccc; border-radius: 8px; background: #fff; cursor: pointer; touch-action: manipulation; }
-  .success-card { display: none; max-width: 400px; margin: 60px auto; background: #fff; padding: 32px; border-radius: 12px; text-align: center; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
-  .success-card h2 { color: #2da44e; }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Microsoft JhengHei", sans-serif; margin: 0; background: #f4f6f9; color: #1d2228; }
+  .container { max-width: 440px; margin: 0 auto; padding: 14px; }
+  .card { background: #fff; border-radius: 14px; padding: 18px 16px; box-shadow: 0 4px 16px rgba(0,0,0,0.08); margin-bottom: 14px; }
+  .brand { font-size: 13px; font-weight: 700; color: #6001d2; letter-spacing: 0.3px; margin-bottom: 4px; }
+  .step-title { font-size: 19px; font-weight: 700; margin: 0 0 6px 0; color: #1d2228; }
+  .hint { font-size: 13px; color: #5b636a; margin-bottom: 12px; line-height: 1.45; }
+  .error-box { display: none; background: #fff1f0; border: 1px solid #ffa39e; color: #cf1322; font-size: 13px; padding: 8px 10px; border-radius: 8px; margin-bottom: 12px; }
+  .form-row { display: flex; flex-direction: column; gap: 10px; }
+  .form-row input { width: 100%; padding: 12px 14px; font-size: 16px; border: 1.5px solid #cbd2d9; border-radius: 10px; outline: none; transition: border-color 0.2s; }
+  .form-row input:focus { border-color: #6001d2; }
+  .primary-btn { width: 100%; padding: 12px; font-size: 16px; font-weight: 700; border: none; border-radius: 24px; background: #6001d2; color: #fff; cursor: pointer; }
+  .primary-btn:disabled { opacity: 0.6; cursor: wait; }
+  .options-list { display: none; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+  .opt-btn { width: 100%; padding: 10px 12px; font-size: 14px; font-weight: 600; border: 1px solid #d0d7de; border-radius: 10px; background: #f8f9fa; color: #222; cursor: pointer; text-align: left; }
+  .preview-header { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: #666; margin-bottom: 6px; padding: 0 4px; }
+  .viewer { text-align: center; background: #fff; border-radius: 12px; padding: 6px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
+  #screen { width: 100%; border-radius: 8px; display: block; cursor: pointer; touch-action: manipulation; }
+  .success-card { display: none; max-width: 400px; margin: 50px auto; background: #fff; padding: 32px 20px; border-radius: 14px; text-align: center; box-shadow: 0 4px 16px rgba(0,0,0,0.1); }
+  .success-card h2 { color: #1a7f37; margin-top: 0; }
 </style>
 </head>
 <body>
-<div class="topbar" id="topbar">
-  <div class="title">🔐 Yahoo Fantasy 聯盟授權登入 (__LEAGUE_ID__)</div>
-  <div class="status" id="statusText">正在載入遠端登入畫面...（點擊下方畫面任意處可聚焦輸入框，再用上方欄位送出文字）</div>
-  <div class="controls">
-    <input type="text" id="textInput" placeholder="輸入帳號 / 密碼 / 驗證碼..." autocomplete="off">
-    <button onclick="sendText(true)">輸入並送出</button>
-    <button class="secondary" onclick="sendKey('Backspace')">退格</button>
-    <button class="secondary" onclick="sendScroll(300)">往下滑</button>
+<div class="container" id="mainContainer">
+  <div class="card">
+    <div class="brand">Yahoo Fantasy 聯盟授權 (__LEAGUE_ID__)</div>
+    <h1 class="step-title" id="stepTitle">正在連線至 Yahoo 登入頁...</h1>
+    <div class="hint" id="stepHint">系統會根據 Yahoo 驗證流程逐步引導您輸入帳號、密碼或驗證碼。</div>
+    <div class="error-box" id="errorBox"></div>
+    <div class="options-list" id="optionsList"></div>
+    <form class="form-row" id="stepForm" onsubmit="handleStepSubmit(event)">
+      <input type="email" id="stepInput" placeholder="請輸入 Yahoo 帳號或 Email" autocomplete="off" required>
+      <button type="submit" class="primary-btn" id="submitBtn">下一步</button>
+    </form>
   </div>
-</div>
 
-<div class="viewer" id="viewer">
-  <img id="screen" alt="請稍候，正在載入 Yahoo 登入畫面..." onclick="handleTap(event)">
+  <div class="preview-header">
+    <span id="statusText">即時 Yahoo 網頁畫面（亦可直接點擊畫面互動）</span>
+    <span onclick="sendScroll(240)" style="color:#6001d2;cursor:pointer;font-weight:600;">往下捲動 ▾</span>
+  </div>
+  <div class="viewer">
+    <img id="screen" alt="正在載入 Yahoo 登入畫面..." onclick="handleTap(event)">
+  </div>
 </div>
 
 <div class="success-card" id="successCard">
   <h2>🎉 授權成功！</h2>
   <p>聊天室已順利取得聯賽 <b>__LEAGUE_ID__</b> 的網頁存取權限。</p>
-  <p>現在您可以關閉此頁面並回到 LINE 聊天室！</p>
+  <p>現在您可以直接關閉此網頁並回到 LINE 聊天室！</p>
 </div>
 
 <script>
@@ -457,11 +645,66 @@ const leagueId = "__LEAGUE_ID__";
 const chatId = "__CHAT_ID__";
 const screenEl = document.getElementById("screen");
 const statusEl = document.getElementById("statusText");
+const stepTitleEl = document.getElementById("stepTitle");
+const stepHintEl = document.getElementById("stepHint");
+const stepInputEl = document.getElementById("stepInput");
+const submitBtnEl = document.getElementById("submitBtn");
+const errorBoxEl = document.getElementById("errorBox");
+const optionsListEl = document.getElementById("optionsList");
+
+let currentStage = "username";
+let viewportW = 414;
+let viewportH = 720;
 let busy = false;
+
+function updateStageUI(stageInfo) {
+  if (!stageInfo) return;
+  const newStage = stageInfo.stage || "username";
+  stepTitleEl.innerText = stageInfo.step_title || "Yahoo 帳號登入";
+  stepHintEl.innerText = stageInfo.hint || "";
+  submitBtnEl.innerText = stageInfo.button_label || "下一步";
+
+  if (stageInfo.error) {
+    errorBoxEl.style.display = "block";
+    errorBoxEl.innerText = "⚠️ " + stageInfo.error;
+  } else {
+    errorBoxEl.style.display = "none";
+  }
+
+  if (newStage !== currentStage) {
+    currentStage = newStage;
+    stepInputEl.value = "";
+    stepInputEl.type = stageInfo.input_type || "text";
+    stepInputEl.placeholder = stageInfo.placeholder || "";
+    stepInputEl.focus();
+  } else {
+    stepInputEl.type = stageInfo.input_type || "text";
+    stepInputEl.placeholder = stageInfo.placeholder || "";
+  }
+
+  const opts = stageInfo.options || [];
+  if (opts.length > 0 && newStage === "challenge_select") {
+    optionsListEl.style.display = "flex";
+    optionsListEl.innerHTML = "";
+    opts.forEach((optText) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "opt-btn";
+      b.innerText = "👉 " + optText;
+      b.onclick = () => clickOption(optText);
+      optionsListEl.appendChild(b);
+    });
+  } else {
+    optionsListEl.style.display = "none";
+  }
+}
 
 async function postAction(payload) {
   if (busy && payload.action === "snapshot") return;
   busy = true;
+  if (payload.action !== "snapshot") {
+    submitBtnEl.disabled = true;
+  }
   try {
     const resp = await fetch("/yahoo/web-login/action", {
       method: "POST",
@@ -470,43 +713,52 @@ async function postAction(payload) {
     });
     const data = await resp.json();
     if (data.authorized) {
-      document.getElementById("topbar").style.display = "none";
-      document.getElementById("viewer").style.display = "none";
+      document.getElementById("mainContainer").style.display = "none";
       document.getElementById("successCard").style.display = "block";
       return;
     }
+    if (data.viewport_w && data.viewport_h) {
+      viewportW = data.viewport_w;
+      viewportH = data.viewport_h;
+    }
+    if (data.stage_info) {
+      updateStageUI(data.stage_info);
+    }
     if (data.status) {
-      statusEl.innerText = "狀態：" + data.status;
+      statusEl.innerText = data.status;
     }
     if (data.image_b64) {
       screenEl.src = "data:image/png;base64," + data.image_b64;
     }
   } catch (e) {
-    statusEl.innerText = "連線更新中...";
+    statusEl.innerText = "正在同步畫面...";
   } finally {
     busy = false;
+    submitBtnEl.disabled = false;
   }
+}
+
+function handleStepSubmit(e) {
+  e.preventDefault();
+  const val = stepInputEl.value.trim();
+  if (!val) return;
+  stepInputEl.value = "";
+  statusEl.innerText = "正在送出至 Yahoo 驗證...";
+  postAction({ action: "submit_step", stage: currentStage, text: val });
+}
+
+function clickOption(label) {
+  statusEl.innerText = "正在點擊選項：" + label;
+  postAction({ action: "click_option", label });
 }
 
 function handleTap(e) {
   const rect = screenEl.getBoundingClientRect();
   if (!rect.width || !rect.height) return;
-  const x = ((e.clientX - rect.left) / rect.width) * 1280;
-  const y = ((e.clientY - rect.top) / rect.height) * 900;
+  const x = ((e.clientX - rect.left) / rect.width) * viewportW;
+  const y = ((e.clientY - rect.top) / rect.height) * viewportH;
   statusEl.innerText = "已點擊畫面，處理中...";
   postAction({ action: "click", x, y });
-}
-
-function sendText(pressEnter) {
-  const input = document.getElementById("textInput");
-  const val = input.value;
-  input.value = "";
-  statusEl.innerText = "正在送出輸入內容...";
-  postAction({ action: "type", text: val, press_enter: pressEnter });
-}
-
-function sendKey(keyName) {
-  postAction({ action: "key", key: keyName });
 }
 
 function sendScroll(dy) {
