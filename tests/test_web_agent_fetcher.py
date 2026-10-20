@@ -241,3 +241,41 @@ def test_web_login_blueprint_routes():
         )
         assert act_resp.status_code == 200
         assert act_resp.get_json()["authorized"] is False
+
+
+def test_inspect_yahoo_login_stage_detects_username_password_and_otp():
+    from playwright.sync_api import sync_playwright
+    from src.web_login_bridge import inspect_yahoo_login_stage
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        try:
+            page = browser.new_page()
+
+            # 1. Username step
+            page.set_content('<html><body><input id="login-username" type="text" style="width:200px;height:40px;" /></body></html>')
+            s1 = inspect_yahoo_login_stage(page)
+            assert s1["stage"] == "username"
+
+            # 2. Password step (even when hidden username input still exists in DOM)
+            page.set_content(
+                '<html><body>'
+                '<input id="login-username" type="text" style="display:none;" />'
+                '<input id="login-passwd" type="password" style="width:200px;height:40px;" />'
+                '</body></html>'
+            )
+            s2 = inspect_yahoo_login_stage(page)
+            assert s2["stage"] == "password"
+            assert s2["input_type"] == "password"
+
+            # 3. OTP step
+            page.set_content(
+                '<html><body>'
+                '<div class="challenge-desc" style="width:200px;height:30px;">已傳送驗證碼至 0912***</div>'
+                '<input id="verification-code-field" type="text" style="width:200px;height:40px;" />'
+                '</body></html>'
+            )
+            s3 = inspect_yahoo_login_stage(page)
+            assert s3["stage"] == "otp"
+        finally:
+            browser.close()

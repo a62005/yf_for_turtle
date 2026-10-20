@@ -263,28 +263,40 @@ def inspect_yahoo_login_stage(page) -> dict:
                     return r.width > 5 && r.height > 5;
                 };
 
+                const findVisible = (selector) => {
+                    try {
+                        for (const el of Array.from(document.querySelectorAll(selector))) {
+                            if (isVisible(el)) return el;
+                        }
+                    } catch (e) {}
+                    return null;
+                };
+
                 // 擷取頁面上的錯誤訊息
                 let errorMsg = '';
-                const errEls = document.querySelectorAll('#username-error, #password-error, .error-msg, p.error, [data-error]');
-                for (const el of Array.from(errEls)) {
-                    if (isVisible(el) && el.innerText.trim()) {
-                        errorMsg = el.innerText.trim();
-                        break;
-                    }
+                const errEl = findVisible('#username-error, #password-error, .error-msg, p.error, [data-error]');
+                if (errEl && errEl.innerText.trim()) {
+                    errorMsg = errEl.innerText.trim();
                 }
 
                 // 擷取提示說明文字
                 let hintMsg = '';
-                const descEls = document.querySelectorAll('.challenge-desc, .txt-align-center, h2.challenge-heading, . Yahoo-login-desc');
-                for (const el of Array.from(descEls)) {
-                    if (isVisible(el) && el.innerText.trim()) {
-                        hintMsg = el.innerText.trim();
-                        break;
-                    }
+                const descEl = findVisible('.challenge-desc, .txt-align-center, h2.challenge-heading, .challenge-heading');
+                if (descEl && descEl.innerText.trim()) {
+                    hintMsg = descEl.innerText.trim();
                 }
 
-                const pwInput = document.querySelector('#login-passwd, input[name="password"], input[type="password"]');
-                if (isVisible(pwInput)) {
+                const href = (window.location && window.location.href) ? window.location.href : '';
+                const bodyText = (document.body && document.body.innerText) ? document.body.innerText : '';
+
+                const pwInput = findVisible('#login-passwd, input[name="password"], input[type="password"], input[autocomplete="current-password"]');
+                if (
+                    pwInput ||
+                    href.includes('/challenge/password') ||
+                    bodyText.includes('請輸入密碼') ||
+                    bodyText.includes('輸入您的密碼') ||
+                    bodyText.includes('Enter password')
+                ) {
                     return {
                         stage: 'password',
                         step_title: '步驟 2：輸入 Yahoo 密碼',
@@ -297,8 +309,14 @@ def inspect_yahoo_login_stage(page) -> dict:
                     };
                 }
 
-                const otpInput = document.querySelector('#verification-code-field, input[name="code"], input[name="otpCode"], input[autocomplete="one-time-code"]');
-                if (isVisible(otpInput)) {
+                const otpInput = findVisible('#verification-code-field, input[name="code"], input[name="otpCode"], input[autocomplete="one-time-code"], input[type="tel"]');
+                if (
+                    otpInput ||
+                    href.includes('/challenge/phone-verify') ||
+                    href.includes('/challenge/email-verify') ||
+                    bodyText.includes('輸入驗證碼') ||
+                    bodyText.includes('Enter verification code')
+                ) {
                     return {
                         stage: 'otp',
                         step_title: '步驟 2：輸入驗證碼',
@@ -311,8 +329,8 @@ def inspect_yahoo_login_stage(page) -> dict:
                     };
                 }
 
-                const userInput = document.querySelector('#login-username, input[name="username"], input[name="identifier"]');
-                if (isVisible(userInput)) {
+                const userInput = findVisible('#login-username, input[name="username"], input[name="identifier"]');
+                if (userInput && !href.includes('/challenge/')) {
                     return {
                         stage: 'username',
                         step_title: '步驟 1：輸入 Yahoo 帳號',
@@ -327,15 +345,17 @@ def inspect_yahoo_login_stage(page) -> dict:
 
                 // 若無標準輸入框，收集畫面上可見的驗證方式按鈕（例如：選擇寄送簡訊、使用 Yahoo App 推播、使用密碼等）
                 const btns = [];
-                const candidates = document.querySelectorAll('button, input[type="submit"], a.pure-button, .challenge-selector li button');
-                candidates.forEach((btn) => {
-                    if (isVisible(btn)) {
-                        const txt = (btn.innerText || btn.value || '').trim().replace(/\\s+/g, ' ');
-                        if (txt && txt.length <= 40 && !btns.includes(txt)) {
-                            btns.push(txt);
+                try {
+                    const candidates = document.querySelectorAll('button, input[type="submit"], a.pure-button, .challenge-selector li button');
+                    candidates.forEach((btn) => {
+                        if (isVisible(btn)) {
+                            const txt = (btn.innerText || btn.value || '').trim().replace(/\\s+/g, ' ');
+                            if (txt && txt.length <= 40 && !btns.includes(txt)) {
+                                btns.push(txt);
+                            }
                         }
-                    }
-                });
+                    });
+                } catch (e) {}
 
                 return {
                     stage: 'challenge_select',
@@ -349,7 +369,8 @@ def inspect_yahoo_login_stage(page) -> dict:
                 };
             }"""
         )
-    except Exception:
+    except Exception as e:
+        logging.warning(f"[WEB_LOGIN] inspect_yahoo_login_stage 異常: {e}")
         return {
             "stage": "username",
             "step_title": "步驟 1：輸入 Yahoo 帳號",
@@ -412,22 +433,38 @@ class RemoteLoginWorker:
             logging.error(f"[WEB_LOGIN] 推送 LINE 登入成功通知失敗: {e}")
 
     def _submit_step_input(self, page, stage: str, text: str):
-        """根據當前步驟自動填入對應的 Yahoo 欄位並送出。"""
+        """根據當前頁面上實際可見的 Yahoo 輸入框自動填入並送出。"""
         if not text:
             return
-        selectors_by_stage = {
-            "username": ["#login-username", 'input[name="username"]', 'input[name="identifier"]'],
-            "password": ["#login-passwd", 'input[name="password"]', 'input[type="password"]'],
-            "otp": ["#verification-code-field", 'input[name="code"]', 'input[name="otpCode"]', 'input[autocomplete="one-time-code"]'],
-        }
+        candidate_selectors = [
+            "#login-passwd",
+            'input[name="password"]',
+            'input[type="password"]',
+            'input[autocomplete="current-password"]',
+            "#verification-code-field",
+            'input[name="code"]',
+            'input[name="otpCode"]',
+            'input[autocomplete="one-time-code"]',
+            "#login-username",
+            'input[name="username"]',
+            'input[name="identifier"]',
+            'input[type="tel"]',
+            'input[type="email"]',
+            'input[type="text"]',
+        ]
         filled = False
-        for sel in selectors_by_stage.get(stage, []):
+        for sel in candidate_selectors:
             try:
-                loc = page.locator(sel).first
-                if loc.is_visible(timeout=800):
-                    loc.click()
-                    loc.fill(text)
-                    filled = True
+                loc = page.locator(sel)
+                count = loc.count()
+                for idx in range(count):
+                    item = loc.nth(idx)
+                    if item.is_visible(timeout=300):
+                        item.click()
+                        item.fill(text)
+                        filled = True
+                        break
+                if filled:
                     break
             except Exception:
                 continue
@@ -445,7 +482,7 @@ class RemoteLoginWorker:
         for sub_sel in submit_selectors:
             try:
                 btn = page.locator(sub_sel).first
-                if btn.is_visible(timeout=600):
+                if btn.is_visible(timeout=500):
                     btn.click()
                     submitted = True
                     break
@@ -455,7 +492,7 @@ class RemoteLoginWorker:
         if not submitted:
             page.keyboard.press("Enter")
 
-        page.wait_for_timeout(1800)
+        page.wait_for_timeout(2500)
 
     def _run(self):
         _, _, target_url = build_league_web_url(self.league_id)
