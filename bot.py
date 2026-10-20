@@ -29,11 +29,10 @@ from src.handlers.id_handler import IdHandler
 from src.handlers.super_admin_handler import SuperAdminHandler
 from src.handlers.settings_handler import SettingsHandler
 from src.handlers.set_league_id_handler import SetLeagueIdHandler
-from src.handlers.web_set_league_id_handler import WebSetLeagueIdHandler
 from src.handlers.set_nickname_handler import SetNicknameHandler
 from src.handlers.set_time_handler import SetTimeHandler
 from src.handlers.set_prize_handler import SetPrizeHandler
-from src.web_login_bridge import web_login_bp
+from src.web_login_bridge import web_login_bp, bind_web_login_to_set_league_handler
 
 # Load env
 load_dotenv()
@@ -50,7 +49,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 # 抑制 Flask/Werkzeug 的 HTTP 存取 log，只保留應用程式 log
 logging.getLogger("werkzeug").setLevel(logging.WARNING)
 
-# Initialize Dispatcher (僅保留基礎 ID 查詢、管理員與網頁版設置聯盟 ID 功能，其餘功能因 Yahoo API 政策改變不再串接)
+# Initialize Dispatcher (保留基礎 ID、管理員與完整 #設置 選單及子功能，並將 #設置聯盟ID 改為驗證網頁登入權限；其餘查詢功能因 Yahoo API 政策改變先註解停用)
 dispatcher = CommandDispatcher()
 dispatcher.register(IdHandler())
 # dispatcher.register(StatsHandler())
@@ -61,12 +60,11 @@ dispatcher.register(IdHandler())
 # dispatcher.register(FootballHandler())
 # dispatcher.register(InjuryHandler())
 dispatcher.register(SuperAdminHandler())
-# dispatcher.register(SettingsHandler())
-# dispatcher.register(SetLeagueIdHandler())
-dispatcher.register(WebSetLeagueIdHandler())
-# dispatcher.register(SetNicknameHandler())
-# dispatcher.register(SetTimeHandler())
-# dispatcher.register(SetPrizeHandler())
+dispatcher.register(SettingsHandler())
+dispatcher.register(bind_web_login_to_set_league_handler(SetLeagueIdHandler()))
+dispatcher.register(SetNicknameHandler())
+dispatcher.register(SetTimeHandler())
+dispatcher.register(SetPrizeHandler())
 
 # Initialize IntentRouter (關閉一般 LLM 對話回覆，僅處理上述已註冊之指令與其會話)
 intent_router = IntentRouter(dispatcher)

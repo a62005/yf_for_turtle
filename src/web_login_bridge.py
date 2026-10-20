@@ -1,17 +1,20 @@
 import os
-import re
 import time
 import json
 import queue
+import shutil
 import base64
 import logging
 import threading
+from unittest.mock import patch, MagicMock
+from urllib.parse import quote
 from flask import Blueprint, request, jsonify, Response
 from playwright.sync_api import sync_playwright
 from linebot.v3.messaging import Configuration, ApiClient, MessagingApi, PushMessageRequest, TextMessage
 
-from src.config import load_config
-from src.utils.path_utils import get_league_dir, parse_league_id
+from src.config import load_config, current_chat_id
+from src.fetcher import LeaguePermissionError
+from src.utils.path_utils import DATA_DIR, get_league_dir, get_league_team_mapping_path, parse_league_id
 from src.utils.security import security_manager
 
 web_login_bp = Blueprint("web_login_bp", __name__)
@@ -32,11 +35,22 @@ def build_league_web_url(league_id: str) -> tuple[str, str, str]:
     return "nba", raw_id, f"https://basketball.fantasysports.yahoo.com/nba/{raw_id}"
 
 
-def is_page_authorized_for_league(page, league_id: str) -> tuple[bool, str]:
-    """檢查當前 Playwright page 是否已登入且具備檢視指定聯盟的權限。"""
+def build_mobile_web_login_url(league_id: str, chat_id: str = None) -> str:
+    """組合供手機端開啟的遠端 Yahoo 網頁登入網址。"""
+    config = load_config()
+    server_url = os.environ.get("SERVER_URL") or config.get("SERVER_URL") or "http://localhost:5001"
+    https_url = server_url.replace("http://", "https://").rstrip("/")
+    if not https_url.startswith("https://"):
+        https_url = f"https://{https_url.lstrip('https://')}"
+    cid = chat_id or current_chat_id.get() or "default"
+    return f"{https_url}/yahoo/web-login?league_id={quote(str(league_id))}&chat_id={quote(str(cid))}"
+
+
+def extract_teams_and_check_auth(page, league_id: str) -> tuple[bool, str, dict[str, str]]:
+    """檢查當前 Playwright page 是否已登入且具備檢視指定聯盟的權限，同時擷取隊伍 ID 與名稱對照表。"""
     current_url = page.url or ""
     if "login.yahoo.com" in current_url:
-        return False, "尚在 Yahoo 登入頁面"
+        return False, "尚在 Yahoo 登入頁面", {}
 
     sport, raw_id, _ = build_league_web_url(league_id)
     sport_slug = "b1" if sport == "mlb" else "nba"
@@ -51,36 +65,71 @@ def is_page_authorized_for_league(page, league_id: str) -> tuple[bool, str]:
                     bodyText.includes('Error #152') ||
                     bodyText.includes('Please sign in')
                 ) {
-                    return { ok: false, reason: '無此聯盟檢視權限或尚未登入 (Error #152)' };
+                    return { ok: false, reason: '無此聯盟檢視權限或尚未登入 (Error #152)', teams: {} };
                 }
 
                 const teamRegex = new RegExp(`/${sportSlug}/${rawId}/(\\\\d+)$`);
-                let teamCount = 0;
+                const teams = {};
                 for (const a of Array.from(document.querySelectorAll('a[href]'))) {
                     try {
                         const u = new URL(a.href, window.location.origin);
-                        if (teamRegex.test(u.pathname) && !u.search) {
-                            teamCount++;
+                        const m = u.pathname.match(teamRegex);
+                        if (m && !u.search) {
+                            const tid = m[1];
+                            const name = a.innerText.trim();
+                            if (name && !teams[tid]) {
+                                teams[tid] = name;
+                            }
                         }
                     } catch (e) {}
                 }
-                if (teamCount >= 2) {
-                    return { ok: true, reason: `已成功讀取 ${teamCount} 支隊伍連結` };
+                const count = Object.keys(teams).length;
+                if (count >= 2) {
+                    return { ok: true, reason: `已成功讀取 ${count} 支隊伍連結`, teams };
                 }
-                return { ok: false, reason: '頁面上尚未偵測到聯盟隊伍資料' };
+                return { ok: false, reason: '頁面上尚未偵測到聯盟隊伍資料', teams: {} };
             }""",
             {"sportSlug": sport_slug, "rawId": raw_id}
         )
-        return bool(check_result.get("ok")), str(check_result.get("reason", ""))
+        return (
+            bool(check_result.get("ok")),
+            str(check_result.get("reason", "")),
+            dict(check_result.get("teams") or {})
+        )
     except Exception as e:
-        return False, f"頁面檢查異常: {e}"
+        return False, f"頁面檢查異常: {e}", {}
 
 
-def verify_league_web_access(league_id: str, headless: bool = True) -> bool:
-    """使用已保存的 yahoo_web_state.json 測試是否能成功進入聯盟頁面並看到隊伍。"""
+def is_page_authorized_for_league(page, league_id: str) -> tuple[bool, str]:
+    """檢查當前 Playwright page 是否已登入且具備檢視指定聯盟的權限。"""
+    ok, reason, _ = extract_teams_and_check_auth(page, league_id)
+    return ok, reason
+
+
+def save_discovered_team_mapping(league_id: str, teams: dict[str, str]) -> None:
+    """當從網頁擷取到官方隊伍名稱時，若 team_mapping.json 尚未建立或為空，則自動寫入以支援 #設置玩家暱稱。"""
+    if not teams:
+        return
+    mapping_path = get_league_team_mapping_path(league_id)
+    existing = {}
+    if os.path.exists(mapping_path):
+        try:
+            with open(mapping_path, "r", encoding="utf-8") as f:
+                existing = json.load(f)
+        except Exception:
+            existing = {}
+
+    if not existing:
+        os.makedirs(os.path.dirname(mapping_path), exist_ok=True)
+        with open(mapping_path, "w", encoding="utf-8") as f:
+            json.dump(teams, f, ensure_ascii=False, indent=2)
+
+
+def verify_league_web_access(league_id: str, headless: bool = True) -> tuple[bool, dict[str, str]]:
+    """使用已保存的 yahoo_web_state.json 測試是否能成功進入聯盟頁面並看到隊伍，回傳 (ok, teams_dict)。"""
     state_path = get_league_storage_state_path(league_id)
     if not os.path.exists(state_path):
-        return False
+        return False, {}
 
     _, _, target_url = build_league_web_url(league_id)
     try:
@@ -94,15 +143,111 @@ def verify_league_web_access(league_id: str, headless: bool = True) -> bool:
                 page = context.new_page()
                 page.goto(target_url, wait_until="domcontentloaded", timeout=30000)
                 page.wait_for_timeout(1500)
-                ok, _ = is_page_authorized_for_league(page, league_id)
+                ok, _, teams = extract_teams_and_check_auth(page, league_id)
                 if ok:
                     context.storage_state(path=state_path)
-                return ok
+                    save_discovered_team_mapping(league_id, teams)
+                return ok, teams
             finally:
                 browser.close()
     except Exception as e:
         logging.warning(f"[WEB_LOGIN] 驗證聯盟 {league_id} 網頁權限失敗: {e}")
-        return False
+        return False, {}
+
+
+def bind_web_login_to_set_league_handler(handler):
+    """
+    在不修改 src/handlers/set_league_id_handler.py 原始碼的前提下，
+    將 bot.py 中註冊的 SetLeagueIdHandler 實例之 API 驗證替換為「網頁登入狀態驗證」，
+    並於未登入時回覆手機端遠端網頁登入網址。
+    """
+    raw_execute = type(handler).execute.__get__(handler, type(handler))
+    real_exists = os.path.exists
+
+    def web_os_path_exists(path):
+        p_str = str(path)
+        if p_str.endswith(".yahoofantasy") or p_str.endswith("oauth2.json"):
+            return False
+        return real_exists(path)
+
+    def web_wrapped_execute(event, configuration):
+        user_id = getattr(event.source, "user_id", None)
+        discovered_teams_holder = {}
+        verified_state = {"target_id": None, "ok": False}
+
+        def web_sync_season_metadata(_fetcher, target_id):
+            verified_state["target_id"] = target_id
+            state_path = get_league_storage_state_path(target_id)
+            if user_id and not real_exists(state_path):
+                roles = security_manager._load_json(security_manager.league_roles_path, {})
+                for prev_lid, ldata in roles.items():
+                    if isinstance(ldata, dict) and ldata.get("manager") == user_id and prev_lid != target_id:
+                        prev_state = get_league_storage_state_path(prev_lid)
+                        if real_exists(prev_state):
+                            try:
+                                shutil.copy2(prev_state, state_path)
+                                break
+                            except Exception:
+                                pass
+
+            res = verify_league_web_access(target_id)
+            if isinstance(res, tuple):
+                ok, teams = res
+            else:
+                ok, teams = bool(res), {}
+            if not ok:
+                raise LeaguePermissionError(f"Web login required for {target_id}")
+            verified_state["ok"] = True
+            if teams:
+                discovered_teams_holder.update(teams)
+
+        def fake_league_factory(_ctx, _norm_id):
+            mock_league = MagicMock()
+            team_objs = []
+            for tid, tname in discovered_teams_holder.items():
+                t = MagicMock()
+                t.team_id = tid
+                t.name = tname
+                team_objs.append(t)
+            mock_league.teams.return_value = team_objs
+            return mock_league
+
+        try:
+            with patch("src.handlers.set_league_id_handler.os.path.exists", side_effect=web_os_path_exists), \
+                 patch("src.handlers.set_league_id_handler.YahooFantasyFetcher") as mock_fetcher_cls, \
+                 patch("src.handlers.set_league_id_handler.sync_season_metadata", side_effect=web_sync_season_metadata), \
+                 patch("yahoofantasy.League", side_effect=fake_league_factory):
+                mock_fetcher_cls.return_value._normalize_league_id.side_effect = lambda x: x
+                raw_execute(event, configuration)
+            if verified_state["ok"] and verified_state["target_id"]:
+                security_manager.set_league_authorized(verified_state["target_id"], True)
+        except Exception as e:
+            if isinstance(e, LeaguePermissionError) or e.__class__.__name__ == "LeaguePermissionError":
+                chat_id = current_chat_id.get() or "default"
+                bound_league_id = verified_state["target_id"]
+                if not bound_league_id:
+                    mapping_path = os.path.join(DATA_DIR, "security", "chat_league_mapping.json")
+                    if real_exists(mapping_path):
+                        try:
+                            with open(mapping_path, "r", encoding="utf-8") as f:
+                                mapping = json.load(f)
+                                bound_league_id = mapping.get(str(chat_id))
+                        except Exception:
+                            pass
+                if bound_league_id:
+                    security_manager.set_league_authorized(bound_league_id, False)
+                login_url = build_mobile_web_login_url(bound_league_id or "", chat_id)
+                msg = (
+                    "⚠️ 機器人目前尚未具備此聯盟的網頁存取權限。\n"
+                    "請點擊以下連結於手機登入 Yahoo 帳號以啟用此聯賽：\n"
+                    f"👉 {login_url}"
+                )
+                handler.reply_text(event, configuration, msg)
+            else:
+                raise
+
+    handler.execute = web_wrapped_execute
+    return handler
 
 
 class RemoteLoginWorker:
@@ -141,7 +286,7 @@ class RemoteLoginWorker:
             line_config = Configuration(access_token=token)
             with ApiClient(line_config) as api_client:
                 line_bot_api = MessagingApi(api_client)
-                msg_text = f"✅ Yahoo 帳號網頁登入成功！已啟用此聊天室對聯賽 {self.league_id} 的每日 14:00 戰績自動抓取功能。"
+                msg_text = f"✅ Yahoo 帳號網頁登入成功！已成功啟用此聊天室對聯賽 {self.league_id} 的資料存取功能。"
                 line_bot_api.push_message(
                     PushMessageRequest(
                         to=self.chat_id,
@@ -171,7 +316,6 @@ class RemoteLoginWorker:
                     page.wait_for_timeout(1000)
 
                     while not self.closed:
-                        # 逾時 10 分鐘自動關閉
                         if time.time() - self.last_active > 600:
                             self.status_msg = "登入會話逾時已關閉"
                             break
@@ -210,7 +354,6 @@ class RemoteLoginWorker:
                         except Exception as act_err:
                             logging.warning(f"[WEB_LOGIN] 執行動作 {action} 異常: {act_err}")
 
-                        # 檢查若已登入但不在聯盟頁，嘗試導向聯盟頁
                         cur_url = page.url or ""
                         if "login.yahoo.com" not in cur_url and self.league_id.split(".")[-1] not in cur_url:
                             try:
@@ -219,10 +362,11 @@ class RemoteLoginWorker:
                             except Exception:
                                 pass
 
-                        ok, reason = is_page_authorized_for_league(page, self.league_id)
+                        ok, reason, teams = extract_teams_and_check_auth(page, self.league_id)
                         self.status_msg = reason
                         if ok:
                             context.storage_state(path=state_path)
+                            save_discovered_team_mapping(self.league_id, teams)
                             security_manager.set_league_authorized(self.league_id, True)
                             self.authorized = True
                             self.closed = True

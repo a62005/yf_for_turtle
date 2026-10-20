@@ -9,7 +9,8 @@ from src.web_agent_fetcher import (
     clean_old_images,
     run_web_agent_push,
 )
-from src.handlers.web_set_league_id_handler import WebSetLeagueIdHandler
+from src.handlers.set_league_id_handler import SetLeagueIdHandler
+from src.web_login_bridge import bind_web_login_to_set_league_handler
 from src.config import current_chat_id
 
 
@@ -147,7 +148,7 @@ def test_run_web_agent_push_unauthenticated_sends_login_url_without_fake_image(
              "SERVER_URL": "https://example.ngrok.app",
              "LLM_API_KEY": "key_123"
          }), \
-         patch("src.handlers.web_set_league_id_handler.load_config", return_value={
+         patch("src.web_login_bridge.load_config", return_value={
              "SERVER_URL": "https://example.ngrok.app"
          }):
         run_web_agent_push(league_id="nba.l.49432", reply_to="C_group_49432", target_date="2026-10-20")
@@ -161,8 +162,8 @@ def test_run_web_agent_push_unauthenticated_sends_login_url_without_fake_image(
     assert "https://example.ngrok.app/yahoo/web-login?league_id=nba.l.49432&chat_id=C_group_49432" in push_req.messages[0].text
 
 
-def test_web_set_league_id_handler_provides_login_url_when_not_logged_in(tmp_path):
-    handler = WebSetLeagueIdHandler()
+def test_set_league_id_handler_with_web_login_provides_login_url_when_not_logged_in(tmp_path):
+    handler = bind_web_login_to_set_league_handler(SetLeagueIdHandler())
     handler.reply_text = MagicMock()
 
     event = MagicMock()
@@ -172,10 +173,10 @@ def test_web_set_league_id_handler_provides_login_url_when_not_logged_in(tmp_pat
 
     token = current_chat_id.set("C_group_test")
     try:
-        with patch("src.handlers.web_set_league_id_handler.DATA_DIR", str(tmp_path)), \
+        with patch("src.web_login_bridge.DATA_DIR", str(tmp_path)), \
              patch("src.utils.path_utils.DATA_DIR", str(tmp_path)), \
-             patch("src.handlers.web_set_league_id_handler.verify_league_web_access", return_value=False), \
-             patch("src.handlers.web_set_league_id_handler.load_config", return_value={"SERVER_URL": "https://my-bot.ngrok.app"}), \
+             patch("src.web_login_bridge.verify_league_web_access", return_value=(False, {})), \
+             patch("src.web_login_bridge.load_config", return_value={"SERVER_URL": "https://my-bot.ngrok.app"}), \
              patch("src.utils.security.security_manager._load_json", return_value={}), \
              patch("src.utils.security.security_manager.set_league_owner"), \
              patch("src.utils.security.security_manager.set_league_authorized"):
@@ -189,8 +190,8 @@ def test_web_set_league_id_handler_provides_login_url_when_not_logged_in(tmp_pat
         current_chat_id.reset(token)
 
 
-def test_web_set_league_id_handler_binds_immediately_when_already_logged_in(tmp_path):
-    handler = WebSetLeagueIdHandler()
+def test_set_league_id_handler_with_web_login_binds_immediately_when_already_logged_in(tmp_path):
+    handler = bind_web_login_to_set_league_handler(SetLeagueIdHandler())
     handler.reply_text = MagicMock()
 
     event = MagicMock()
@@ -200,15 +201,15 @@ def test_web_set_league_id_handler_binds_immediately_when_already_logged_in(tmp_
 
     token = current_chat_id.set("C_group_test")
     try:
-        with patch("src.handlers.web_set_league_id_handler.DATA_DIR", str(tmp_path)), \
+        with patch("src.web_login_bridge.DATA_DIR", str(tmp_path)), \
              patch("src.utils.path_utils.DATA_DIR", str(tmp_path)), \
-             patch("src.handlers.web_set_league_id_handler.verify_league_web_access", return_value=True), \
+             patch("src.web_login_bridge.verify_league_web_access", return_value=(True, {"1": "Team Alpha", "2": "Team Beta"})), \
              patch("src.utils.security.security_manager._load_json", return_value={}), \
              patch("src.utils.security.security_manager.set_league_owner"), \
              patch("src.utils.security.security_manager.set_league_authorized") as mock_auth:
             handler.execute(event, config)
 
-        mock_auth.assert_called_once_with("nba.l.49432", True)
+        mock_auth.assert_called_with("nba.l.49432", True)
         handler.reply_text.assert_called_once_with(
             event, config, "✅ 成功將此聊天室綁定至聯賽 ID：nba.l.49432"
         )

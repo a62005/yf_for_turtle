@@ -20,8 +20,8 @@ from src.visualizer.capturer import capture_html_to_png
 from src.web_login_bridge import (
     get_league_storage_state_path,
     is_page_authorized_for_league,
+    build_mobile_web_login_url,
 )
-from src.handlers.web_set_league_id_handler import build_mobile_web_login_url
 
 
 class LeagueWebAuthError(RuntimeError):
