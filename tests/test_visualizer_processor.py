@@ -150,3 +150,45 @@ def test_process_stats_mlb_pitcher_marking():
     assert avg_col.get("is_pitcher") is False
     assert era_col.get("is_pitcher") is True
     assert today_col.get("is_common") is True
+
+
+def test_process_stats_dynamic_categories_dd_and_ast_to_ratio():
+    raw_data = {
+        "team_stats": [
+            {"name": "Team A", "stats": {
+                "Today Player": 4,
+                "Game Player": "-",
+                "FGM/FGA": "40/80",
+                "FG%": 0.50,
+                "PTS": 110,
+                "DD": 2,
+                "A/T": 2.45
+            }},
+            {"name": "Team B", "stats": {
+                "Today Player": 0,
+                "Game Player": "-",
+                "FGM/FGA": "35/85",
+                "FG%": 0.41,
+                "PTS": 95,
+                "DD": 0,
+                "A/T": 1.50
+            }}
+        ]
+    }
+    processed = process_stats_for_visual(raw_data)
+    labels = [c["label"] for c in processed]
+    assert labels[0] == "Today Player"
+    assert labels[1] == "Game Player"
+    assert "DD" in labels
+    assert "A/T" in labels
+
+    dd_col = next(c for c in processed if c["label"] == "DD")
+    assert dd_col["rows"][0]["name"] == "Team A"
+    assert dd_col["rows"][0]["value"] == 2
+
+    at_col = next(c for c in processed if c["label"] == "A/T")
+    assert at_col["rows"][0]["name"] == "Team A"
+    assert at_col["rows"][0]["value"] == "2.45"
+
+    gp_col = next(c for c in processed if c["label"] == "Game Player")
+    assert gp_col["rows"][0]["value"] == "-"

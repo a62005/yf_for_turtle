@@ -136,8 +136,9 @@ class WebAgentFetcher:
             raise RuntimeError("未設定 LLM_API_KEY，無法啟動 Gemini AI Agent。")
 
         models_to_try = [self.model_name]
-        if FALLBACK_AGENT_MODEL not in models_to_try:
-            models_to_try.append(FALLBACK_AGENT_MODEL)
+        for backup in ["gemini-3.5-flash-lite", "gemini-2.5-flash-lite", "gemini-3.8-flash", FALLBACK_AGENT_MODEL]:
+            if backup not in models_to_try:
+                models_to_try.append(backup)
 
         last_err = None
         for m_name in models_to_try:
@@ -424,13 +425,19 @@ class WebAgentFetcher:
         """將擷取到的網頁表格文字交由 Gemini AI 解析為結構化當日與當週戰績 JSON。"""
         if sport == "mlb":
             categories_hint = (
-                'MLB 統計項目鍵名請使用: "H/AB", "R", "H", "HR", "RBI", "SB", "BB", "AVG", "OPS", '
-                '"IP", "W", "K", "ERA", "WHIP", "QS", "SV+H"'
+                'MLB 統計項目鍵名請提取網頁表格中出現的所有項目，如: "H/AB", "R", "H", "HR", "RBI", "SB", "BB", "AVG", "OPS", '
+                '"IP", "W", "K", "ERA", "WHIP", "QS", "SV+H" 等'
             )
         else:
             categories_hint = (
-                'NBA 統計項目鍵名請使用: "FGM/FGA", "FG%", "FTM/FTA", "FT%", "3PTM", '
-                '"PTS", "REB", "AST", "ST", "BLK", "TO" (注意 FG% 與 FT% 請輸出 0~1 的小數，例如 0.485 代表 48.5%)'
+                'NBA 統計項目鍵名請根據網頁表格中的所有欄位標題動態提取，包含常規項目與該聯賽所有自訂/擴展項目，例如: '
+                '"FGM/FGA", "FG%", "FTM/FTA", "FT%", "3PTM", "PTS", "REB", "AST", "ST", "BLK", "TO", "DD", "A/T" 等。\n'
+                '重要規則：\n'
+                '- 請務必動態萃取表格中存在的全部比分項目，包含 DD, A/T (或 AST/TO) 等自訂項目，切勿遺漏！\n'
+                '- FG% 與 FT% 請輸出 0~1 的小數（例如 0.485 代表 48.5%）。\n'
+                '- A/T (或 AST/TO) 請輸出數值比率（例如 2.45）。\n'
+                '- "Today Player"：在 daily_stats 中，請統計該隊當天出賽或有比賽安排的球員人數（整數，如 5，無比賽填 0）。\n'
+                '- "Game Player"：若網頁有本週累計/應出賽人數請填寫 "已出賽 / 應出賽"（例如 "12 / 35"），若無則填 "-"。'
             )
 
         system_instruction = f"""
@@ -442,7 +449,7 @@ class WebAgentFetcher:
 規則：
 - {categories_hint}
 - 若某隊當日沒有比賽或 Total 為 `-` / `0`，數值項目請填 `0`，命中率請填 `0.0`，投籃/打數請填 `"0/0"`。
-- 不要包含 `Today Player` 或 `GP_PLAYED` / `Game Player`。
+- 請確保各隊數據包含 "Today Player" 與 "Game Player"。
 - 嚴格輸出以下 JSON 結構：
 {{
   "daily_stats": {{
@@ -474,8 +481,8 @@ class WebAgentFetcher:
         logging.info(f"[WEB_AGENT] 正在呼叫 Gemini AI ({self.model_name}) 解析當日與當週戰績數據...")
         return self._call_gemini_json(prompt=prompt, system_instruction=system_instruction)
 
-    def _normalize_team_list(self, team_stats: list) -> list:
-        """標準化各隊名稱對應、百分比格式與欄位別名，以完全相容 process_stats_for_visual。"""
+    def _normalize_team_list(self, team_stats: list, is_daily: bool = False) -> list:
+        """標準化各隊名稱對應、百分比格式與欄位別名，保留出賽人次並完全相容 process_stats_for_visual。"""
         normalized = []
         for idx, item in enumerate(team_stats or [], 1):
             tid = str(item.get("team_id") or idx)
@@ -483,11 +490,22 @@ class WebAgentFetcher:
             name = self.team_mapping.get(tid, raw_name)
             raw_stats = dict(item.get("stats") or {})
 
-            # 移除出賽人次欄位（確保不顯示 Today Player / Game Player）
-            raw_stats.pop("Today Player", None)
-            raw_stats.pop("Game Player", None)
-            raw_stats.pop("GP_PLAYED", None)
-            raw_stats.pop("GP_TOTAL", None)
+            # 確保 Today Player 與 Game Player 欄位存在
+            if is_daily:
+                if "Today Player" not in raw_stats:
+                    raw_stats["Today Player"] = 0
+                else:
+                    try:
+                        raw_stats["Today Player"] = int(float(str(raw_stats["Today Player"]).strip()))
+                    except (ValueError, TypeError):
+                        raw_stats["Today Player"] = 0
+                if "Game Player" not in raw_stats:
+                    raw_stats["Game Player"] = "-"
+            else:
+                if "Today Player" not in raw_stats:
+                    raw_stats["Today Player"] = "-"
+                if "Game Player" not in raw_stats:
+                    raw_stats["Game Player"] = "-"
 
             if "FGM/FGA" in raw_stats and "FGM/A" not in raw_stats:
                 raw_stats["FGM/A"] = raw_stats["FGM/FGA"]
@@ -507,7 +525,12 @@ class WebAgentFetcher:
             if "STL" in raw_stats and "ST" not in raw_stats:
                 raw_stats["ST"] = raw_stats["STL"]
 
-            for pct_key in ("FG%", "FT%"):
+            if "AST/TO" in raw_stats and "A/T" not in raw_stats:
+                raw_stats["A/T"] = raw_stats["AST/TO"]
+            elif "A/TO" in raw_stats and "A/T" not in raw_stats:
+                raw_stats["A/T"] = raw_stats["A/TO"]
+
+            for pct_key in ("FG%", "FT%", "3PT%"):
                 if pct_key in raw_stats:
                     val = raw_stats[pct_key]
                     if isinstance(val, str):
@@ -551,8 +574,8 @@ class WebAgentFetcher:
         if not daily_raw and not weekly_raw:
             raise LeagueWebAuthError(f"無法從聯賽 {lid} 網頁獲取有效數據，Yahoo 網頁登入狀態可能已失效。")
 
-        daily_stats = {"team_stats": self._normalize_team_list(daily_raw)}
-        weekly_stats = {"team_stats": self._normalize_team_list(weekly_raw)}
+        daily_stats = {"league_id": lid, "team_stats": self._normalize_team_list(daily_raw, is_daily=True)}
+        weekly_stats = {"league_id": lid, "team_stats": self._normalize_team_list(weekly_raw, is_daily=False)}
         return daily_stats, weekly_stats
 
 
@@ -628,8 +651,8 @@ def run_web_agent_push(league_id: str = None, reply_to: str = None, target_date:
                 )
         return
 
-    daily_processed = process_stats_for_visual(daily_stats)
-    weekly_processed = process_stats_for_visual(weekly_stats)
+    daily_processed = process_stats_for_visual(daily_stats, league_id=lid)
+    weekly_processed = process_stats_for_visual(weekly_stats, league_id=lid)
 
     image_dir = get_league_image_dir(lid)
     os.makedirs(image_dir, exist_ok=True)

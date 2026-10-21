@@ -54,7 +54,7 @@ def test_normalize_team_list_maps_names_and_strips_participation_and_normalizes_
             }
         }
     ]
-    normalized = fetcher._normalize_team_list(raw_list)
+    normalized = fetcher._normalize_team_list(raw_list, is_daily=True)
     assert len(normalized) == 1
     team = normalized[0]
     assert team["name"] == "自訂隊名A"
@@ -64,9 +64,8 @@ def test_normalize_team_list_maps_names_and_strips_participation_and_normalizes_
     assert team["stats"]["ST"] == 8
     assert team["stats"]["FG%"] == pytest.approx(0.50)
     assert team["stats"]["FT%"] == pytest.approx(0.75)
-    assert "Today Player" not in team["stats"]
-    assert "Game Player" not in team["stats"]
-    assert "GP_PLAYED" not in team["stats"]
+    assert team["stats"]["Today Player"] == 5
+    assert team["stats"]["Game Player"] == "-"
 
 
 def test_clean_old_images_removes_only_png(tmp_path):

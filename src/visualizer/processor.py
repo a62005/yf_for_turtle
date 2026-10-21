@@ -6,7 +6,9 @@ from src.utils.path_utils import get_league_dir
 DISPLAY_ALIASES = {
     "FGM/FGA": "FG",
     "FTM/FTA": "FT",
-    "3PTM": "3PT"
+    "3PTM": "3PT",
+    "AST/TO": "A/T",
+    "A/TO": "A/T"
 }
 
 def is_mlb_pitcher_stat(stat_id: str, display_name: str) -> bool:
@@ -27,15 +29,17 @@ def is_mlb_pitcher_stat(stat_id: str, display_name: str) -> bool:
         return True
     return False
 
-def process_stats_for_visual(data: dict) -> list:
+def process_stats_for_visual(data: dict, league_id: str = None) -> list:
     team_stats = data.get("team_stats", [])
     if not team_stats:
         return []
 
     # Get active league ID to read stats configuration
-    config = load_config()
-    league_id = config.get("LEAGUE_ID", "default")
-    meta_path = os.path.join(get_league_dir(league_id), "metadata.json")
+    lid = league_id or data.get("league_id")
+    if not lid:
+        config = load_config()
+        lid = config.get("LEAGUE_ID", "default")
+    meta_path = os.path.join(get_league_dir(lid), "metadata.json")
     
     stat_categories = []
     if os.path.exists(meta_path):
@@ -49,44 +53,58 @@ def process_stats_for_visual(data: dict) -> list:
     # Build categories list dynamically
     categories = []
     
-    # Check for Game Player data
-    if any("GP_PLAYED" in t["stats"] for t in team_stats):
+    # 1. Today Player (最左側第一欄)
+    if any("Today Player" in t.get("stats", {}) for t in team_stats):
+        categories.append({
+            "label": "Today Player",
+            "data_key": "Today Player",
+            "sort_key": "Today Player",
+            "reverse": True,
+            "is_pitcher": False,
+            "is_common": True
+        })
+
+    # 2. Game Player (最左側第二欄)
+    if any("GP_PLAYED" in t.get("stats", {}) or "Game Player" in t.get("stats", {}) for t in team_stats):
         for t in team_stats:
-            played = t["stats"].get("GP_PLAYED", 0)
-            total = t["stats"].get("GP_TOTAL", 0)
-            t["stats"]["GP_SORT_KEY"] = (played * 1000) + total
-            t["stats"]["Game Player"] = f"{played} / {total}"
-        categories.append({"label": "Game Player", "data_key": "Game Player", "sort_key": "GP_SORT_KEY", "reverse": True, "is_pitcher": False, "is_common": True})
+            stats = t.setdefault("stats", {})
+            if "GP_PLAYED" in stats:
+                played = stats.get("GP_PLAYED", 0)
+                total = stats.get("GP_TOTAL", 0)
+                stats["GP_SORT_KEY"] = (played * 1000) + total
+                stats["Game Player"] = f"{played} / {total}"
+            elif "Game Player" in stats:
+                gp_val = stats.get("Game Player", "-")
+                stats["Game Player"] = gp_val
+                try:
+                    p_num = int(str(gp_val).split("/")[0].strip())
+                    stats["GP_SORT_KEY"] = p_num
+                except Exception:
+                    stats["GP_SORT_KEY"] = 0
+            else:
+                stats["Game Player"] = "-"
+                stats["GP_SORT_KEY"] = 0
+        categories.append({
+            "label": "Game Player",
+            "data_key": "Game Player",
+            "sort_key": "GP_SORT_KEY",
+            "reverse": True,
+            "is_pitcher": False,
+            "is_common": True
+        })
 
-    # Check for Today Player data
-    if any("Today Player" in t["stats"] for t in team_stats):
-        categories.append({"label": "Today Player", "data_key": "Today Player", "sort_key": "Today Player", "reverse": True, "is_pitcher": False, "is_common": True})
+    SORT_KEY_OVERRIDES = {
+        "FG": "FG%",
+        "FT": "FT%"
+    }
+    added_labels = set()
+    added_keys = set()
 
-    if not stat_categories:
-        # Fallback to standard NBA categories if no categories found in metadata
-        categories += [
-            {"label": "FG", "data_key": "FGM/FGA", "sort_key": "FG%", "reverse": True, "is_pitcher": False, "is_common": False},
-            {"label": "FG%", "data_key": "FG%", "sort_key": "FG%", "reverse": True, "is_pitcher": False, "is_common": False},
-            {"label": "FT", "data_key": "FTM/FTA", "sort_key": "FT%", "reverse": True, "is_pitcher": False, "is_common": False},
-            {"label": "FT%", "data_key": "FT%", "sort_key": "FT%", "reverse": True, "is_pitcher": False, "is_common": False},
-            {"label": "3PT", "data_key": "3PTM", "sort_key": "3PTM", "reverse": True, "is_pitcher": False, "is_common": False},
-            {"label": "PTS", "data_key": "PTS", "sort_key": "PTS", "reverse": True, "is_pitcher": False, "is_common": False},
-            {"label": "REB", "data_key": "REB", "sort_key": "REB", "reverse": True, "is_pitcher": False, "is_common": False},
-            {"label": "AST", "data_key": "AST", "sort_key": "AST", "reverse": True, "is_pitcher": False, "is_common": False},
-            {"label": "ST", "data_key": "ST", "sort_key": "ST", "reverse": True, "is_pitcher": False, "is_common": False},
-            {"label": "BLK", "data_key": "BLK", "sort_key": "BLK", "reverse": True, "is_pitcher": False, "is_common": False},
-            {"label": "TO", "data_key": "TO", "sort_key": "TO", "reverse": False, "is_pitcher": False, "is_common": False},
-        ]
-    else:
-        # Add dynamic stats categories from settings cache
-        SORT_KEY_OVERRIDES = {
-            "FG": "FG%",
-            "FT": "FT%"
-        }
+    if stat_categories:
         for cat in stat_categories:
             disp_name = cat["display_name"]
             label = DISPLAY_ALIASES.get(disp_name, disp_name)
-            reverse_val = True if cat["sort_order"] == 1 else False
+            reverse_val = True if cat.get("sort_order", 1) == 1 else False
             sort_key_name = SORT_KEY_OVERRIDES.get(label, disp_name)
             
             categories.append({
@@ -97,9 +115,94 @@ def process_stats_for_visual(data: dict) -> list:
                 "is_pitcher": is_mlb_pitcher_stat(cat.get("stat_id", ""), disp_name),
                 "is_common": False
             })
+            added_labels.add(label)
+            added_keys.add(disp_name)
+
+    # 滾動探索所有出現在 team_stats 中的自訂比分項目（如 DD, A/T 等，不侷限於 9-CAT）
+    KNOWN_ORDER = [
+        "FGM/FGA", "FG%", "FTM/FTA", "FT%", "3PTM", "3PT", "3PT%",
+        "PTS", "REB", "OREB", "DREB", "AST", "ST", "STL", "BLK", "TO",
+        "DD", "TD", "A/T", "AST/TO", "FGM", "FGA", "FTM", "FTA",
+        # MLB hitting
+        "H/AB", "R", "H", "HR", "RBI", "SB", "BB", "AVG", "OBP", "SLG", "OPS",
+        # MLB pitching
+        "IP", "W", "K", "ERA", "WHIP", "QS", "SV", "HLD", "SV+H", "SV+HLD", "L"
+    ]
+
+    all_team_keys = set()
+    for t in team_stats:
+        all_team_keys.update(t.get("stats", {}).keys())
+
+    ignored_keys = {"Today Player", "Game Player", "GP_PLAYED", "GP_TOTAL", "GP_SORT_KEY"}
+
+    if not stat_categories:
+        has_fgm = any(k in all_team_keys for k in ("FGM/FGA", "FGM/A"))
+        if has_fgm and "FG" not in added_labels:
+            fg_key = "FGM/FGA" if "FGM/FGA" in all_team_keys else "FGM/A"
+            categories.append({
+                "label": "FG", "data_key": fg_key, "sort_key": "FG%",
+                "reverse": True, "is_pitcher": False, "is_common": False
+            })
+            added_labels.add("FG")
+            added_keys.add(fg_key)
+
+        if "FG%" in all_team_keys and "FG%" not in added_labels:
+            categories.append({
+                "label": "FG%", "data_key": "FG%", "sort_key": "FG%",
+                "reverse": True, "is_pitcher": False, "is_common": False
+            })
+            added_labels.add("FG%")
+            added_keys.add("FG%")
+
+        has_ftm = any(k in all_team_keys for k in ("FTM/FTA", "FTM/A"))
+        if has_ftm and "FT" not in added_labels:
+            ft_key = "FTM/FTA" if "FTM/FTA" in all_team_keys else "FTM/A"
+            categories.append({
+                "label": "FT", "data_key": ft_key, "sort_key": "FT%",
+                "reverse": True, "is_pitcher": False, "is_common": False
+            })
+            added_labels.add("FT")
+            added_keys.add(ft_key)
+
+        if "FT%" in all_team_keys and "FT%" not in added_labels:
+            categories.append({
+                "label": "FT%", "data_key": "FT%", "sort_key": "FT%",
+                "reverse": True, "is_pitcher": False, "is_common": False
+            })
+            added_labels.add("FT%")
+            added_keys.add("FT%")
+
+    remaining_keys = [k for k in all_team_keys if k not in ignored_keys and k not in added_keys and DISPLAY_ALIASES.get(k, k) not in added_labels]
+
+    def key_sort_order(k):
+        try:
+            return (0, KNOWN_ORDER.index(k))
+        except ValueError:
+            return (1, k)
+
+    for k in sorted(remaining_keys, key=key_sort_order):
+        label = DISPLAY_ALIASES.get(k, k)
+        if label in added_labels:
+            continue
+        reverse_val = False if k.upper() in ["TO", "ERA", "WHIP", "L"] else True
+        categories.append({
+            "label": label,
+            "data_key": k,
+            "sort_key": k,
+            "reverse": reverse_val,
+            "is_pitcher": is_mlb_pitcher_stat("", k),
+            "is_common": False
+        })
+        added_labels.add(label)
+        added_keys.add(k)
 
     # Formatting heuristics helper
     def format_val(label, val):
+        if label in ["Today Player", "Game Player"]:
+            if val is None or str(val).strip() in ("", "-"):
+                return "-" if label == "Game Player" else 0
+            return val
+
         if val is None or str(val).strip() in ("", "-"):
             val = 0
             
@@ -111,7 +214,14 @@ def process_stats_for_visual(data: dict) -> list:
             except (ValueError, TypeError):
                 return "0.0%"
                 
-        # 2. Baseball rate (AVG, OBP, SLG, OPS) -> 3 decimals (strip leading zero)
+        # 2. Ratios (A/T, AST/TO) -> 2 decimals
+        if label in ["A/T", "AST/TO"]:
+            try:
+                return f"{float(val):.2f}"
+            except (ValueError, TypeError):
+                return "0.00"
+
+        # 3. Baseball rate (AVG, OBP, SLG, OPS) -> 3 decimals (strip leading zero)
         if label in ["AVG", "OBP", "SLG", "OPS"]:
             try:
                 num = float(val)
@@ -124,7 +234,7 @@ def process_stats_for_visual(data: dict) -> list:
             except (ValueError, TypeError):
                 return ".000"
                 
-        # 3. Baseball pitching (ERA, WHIP) -> 2 decimals
+        # 4. Baseball pitching (ERA, WHIP) -> 2 decimals
         if label in ["ERA", "WHIP"]:
             try:
                 num = float(val)
@@ -177,4 +287,3 @@ def process_stats_for_visual(data: dict) -> list:
         })
         
     return result
-
