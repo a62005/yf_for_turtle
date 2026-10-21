@@ -1,6 +1,13 @@
 import os
 import sys
+
+# 確保專案根目錄在 sys.path 中，避免以腳本直接執行時找不到 src 模組
+_project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
+
 import json
+import time
 import logging
 import argparse
 from playwright.sync_api import sync_playwright
@@ -649,8 +656,11 @@ def run_web_agent_push(league_id: str = None, reply_to: str = None, target_date:
 
     if target_chat and config.get("LINE_CHANNEL_ACCESS_TOKEN"):
         from linebot.v3.messaging import Configuration, ApiClient, MessagingApi, PushMessageRequest, ImageMessage
+        from src.utils.bot_utils import get_public_server_url
 
-        server_url = config.get("SERVER_URL") or "http://localhost:5001"
+        server_url = config.get("SERVER_URL")
+        if not server_url or "localhost" in server_url or "127.0.0.1" in server_url:
+            server_url = get_public_server_url()
         https_url = server_url.replace("http://", "https://")
         if not https_url.startswith("https://"):
             https_url = f"https://{https_url.lstrip('https://')}"

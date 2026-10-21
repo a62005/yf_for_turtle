@@ -1,5 +1,11 @@
 import os
 import sys
+
+# 確保專案根目錄在 sys.path 中，避免以腳本直接執行時找不到 src 模組
+_project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
+
 import json
 import time
 import logging
@@ -50,6 +56,7 @@ def trigger_daily_stats_push() -> int:
         env = os.environ.copy()
         env["LINE_REPLY_TO"] = str(chat_id)
         env["LEAGUE_ID"] = str(league_id)
+        env["PYTHONPATH"] = BASE_DIR + os.pathsep + env.get("PYTHONPATH", "")
         logging.info(f"[SCHEDULER] 觸發每日 AI Agent 戰績更新任務: chat_id={chat_id}, league_id={league_id}")
         subprocess.Popen(
             [sys.executable, agent_script, "--push", "--league-id", str(league_id), "--reply-to", str(chat_id)],
