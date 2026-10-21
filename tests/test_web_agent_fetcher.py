@@ -65,7 +65,25 @@ def test_normalize_team_list_maps_names_and_strips_participation_and_normalizes_
     assert team["stats"]["FG%"] == pytest.approx(0.50)
     assert team["stats"]["FT%"] == pytest.approx(0.75)
     assert team["stats"]["Today Player"] == 5
-    assert team["stats"]["Game Player"] == "-"
+    assert "Game Player" not in team["stats"]
+    assert "GP_PLAYED" not in team["stats"]
+
+    # 驗證 is_daily=False (當週戰績) 僅包含 Game Player，不包含 Today Player
+    weekly_raw = [
+        {
+            "team_id": "1",
+            "name": "Original A",
+            "stats": {
+                "PTS": 500,
+                "Today Player": 5,
+                "Game Player": "20 / 40"
+            }
+        }
+    ]
+    weekly_normalized = fetcher._normalize_team_list(weekly_raw, is_daily=False)
+    w_team = weekly_normalized[0]
+    assert "Today Player" not in w_team["stats"]
+    assert w_team["stats"]["Game Player"] == "20 / 40"
 
 
 def test_clean_old_images_removes_only_png(tmp_path):

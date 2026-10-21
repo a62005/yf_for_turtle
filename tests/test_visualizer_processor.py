@@ -70,6 +70,7 @@ def test_process_stats_today_player():
     assert today_column['rows'][0]['value'] == 8
     assert today_column['rows'][1]['name'] == 'Team A'
     assert today_column['rows'][1]['value'] == 5
+    assert not any(c['label'] == 'Game Player' for c in processed)
 
 def test_process_stats_game_player():
     raw_data = {
@@ -81,6 +82,7 @@ def test_process_stats_game_player():
     }
     processed = process_stats_for_visual(raw_data)
     gp_column = next(c for c in processed if c['label'] == 'Game Player')
+    assert not any(c['label'] == 'Today Player' for c in processed)
     
     # Sorting logic: (played * 1000) + total, descending
     # Team A: 10 * 1000 + 40 = 10040

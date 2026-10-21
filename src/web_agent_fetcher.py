@@ -436,8 +436,8 @@ class WebAgentFetcher:
                 '- 請務必動態萃取表格中存在的全部比分項目，包含 DD, A/T (或 AST/TO) 等自訂項目，切勿遺漏！\n'
                 '- FG% 與 FT% 請輸出 0~1 的小數（例如 0.485 代表 48.5%）。\n'
                 '- A/T (或 AST/TO) 請輸出數值比率（例如 2.45）。\n'
-                '- "Today Player"：在 daily_stats 中，請統計該隊當天出賽或有比賽安排的球員人數（整數，如 5，無比賽填 0）。\n'
-                '- "Game Player"：若網頁有本週累計/應出賽人數請填寫 "已出賽 / 應出賽"（例如 "12 / 35"），若無則填 "-"。'
+                '- "Today Player"：僅用於 daily_stats，請統計該隊當天出賽或有比賽安排的球員人數（整數，如 5，無比賽填 0）。\n'
+                '- "Game Player"：僅用於 weekly_stats，若網頁有本週累計/應出賽人數請填寫 "已出賽 / 應出賽"（例如 "12 / 35"），若無則填 "-"。'
             )
 
         system_instruction = f"""
@@ -449,7 +449,7 @@ class WebAgentFetcher:
 規則：
 - {categories_hint}
 - 若某隊當日沒有比賽或 Total 為 `-` / `0`，數值項目請填 `0`，命中率請填 `0.0`，投籃/打數請填 `"0/0"`。
-- 請確保各隊數據包含 "Today Player" 與 "Game Player"。
+- 請注意欄位劃分：`daily_stats` 僅包含 "Today Player"（不可包含 "Game Player"）；`weekly_stats` 僅包含 "Game Player"（不可包含 "Today Player"）。
 - 嚴格輸出以下 JSON 結構：
 {{
   "daily_stats": {{
@@ -490,8 +490,14 @@ class WebAgentFetcher:
             name = self.team_mapping.get(tid, raw_name)
             raw_stats = dict(item.get("stats") or {})
 
-            # 確保 Today Player 與 Game Player 欄位存在
+            # 確保 Today Player 與 Game Player 嚴格隔離：
+            # 當日戰績 (is_daily=True) 僅保留 "Today Player"，絕不包含 "Game Player"
+            # 當週戰績 (is_daily=False) 僅保留 "Game Player"，絕不包含 "Today Player"
             if is_daily:
+                raw_stats.pop("Game Player", None)
+                raw_stats.pop("GP_PLAYED", None)
+                raw_stats.pop("GP_TOTAL", None)
+                raw_stats.pop("GP_SORT_KEY", None)
                 if "Today Player" not in raw_stats:
                     raw_stats["Today Player"] = 0
                 else:
@@ -499,13 +505,12 @@ class WebAgentFetcher:
                         raw_stats["Today Player"] = int(float(str(raw_stats["Today Player"]).strip()))
                     except (ValueError, TypeError):
                         raw_stats["Today Player"] = 0
-                if "Game Player" not in raw_stats:
-                    raw_stats["Game Player"] = "-"
             else:
-                if "Today Player" not in raw_stats:
-                    raw_stats["Today Player"] = "-"
+                raw_stats.pop("Today Player", None)
                 if "Game Player" not in raw_stats:
                     raw_stats["Game Player"] = "-"
+                else:
+                    raw_stats["Game Player"] = str(raw_stats["Game Player"]).strip()
 
             if "FGM/FGA" in raw_stats and "FGM/A" not in raw_stats:
                 raw_stats["FGM/A"] = raw_stats["FGM/FGA"]
