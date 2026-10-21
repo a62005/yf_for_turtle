@@ -11,7 +11,28 @@ class CommandDispatcher:
         
     def register(self, handler: BaseHandler) -> None:
         """Register a handler to the dispatcher."""
+        handler.dispatcher = self
         self._handlers.append(handler)
+
+    def is_command_registered(self, user_text: str) -> bool:
+        """Check whether any registered handler supports the given command text."""
+        import re
+        text = user_text.strip()
+        if not text:
+            return False
+        base_cmd = text.split()[0]
+        for handler in self._handlers:
+            try:
+                if handler.can_handle(text):
+                    return True
+                if base_cmd != text and handler.can_handle(base_cmd):
+                    return True
+                pattern = getattr(handler, "pattern", None)
+                if isinstance(pattern, re.Pattern) and pattern.match(text):
+                    return True
+            except Exception:
+                continue
+        return False
         
     def handle(self, event: MessageEvent, configuration: Configuration) -> None:
         """Route the event to the appropriate handler with permission checks."""

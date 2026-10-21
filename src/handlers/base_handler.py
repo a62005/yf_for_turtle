@@ -15,6 +15,7 @@ class BaseHandler(ABC):
         self.requires_whitelist: bool = False
         self.requires_manager: bool = False
         self.exclude_from_llm: bool = False
+        self.dispatcher = None
         
         # 動態包裝子類別的 execute 方法以統一處理 LeaguePermissionError
         original_execute = self.execute

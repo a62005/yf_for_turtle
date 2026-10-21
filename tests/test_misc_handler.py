@@ -338,3 +338,55 @@ def test_execute_help_no_league_id_admin(mock_messaging_api, mock_api_client, mo
         assert len(buttons) == 1
         assert buttons[0]["action"]["label"] == "系統設置"
         assert buttons[0]["action"]["text"] == "#設置"
+
+
+@patch("src.handlers.misc_handler.security_manager")
+@patch("src.handlers.misc_handler.load_league_metadata")
+@patch("src.handlers.misc_handler.get_pacific_date")
+@patch("src.handlers.misc_handler.load_config")
+def test_execute_help_only_shows_registered_handlers(mock_load_config, mock_get_pacific, mock_load_meta, mock_sec_manager, mock_event, mock_config):
+    from src.handlers.dispatcher import CommandDispatcher
+    from src.handlers.settings_handler import SettingsHandler
+    from src.handlers.set_nickname_handler import SetNicknameHandler
+    from src.handlers.user_stats_handler import UserStatsHandler
+
+    mock_load_meta.return_value = {"end_date": "2026-04-12"}
+    mock_get_pacific.return_value = "2026-05-29"
+    mock_load_config.return_value = {"LEAGUE_ID": "nba.l.12345"}
+    mock_sec_manager.is_whitelisted.return_value = False
+    mock_event.source.user_id = "user_regular"
+    mock_event.message.text = "#幫助"
+
+    # 情境 A: 僅註冊 MiscHandler、SettingsHandler、SetNicknameHandler（未註冊 #戰績、#對戰、#玩家、#球員）
+    dispatcher = CommandDispatcher()
+    misc_handler = MiscHandler()
+    dispatcher.register(misc_handler)
+    dispatcher.register(SettingsHandler())
+    dispatcher.register(SetNicknameHandler())
+
+    with patch.object(misc_handler, "reply_flex") as mock_reply_flex:
+        misc_handler.execute(mock_event, mock_config)
+        mock_reply_flex.assert_called_once()
+        flex_dict = mock_reply_flex.call_args[0][3]
+        # 戰績板與玩家對戰卡皆因未註冊被過濾，一般用戶只會看到「聯賽資訊」1 張卡
+        assert len(flex_dict["contents"]) == 1
+        card_dump = str(flex_dict["contents"])
+        assert "#戰績" not in card_dump
+        assert "#對戰" not in card_dump
+        assert "#玩家" not in card_dump
+        assert "#球員" not in card_dump
+        assert "#獎金" in card_dump
+
+    # 情境 B: 額外註冊 UserStatsHandler (#玩家)，但仍未註冊 MatchupHandler (#對戰) 與 PlayerHandler (#球員)
+    dispatcher.register(UserStatsHandler())
+    with patch.object(misc_handler, "reply_flex") as mock_reply_flex:
+        misc_handler.execute(mock_event, mock_config)
+        mock_reply_flex.assert_called_once()
+        flex_dict = mock_reply_flex.call_args[0][3]
+        assert len(flex_dict["contents"]) == 2
+        players_card = flex_dict["contents"][0]
+        card_dump = str(players_card)
+        assert "#玩家" in card_dump
+        assert "#對戰" not in card_dump
+        assert "#球員" not in card_dump
+        assert "⚔️ 玩家數據" in card_dump

@@ -1,5 +1,6 @@
 import re
 import os
+import copy
 import logging
 import json
 from datetime import datetime
@@ -301,7 +302,8 @@ class MiscHandler(BaseHandler):
         ]
     }
 
-    def __init__(self):
+    def __init__(self, dispatcher=None):
+        self.dispatcher = dispatcher
         self.pattern = re.compile(r"^#(?:開季|選秀|獎金|幫助|幫忙|更多|[hH][eE][lL][pP])$")
 
     @property
@@ -573,6 +575,95 @@ class MiscHandler(BaseHandler):
                 )
             )
 
+    def _is_command_registered(self, cmd_text: str) -> bool:
+        dispatcher = getattr(self, "dispatcher", None)
+        if dispatcher is None:
+            return True
+        if hasattr(dispatcher, "is_command_registered"):
+            return dispatcher.is_command_registered(cmd_text)
+        return True
+
+    def _filter_help_card(self, card_data: dict, league_id: str | None) -> dict | None:
+        card = copy.deepcopy(card_data)
+        body = card.get("body", {})
+        contents = body.get("contents", [])
+        if not contents:
+            return None
+
+        new_contents = []
+        remaining_button_cmds = []
+        kept_command_notes = 0
+        had_buttons_or_cmd_notes = False
+
+        for item in contents:
+            item_type = item.get("type")
+            if item_type == "box" and "contents" in item:
+                sub_items = item.get("contents", [])
+                has_buttons = any(sub.get("type") == "button" for sub in sub_items)
+                if has_buttons:
+                    had_buttons_or_cmd_notes = True
+                    filtered_btns = []
+                    for btn in sub_items:
+                        if btn.get("type") != "button":
+                            filtered_btns.append(btn)
+                            continue
+                        cmd_text = btn.get("action", {}).get("text", "")
+                        if not league_id and cmd_text == "#設置玩家暱稱":
+                            continue
+                        if cmd_text and not self._is_command_registered(cmd_text):
+                            continue
+                        filtered_btns.append(btn)
+                        if cmd_text:
+                            remaining_button_cmds.append(cmd_text)
+                    if filtered_btns:
+                        item["contents"] = filtered_btns
+                        new_contents.append(item)
+                else:
+                    new_contents.append(item)
+            elif item_type == "text":
+                text_val = item.get("text", "")
+                if "#戰績" in text_val:
+                    had_buttons_or_cmd_notes = True
+                    if not self._is_command_registered("#戰績W3"):
+                        continue
+                    kept_command_notes += 1
+                elif "#球員" in text_val:
+                    had_buttons_or_cmd_notes = True
+                    if not self._is_command_registered("#球員 老詹"):
+                        continue
+                    kept_command_notes += 1
+                elif "選秀與開季" in text_val:
+                    had_buttons_or_cmd_notes = True
+                    if not (self._is_command_registered("#選秀") or self._is_command_registered("#開季")):
+                        continue
+                    kept_command_notes += 1
+                new_contents.append(item)
+            else:
+                new_contents.append(item)
+
+        if had_buttons_or_cmd_notes and not remaining_button_cmds and kept_command_notes == 0:
+            return None
+
+        # 動態調整「玩家與對戰」卡片標題與副標題（若部分指令未註冊）
+        for item in new_contents:
+            if item.get("type") == "box" and "contents" in item:
+                sub_items = item.get("contents", [])
+                if len(sub_items) >= 2 and sub_items[0].get("type") == "text" and "玩家與對戰" in sub_items[0].get("text", ""):
+                    has_matchup = "#對戰" in remaining_button_cmds
+                    has_user = "#玩家" in remaining_button_cmds
+                    if has_user and not has_matchup:
+                        sub_items[0]["text"] = "⚔️ 玩家數據"
+                        sub_items[1]["text"] = "查詢玩家當日與當週數據"
+                    elif has_matchup and not has_user:
+                        sub_items[0]["text"] = "⚔️ 即時對戰"
+                        sub_items[1]["text"] = "查詢本週即時比分"
+                    elif not has_matchup and not has_user:
+                        sub_items[0]["text"] = "⚔️ 球員數據"
+                        sub_items[1]["text"] = "查詢球員即時比賽表現"
+
+        body["contents"] = new_contents
+        return card
+
     def _handle_help(self, event: MessageEvent, configuration: Configuration) -> None:
         user_id = event.source.user_id if event.source and hasattr(event.source, "user_id") else None
         is_admin = security_manager.is_whitelisted(user_id)
@@ -611,21 +702,9 @@ class MiscHandler(BaseHandler):
                     raise FileNotFoundError(f"Card file not found: {file_path}")
                 with open(file_path, "r", encoding="utf-8") as f:
                     card_data = json.load(f)
-                    
-                    if not league_id and card_file == "card_4_admin.json":
-                        body = card_data.get("body", {})
-                        contents = body.get("contents", [])
-                        for container in contents:
-                            if container.get("type") == "box" and "contents" in container:
-                                btn_list = container["contents"]
-                                filtered_btns = []
-                                for btn in btn_list:
-                                    if btn.get("type") == "button" and btn.get("action", {}).get("text") == "#設置玩家暱稱":
-                                        continue
-                                    filtered_btns.append(btn)
-                                container["contents"] = filtered_btns
-                                
-                    bubbles.append(card_data)
+                filtered_card = self._filter_help_card(card_data, league_id)
+                if filtered_card is not None:
+                    bubbles.append(filtered_card)
                     
             carousel_dict = {
                 "type": "carousel",
@@ -633,23 +712,42 @@ class MiscHandler(BaseHandler):
             }
         except Exception as e:
             logging.warning(f"[MiscHandler] 載入 Flex 幫助選單失敗: {e}，改用內建預設值 Fallback。")
-            if not league_id:
-                carousel_dict = self.DEFAULT_HELP_FLEX_NO_LEAGUE
-            else:
-                carousel_dict = self.DEFAULT_HELP_FLEX
+            raw_fallback = self.DEFAULT_HELP_FLEX_NO_LEAGUE if not league_id else self.DEFAULT_HELP_FLEX
+            fallback_bubbles = []
+            for card_data in raw_fallback.get("contents", []):
+                filtered_card = self._filter_help_card(card_data, league_id)
+                if filtered_card is not None:
+                    fallback_bubbles.append(filtered_card)
+            carousel_dict = {
+                "type": "carousel",
+                "contents": fallback_bubbles
+            }
             
         try:
             self.reply_flex(event, configuration, "聯賽數據助手-幫助選單", carousel_dict)
         except Exception as e:
             logging.error(f"[MiscHandler] 發送 Flex 幫助選單失敗: {e}，改用純文字 Fallback。")
+            help_items = [
+                ("● #戰績 ：查詢當日聯賽綜合戰績", "#戰績"),
+                ("● #對戰 肥儒 ：查詢指定玩家當週即時 9-Cat 對決", "#對戰"),
+                ("● #玩家 肥儒 ：查詢指定玩家今日累積數據與排名", "#玩家"),
+                ("● #球員 老詹 ：查詢指定球員今日即時比賽表現", "#球員 老詹"),
+            ]
+            active_lines = [line for line, cmd in help_items if self._is_command_registered(cmd)]
+            if not active_lines and getattr(self, "dispatcher", None) is not None:
+                extra_items = [
+                    ("● #獎金 ：查詢聯賽獎金資訊", "#獎金"),
+                    ("● #開季 ：查詢新賽季開季倒數", "#開季"),
+                    ("● #選秀 ：查詢聯盟選秀倒數", "#選秀"),
+                    ("● #設置 ：開啟系統設置選單", "#設置"),
+                ]
+                active_lines = [line for line, cmd in extra_items if self._is_command_registered(cmd)]
+
             default_help = (
                 "👋 您好！歡迎使用聯賽數據助手。\n\n"
                 "【常用指令】\n"
-                "● #戰績 ：查詢當日聯賽綜合戰績\n"
-                "● #對戰 肥儒 ：查詢指定玩家當週即時 9-Cat 對決\n"
-                "● #玩家 肥儒 ：查詢指定玩家今日累積數據與排名\n"
-                "● #球員 老詹 ：查詢指定球員今日即時比賽表現\n\n"
-                "※ 提示：輸入「#幫助」可獲取完整的指令複製清單。"
+                + ("\n".join(active_lines) + "\n\n" if active_lines else "")
+                + "※ 提示：輸入「#幫助」可獲取完整的指令複製清單。"
             )
             # 若 data/help.txt 存在，試圖讀取
             help_txt_path = os.path.join(project_root, "data", "help.txt")
@@ -675,4 +773,3 @@ class MiscHandler(BaseHandler):
 
 
 SeasonCountdownHandler = MiscHandler
-
