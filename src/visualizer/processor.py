@@ -4,11 +4,12 @@ from src.config import load_config, current_chat_id
 from src.utils.path_utils import get_league_dir
 
 DISPLAY_ALIASES = {
-    "FGM/FGA": "FG",
-    "FTM/FTA": "FT",
+    "FGM/FGA": "FGM/A",
+    "FTM/FTA": "FTM/A",
     "3PTM": "3PT",
     "AST/TO": "A/T",
-    "A/TO": "A/T"
+    "A/TO": "A/T",
+    "STL": "ST"
 }
 
 def is_mlb_pitcher_stat(stat_id: str, display_name: str) -> bool:
@@ -94,6 +95,10 @@ def process_stats_for_visual(data: dict, league_id: str = None) -> list:
         })
 
     SORT_KEY_OVERRIDES = {
+        "FGM/A": "FG%",
+        "FGM/FGA": "FG%",
+        "FTM/A": "FT%",
+        "FTM/FTA": "FT%",
         "FG": "FG%",
         "FT": "FT%"
     }
@@ -120,9 +125,9 @@ def process_stats_for_visual(data: dict, league_id: str = None) -> list:
 
     # 滾動探索所有出現在 team_stats 中的自訂比分項目（如 DD, A/T 等，不侷限於 9-CAT）
     KNOWN_ORDER = [
-        "FGM/FGA", "FG%", "FTM/FTA", "FT%", "3PTM", "3PT", "3PT%",
+        "FGM/A", "FGM/FGA", "FG%", "FTM/A", "FTM/FTA", "FT%", "3PT", "3PTM", "3PT%",
         "PTS", "REB", "OREB", "DREB", "AST", "ST", "STL", "BLK", "TO",
-        "DD", "TD", "A/T", "AST/TO", "FGM", "FGA", "FTM", "FTA",
+        "DD", "TD", "A/T", "AST/TO", "A/TO",
         # MLB hitting
         "H/AB", "R", "H", "HR", "RBI", "SB", "BB", "AVG", "OBP", "SLG", "OPS",
         # MLB pitching
@@ -133,18 +138,22 @@ def process_stats_for_visual(data: dict, league_id: str = None) -> list:
     for t in team_stats:
         all_team_keys.update(t.get("stats", {}).keys())
 
-    ignored_keys = {"Today Player", "Game Player", "GP_PLAYED", "GP_TOTAL", "GP_SORT_KEY"}
+    ignored_keys = {
+        "Today Player", "Game Player", "GP_PLAYED", "GP_TOTAL", "GP_SORT_KEY",
+        "FG", "FT", "FGM", "FGA", "FTM", "FTA"
+    }
 
     if not stat_categories:
-        has_fgm = any(k in all_team_keys for k in ("FGM/FGA", "FGM/A"))
-        if has_fgm and "FG" not in added_labels:
-            fg_key = "FGM/FGA" if "FGM/FGA" in all_team_keys else "FGM/A"
+        # 依照原本 NBA 標準排序：FGM/A, FG%, FTM/A, FT%, 3PT, PTS, REB, AST, ST, BLK, TO
+        has_fgm = any(k in all_team_keys for k in ("FGM/A", "FGM/FGA"))
+        if has_fgm and "FGM/A" not in added_labels:
+            fg_key = "FGM/A" if "FGM/A" in all_team_keys else "FGM/FGA"
             categories.append({
-                "label": "FG", "data_key": fg_key, "sort_key": "FG%",
+                "label": "FGM/A", "data_key": fg_key, "sort_key": "FG%",
                 "reverse": True, "is_pitcher": False, "is_common": False
             })
-            added_labels.add("FG")
-            added_keys.add(fg_key)
+            added_labels.update(["FGM/A", "FG"])
+            added_keys.update(["FGM/A", "FGM/FGA", "FG"])
 
         if "FG%" in all_team_keys and "FG%" not in added_labels:
             categories.append({
@@ -154,15 +163,15 @@ def process_stats_for_visual(data: dict, league_id: str = None) -> list:
             added_labels.add("FG%")
             added_keys.add("FG%")
 
-        has_ftm = any(k in all_team_keys for k in ("FTM/FTA", "FTM/A"))
-        if has_ftm and "FT" not in added_labels:
-            ft_key = "FTM/FTA" if "FTM/FTA" in all_team_keys else "FTM/A"
+        has_ftm = any(k in all_team_keys for k in ("FTM/A", "FTM/FTA"))
+        if has_ftm and "FTM/A" not in added_labels:
+            ft_key = "FTM/A" if "FTM/A" in all_team_keys else "FTM/FTA"
             categories.append({
-                "label": "FT", "data_key": ft_key, "sort_key": "FT%",
+                "label": "FTM/A", "data_key": ft_key, "sort_key": "FT%",
                 "reverse": True, "is_pitcher": False, "is_common": False
             })
-            added_labels.add("FT")
-            added_keys.add(ft_key)
+            added_labels.update(["FTM/A", "FT"])
+            added_keys.update(["FTM/A", "FTM/FTA", "FT"])
 
         if "FT%" in all_team_keys and "FT%" not in added_labels:
             categories.append({
@@ -171,6 +180,28 @@ def process_stats_for_visual(data: dict, league_id: str = None) -> list:
             })
             added_labels.add("FT%")
             added_keys.add("FT%")
+
+        has_3pt = any(k in all_team_keys for k in ("3PT", "3PTM"))
+        if has_3pt and "3PT" not in added_labels and "3PTM" not in added_labels:
+            t3_key = "3PT" if "3PT" in all_team_keys else "3PTM"
+            categories.append({
+                "label": "3PT", "data_key": t3_key, "sort_key": t3_key,
+                "reverse": True, "is_pitcher": False, "is_common": False
+            })
+            added_labels.update(["3PT", "3PTM"])
+            added_keys.update(["3PT", "3PTM"])
+
+        for std_key, rev in [("PTS", True), ("REB", True), ("AST", True), ("ST", True), ("BLK", True), ("TO", False)]:
+            actual_key = std_key
+            if std_key == "ST" and "ST" not in all_team_keys and "STL" in all_team_keys:
+                actual_key = "STL"
+            if (std_key in all_team_keys or actual_key in all_team_keys) and std_key not in added_labels:
+                categories.append({
+                    "label": std_key, "data_key": actual_key, "sort_key": actual_key,
+                    "reverse": rev, "is_pitcher": False, "is_common": False
+                })
+                added_labels.add(std_key)
+                added_keys.update([std_key, actual_key])
 
     remaining_keys = [k for k in all_team_keys if k not in ignored_keys and k not in added_keys and DISPLAY_ALIASES.get(k, k) not in added_labels]
 

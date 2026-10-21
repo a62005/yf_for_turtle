@@ -33,7 +33,8 @@ def test_process_stats_fg_mapping_and_sorting():
         ]
     }
     processed = process_stats_for_visual(raw_data)
-    fg_column = next(c for c in processed if c['label'] == 'FG')
+    fg_column = next(c for c in processed if c['label'] == 'FGM/A')
+    assert not any(c['label'] == 'FG' for c in processed)
     # Should sort by FG% (Team B > Team A) but show FGM/FGA
     assert fg_column['rows'][0]['name'] == 'Team B'
     assert fg_column['rows'][0]['value'] == "25/50"
@@ -183,6 +184,9 @@ def test_process_stats_dynamic_categories_dd_and_ast_to_ratio():
     assert labels[1] == "Game Player"
     assert "DD" in labels
     assert "A/T" in labels
+    assert "FGM/A" in labels
+    assert "FG" not in labels
+    assert "FT" not in labels
 
     dd_col = next(c for c in processed if c["label"] == "DD")
     assert dd_col["rows"][0]["name"] == "Team A"

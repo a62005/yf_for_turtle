@@ -277,7 +277,13 @@ def test_intent_router_intercept_draft_session_success():
     
     mock_settings = {"DRAFT_DATE": "2025-01-01"}
     
-    with patch("src.config.load_config", return_value={"LEAGUE_ID": "123"}),          patch("src.handlers.intent_router.load_config", return_value={"LEAGUE_ID": "123"}),          patch("src.utils.session_manager.os.path.exists", return_value=True),          patch("src.utils.session_manager.os.makedirs") as mock_makedirs,          patch("src.utils.session_manager.open", mock_open(read_data=json.dumps(mock_settings))) as m_file,          patch.object(router.llm_agent, "parse_draft_date", return_value={"success": True, "date": "2026-10-15 20:00"}),          patch("src.utils.session_manager.reply_text") as mock_reply:
+    with patch("src.config.load_config", return_value={"LEAGUE_ID": "123"}), \
+         patch("src.handlers.intent_router.load_config", return_value={"LEAGUE_ID": "123"}), \
+         patch("src.utils.session_manager.os.path.exists", return_value=True), \
+         patch("src.utils.session_manager.os.makedirs") as mock_makedirs, \
+         patch("src.utils.session_manager.open", mock_open(read_data=json.dumps(mock_settings))) as m_file, \
+         patch("src.llm.llm_agent.LLMAgent.parse_draft_date", return_value={"success": True, "date": "2026-10-15 20:00"}), \
+         patch("src.utils.session_manager.reply_text") as mock_reply:
          
         router.route(event, config)
         
@@ -307,7 +313,10 @@ def test_intent_router_intercept_draft_session_failure():
     
     register_session(DraftTimeSession("user_test_draft_fail", duration_sec=60))
     
-    with patch("src.config.load_config", return_value={"LEAGUE_ID": "123"}),          patch("src.handlers.intent_router.load_config", return_value={"LEAGUE_ID": "123"}),          patch.object(router.llm_agent, "parse_draft_date", return_value={"success": False, "date": None}),          patch("src.utils.session_manager.reply_text") as mock_reply:
+    with patch("src.config.load_config", return_value={"LEAGUE_ID": "123"}), \
+         patch("src.handlers.intent_router.load_config", return_value={"LEAGUE_ID": "123"}), \
+         patch("src.llm.llm_agent.LLMAgent.parse_draft_date", return_value={"success": False, "date": None}), \
+         patch("src.utils.session_manager.reply_text") as mock_reply:
          
         router.route(event, config)
         
@@ -526,7 +535,13 @@ def test_intent_router_intercept_season_session_success():
     
     mock_settings = {"SEASON_START_DATE": "2025-01-01"}
     
-    with patch("src.config.load_config", return_value={"LEAGUE_ID": "123"}),          patch("src.handlers.intent_router.load_config", return_value={"LEAGUE_ID": "123"}),          patch("src.utils.session_manager.os.path.exists", return_value=True),          patch("src.utils.session_manager.os.makedirs") as mock_makedirs,          patch("src.utils.session_manager.open", mock_open(read_data=json.dumps(mock_settings))) as m_file,          patch.object(router.llm_agent, "parse_draft_date", return_value={"success": True, "date": "2026-10-22 08:00"}),          patch("src.utils.session_manager.reply_text") as mock_reply:
+    with patch("src.config.load_config", return_value={"LEAGUE_ID": "123"}), \
+         patch("src.handlers.intent_router.load_config", return_value={"LEAGUE_ID": "123"}), \
+         patch("src.utils.session_manager.os.path.exists", return_value=True), \
+         patch("src.utils.session_manager.os.makedirs") as mock_makedirs, \
+         patch("src.utils.session_manager.open", mock_open(read_data=json.dumps(mock_settings))) as m_file, \
+         patch("src.llm.llm_agent.LLMAgent.parse_draft_date", return_value={"success": True, "date": "2026-10-22 08:00"}), \
+         patch("src.utils.session_manager.reply_text") as mock_reply:
          
         router.route(event, config)
         
@@ -555,7 +570,10 @@ def test_intent_router_intercept_season_session_failure():
     
     register_session(SeasonStartTimeSession("user_test_season_fail", duration_sec=60))
     
-    with patch("src.config.load_config", return_value={"LEAGUE_ID": "123"}),          patch("src.handlers.intent_router.load_config", return_value={"LEAGUE_ID": "123"}),          patch.object(router.llm_agent, "parse_draft_date", return_value={"success": False, "date": None}),          patch("src.utils.session_manager.reply_text") as mock_reply:
+    with patch("src.config.load_config", return_value={"LEAGUE_ID": "123"}), \
+         patch("src.handlers.intent_router.load_config", return_value={"LEAGUE_ID": "123"}), \
+         patch("src.llm.llm_agent.LLMAgent.parse_draft_date", return_value={"success": False, "date": None}), \
+         patch("src.utils.session_manager.reply_text") as mock_reply:
          
         router.route(event, config)
         

@@ -27,7 +27,8 @@ def test_process_stats_for_visual_nba(mocker):
     assert len(result) > 0
     
     # Check FGM/FGA display name replaced by alias 'FG'
-    fg_cat = next(c for c in result if c["label"] == "FG")
+    fg_cat = next(c for c in result if c["label"] == "FGM/A")
+    assert not any(c["label"] == "FG" for c in result)
     assert fg_cat["rows"][0]["value"] == "45/90"
     
     # Check percentage formatted

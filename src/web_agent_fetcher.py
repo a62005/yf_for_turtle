@@ -512,6 +512,10 @@ class WebAgentFetcher:
                 else:
                     raw_stats["Game Player"] = str(raw_stats["Game Player"]).strip()
 
+            # 徹底剔除多餘的 FG, FT 鍵名，保留標準 FGM/A, FTM/A
+            raw_stats.pop("FG", None)
+            raw_stats.pop("FT", None)
+
             if "FGM/FGA" in raw_stats and "FGM/A" not in raw_stats:
                 raw_stats["FGM/A"] = raw_stats["FGM/FGA"]
             elif "FGM/A" in raw_stats and "FGM/FGA" not in raw_stats:
