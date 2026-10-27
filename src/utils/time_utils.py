@@ -45,6 +45,18 @@ def is_winter_time_pacific() -> bool:
     is_dst = now_pacific.dst().total_seconds() != 0
     return not is_dst
 
+def get_today_tw_date(current_tw_dt=None) -> str:
+    """獲取當前台北時間日期字串 YYYY-MM-DD。"""
+    if current_tw_dt is None:
+        tw_tz = pytz.timezone("Asia/Taipei")
+        current_tw_dt = datetime.now(tw_tz)
+    return current_tw_dt.strftime("%Y-%m-%d")
+
+def tw_date_to_yahoo_date(tw_date_str: str) -> str:
+    """將台灣日期字串 (YYYY-MM-DD) 轉換為對應的 Yahoo Fantasy 美西比賽日期 (減 1 天)。"""
+    dt = datetime.strptime(tw_date_str, "%Y-%m-%d")
+    return (dt - timedelta(days=1)).strftime("%Y-%m-%d")
+
 def get_stats_rule_date(current_tw_dt=None) -> str:
     """
     依戰績規則計算目標日期 YYYY-MM-DD (以台北時間 Asia/Taipei 為準)：

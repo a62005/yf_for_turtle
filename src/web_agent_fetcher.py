@@ -21,7 +21,7 @@ from src.utils.path_utils import (
     get_league_weekly_dir,
     get_league_team_mapping_path,
 )
-from src.utils.time_utils import get_pacific_date
+from src.utils.time_utils import get_pacific_date, get_today_tw_date, tw_date_to_yahoo_date
 from src.llm.gemini import GeminiProvider
 from src.visualizer.processor import process_stats_for_visual
 from src.visualizer.renderer import render_stats_html
@@ -654,7 +654,8 @@ def run_web_agent_push(league_id: str = None, reply_to: str = None, target_date:
     config = load_config()
     lid = league_id or os.getenv("LEAGUE_ID") or config.get("LEAGUE_ID")
     target_chat = reply_to or os.getenv("LINE_REPLY_TO")
-    today_str = target_date or os.getenv("TEST_DATE") or get_pacific_date()
+    tw_today_str = target_date or os.getenv("TEST_DATE") or get_today_tw_date()
+    yahoo_date_str = tw_date_to_yahoo_date(tw_today_str)
 
     if not lid:
         raise ValueError("未指定 LEAGUE_ID，無法執行 AI Agent 戰績抓取。")
@@ -676,8 +677,8 @@ def run_web_agent_push(league_id: str = None, reply_to: str = None, target_date:
     )
 
     try:
-        logging.info(f"[WEB_AGENT] 正在從網站擷取聯盟 {lid} 於 {today_str} 的當日與當週戰績 (不落盤模式)...")
-        daily_stats, weekly_stats = fetcher.fetch_daily_and_weekly_stats(lid, today_str)
+        logging.info(f"[WEB_AGENT] 正在從網站擷取聯盟 {lid} 於美西 {yahoo_date_str} (對應台灣 {tw_today_str}) 的當日與當週戰績...")
+        daily_stats, weekly_stats = fetcher.fetch_daily_and_weekly_stats(lid, yahoo_date_str)
     except LeagueWebAuthError as auth_err:
         logging.warning(f"[WEB_AGENT] 網頁未登入或登入已失效: {auth_err}")
         try:
@@ -713,15 +714,15 @@ def run_web_agent_push(league_id: str = None, reply_to: str = None, target_date:
         weekly_hitter, weekly_pitcher = _split_mlb_stats(weekly_processed)
 
         hitter_html = render_stats_html(daily_hitter, weekly_hitter)
-        hitter_path = os.path.join(image_dir, f"{today_str}_combined_hitter.png")
+        hitter_path = os.path.join(image_dir, f"{tw_today_str}_combined_hitter.png")
         capture_html_to_png(hitter_html, hitter_path)
 
         pitcher_html = render_stats_html(daily_pitcher, weekly_pitcher)
-        pitcher_path = os.path.join(image_dir, f"{today_str}_combined_pitcher.png")
+        pitcher_path = os.path.join(image_dir, f"{tw_today_str}_combined_pitcher.png")
         capture_html_to_png(pitcher_html, pitcher_path)
     else:
         combined_html = render_stats_html(daily_processed, weekly_processed)
-        combined_path = os.path.join(image_dir, f"{today_str}_combined.png")
+        combined_path = os.path.join(image_dir, f"{tw_today_str}_combined.png")
         capture_html_to_png(combined_html, combined_path)
         logging.info(f"[WEB_AGENT] 暫存戰績圖檔已生成: {combined_path}")
 
@@ -737,11 +738,11 @@ def run_web_agent_push(league_id: str = None, reply_to: str = None, target_date:
             https_url = f"https://{https_url.lstrip('https://')}"
 
         if sport == "mlb":
-            img_filenames = [f"{today_str}_combined_hitter.png", f"{today_str}_combined_pitcher.png"]
+            img_filenames = [f"{tw_today_str}_combined_hitter.png", f"{tw_today_str}_combined_pitcher.png"]
             img_urls = [f"{https_url}/images/mlb/{raw_id}/{f}" for f in img_filenames]
             messages = [ImageMessage(original_content_url=url, preview_image_url=url) for url in img_urls]
         else:
-            img_filename = f"{today_str}_combined.png"
+            img_filename = f"{tw_today_str}_combined.png"
             img_url = f"{https_url}/images/{sport}/{raw_id}/{img_filename}"
             messages = [ImageMessage(original_content_url=img_url, preview_image_url=img_url)]
 

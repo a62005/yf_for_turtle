@@ -10,7 +10,7 @@ from .base_handler import BaseHandler
 # Required project imports
 from src.config import load_config
 from src.utils.cache_utils import load_league_metadata
-from src.utils.time_utils import get_stats_rule_date
+from src.utils.time_utils import get_stats_rule_date, tw_date_to_yahoo_date
 from src.utils.path_utils import get_league_dir, get_league_image_dir, parse_league_id
 
 
@@ -101,7 +101,8 @@ class StatsHandler(BaseHandler):
                         pass
 
                 fetcher = WebAgentFetcher(team_mapping=team_mapping, league_id=league_id)
-                daily_stats, weekly_stats = fetcher.fetch_daily_and_weekly_stats(league_id, target_date)
+                yahoo_date = tw_date_to_yahoo_date(target_date)
+                daily_stats, weekly_stats = fetcher.fetch_daily_and_weekly_stats(league_id, yahoo_date)
                 daily_processed = process_stats_for_visual(daily_stats, league_id=league_id)
                 weekly_processed = process_stats_for_visual(weekly_stats, league_id=league_id)
 
