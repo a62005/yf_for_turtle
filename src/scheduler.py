@@ -43,12 +43,16 @@ def get_bound_chat_leagues() -> dict[str, str]:
     return mapping
 
 
-def trigger_daily_stats_push() -> int:
+def trigger_daily_stats_push(target_date: str = None) -> int:
     """針對所有已綁定聯盟的聊天室觸發 AI Agent 網頁擷取與戰績推播任務。回傳觸發的任務數量。"""
     bindings = get_bound_chat_leagues()
     if not bindings:
         logging.warning("[SCHEDULER] 尚未有任何聊天室綁定聯盟 ID，跳過本次定時戰績推播。")
         return 0
+
+    if not target_date:
+        now_tw = datetime.now(TAIPEI_TZ)
+        target_date = now_tw.strftime("%Y-%m-%d")
 
     agent_script = os.path.join(BASE_DIR, "src", "web_agent_fetcher.py")
     triggered = 0
@@ -57,9 +61,9 @@ def trigger_daily_stats_push() -> int:
         env["LINE_REPLY_TO"] = str(chat_id)
         env["LEAGUE_ID"] = str(league_id)
         env["PYTHONPATH"] = BASE_DIR + os.pathsep + env.get("PYTHONPATH", "")
-        logging.info(f"[SCHEDULER] 觸發每日 AI Agent 戰績更新任務: chat_id={chat_id}, league_id={league_id}")
+        logging.info(f"[SCHEDULER] 觸發每日 AI Agent 戰績更新任務 ({target_date}): chat_id={chat_id}, league_id={league_id}")
         subprocess.Popen(
-            [sys.executable, agent_script, "--push", "--league-id", str(league_id), "--reply-to", str(chat_id)],
+            [sys.executable, agent_script, "--push", "--league-id", str(league_id), "--reply-to", str(chat_id), "--date", str(target_date)],
             env=env
         )
         triggered += 1
@@ -67,8 +71,8 @@ def trigger_daily_stats_push() -> int:
     return triggered
 
 
-def _scheduler_loop(target_time: str = "14:00", poll_interval: float = 20.0, stop_event: threading.Event = None):
-    """背景常駐迴圈：每天到達指定台灣時間 (預設 14:00) 時執行一次推播任務。"""
+def _scheduler_loop(target_time: str = "13:55", poll_interval: float = 20.0, stop_event: threading.Event = None):
+    """背景常駐迴圈：每天到達指定台灣時間 (預設 13:55) 時執行一次推播任務。"""
     last_triggered_date = None
     logging.info(f"[SCHEDULER] 每日定時戰績 Agent 排程器已啟動，預定執行時間: 每日 {target_time} (Asia/Taipei)")
 
@@ -84,7 +88,7 @@ def _scheduler_loop(target_time: str = "14:00", poll_interval: float = 20.0, sto
             last_triggered_date = today_str
             try:
                 logging.info(f"[SCHEDULER] 時間到達 {today_str} {current_hm}，開始執行每日戰績抓取與推播...")
-                trigger_daily_stats_push()
+                trigger_daily_stats_push(today_str)
             except Exception as e:
                 logging.error(f"[SCHEDULER] 執行每日排程時發生錯誤: {e}")
 
@@ -96,8 +100,8 @@ def _scheduler_loop(target_time: str = "14:00", poll_interval: float = 20.0, sto
 
 
 def start_daily_scheduler(target_time: str = None) -> threading.Thread:
-    """啟動背景 Daemon 執行緒執行每日 14:00 排程，供 bot.py 串接呼叫。"""
-    schedule_time = target_time or os.getenv("DAILY_PUSH_TIME", "14:00")
+    """啟動背景 Daemon 執行緒執行每日 13:55 排程，供 bot.py 串接呼叫。"""
+    schedule_time = target_time or os.getenv("DAILY_PUSH_TIME", "13:55")
     thread = threading.Thread(
         target=_scheduler_loop,
         kwargs={"target_time": schedule_time},

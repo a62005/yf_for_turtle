@@ -595,19 +595,8 @@ def _split_mlb_stats(processed_list: list) -> tuple[list, list]:
 
 
 def clean_old_images(image_dir: str) -> None:
-    """清除目錄中所有舊的暫存戰績 PNG 圖片，保留獎金圖片 (bonus*)，確保不保留歷史戰績圖檔。"""
-    if not os.path.exists(image_dir):
-        return
-    for fname in os.listdir(image_dir):
-        low = fname.lower()
-        if low.startswith("bonus") or low.startswith("bouns"):
-            continue
-        if low.endswith(".png"):
-            fpath = os.path.join(image_dir, fname)
-            try:
-                os.remove(fpath)
-            except OSError as e:
-                logging.warning(f"Failed to remove old image {fpath}: {e}")
+    """保留本地端圖片，與原本 API 儲存行為一致，不主動刪除歷史戰績圖檔。"""
+    pass
 
 
 def run_web_agent_push(league_id: str = None, reply_to: str = None, target_date: str = None) -> None:
@@ -710,8 +699,11 @@ def run_web_agent_push(league_id: str = None, reply_to: str = None, target_date:
         with ApiClient(line_config) as api_client:
             messaging_api = MessagingApi(api_client)
             push_req = PushMessageRequest(to=target_chat, messages=messages)
-            messaging_api.push_message(push_req)
-        logging.info(f"[WEB_AGENT] 已成功向 {target_chat} 推播戰績圖片！")
+            try:
+                messaging_api.push_message(push_req)
+                logging.info(f"[WEB_AGENT] 已成功向 {target_chat} 推播戰績圖片！")
+            except Exception as e:
+                logging.warning(f"[WEB_AGENT] 向 {target_chat} 推播戰績圖片失敗 (可能達每月額度上限或網路問題): {e}")
 
 
 if __name__ == "__main__":

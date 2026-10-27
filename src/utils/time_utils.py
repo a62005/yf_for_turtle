@@ -45,6 +45,21 @@ def is_winter_time_pacific() -> bool:
     is_dst = now_pacific.dst().total_seconds() != 0
     return not is_dst
 
+def get_stats_rule_date(current_tw_dt=None) -> str:
+    """
+    依戰績規則計算目標日期 YYYY-MM-DD (以台北時間 Asia/Taipei 為準)：
+    - 14:00 之前輸入：回傳前一天 (台北日期 - 1 天)
+    - 14:00 及其之後輸入：回傳當天 (台北日期)
+    例如：10/27 10:30 -> 10/26；10/27 14:01 -> 10/27
+    """
+    if current_tw_dt is None:
+        tw_tz = pytz.timezone("Asia/Taipei")
+        current_tw_dt = datetime.now(tw_tz)
+    tw_date = current_tw_dt.date()
+    if current_tw_dt.hour < 14:
+        return (tw_date - timedelta(days=1)).strftime("%Y-%m-%d")
+    return tw_date.strftime("%Y-%m-%d")
+
 def get_target_date(is_offseason: bool = False, end_date: str = None, current_tw_dt=None) -> str:
     """
     計算美西目標日期 YYYY-MM-DD。
@@ -177,5 +192,3 @@ def check_game_day(date_str: str = None, sport: str = "nba") -> tuple[bool, str]
     if date_str is None:
         date_str = get_target_date()
     return check_game_status(sport, date_str)
-
-

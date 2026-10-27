@@ -86,7 +86,7 @@ def test_normalize_team_list_maps_names_and_strips_participation_and_normalizes_
     assert w_team["stats"]["Game Player"] == "20 / 40"
 
 
-def test_clean_old_images_removes_only_png(tmp_path):
+def test_clean_old_images_preserves_local_images(tmp_path):
     old_png = tmp_path / "2026-10-19_combined.png"
     old_png.write_bytes(b"fake_png")
     other_file = tmp_path / "keep.txt"
@@ -94,7 +94,8 @@ def test_clean_old_images_removes_only_png(tmp_path):
 
     clean_old_images(str(tmp_path))
 
-    assert not old_png.exists()
+    # 遵循與 API 模式相同之原則，保留本地端歷史圖片不予清除
+    assert old_png.exists()
     assert other_file.exists()
 
 
@@ -132,7 +133,7 @@ def test_run_web_agent_push_no_json_saved_and_pushes_image(
          }):
         run_web_agent_push(league_id="nba.l.12345", reply_to="C_group_1", target_date="2026-10-20")
 
-    assert not stale_img.exists()
+    assert stale_img.exists()
     mock_capture.assert_called_once()
     captured_path = mock_capture.call_args[0][1]
     assert captured_path.endswith("2026-10-20_combined.png")

@@ -61,3 +61,27 @@ def test_scheduler_loop_triggers_at_14_00_once_per_day(mock_trigger):
 
     # 即使在 14:00 內輪詢兩次，同一天也只會觸發一次
     mock_trigger.assert_called_once()
+
+
+@patch("src.scheduler.trigger_daily_stats_push")
+def test_scheduler_loop_triggers_at_13_55_default(mock_trigger):
+    stop_event = threading.Event()
+    fake_now = TAIPEI_TZ.localize(datetime(2026, 10, 20, 13, 55, 5))
+
+    call_count = 0
+
+    def fake_wait(timeout=None):
+        nonlocal call_count
+        call_count += 1
+        if call_count >= 2:
+            stop_event.set()
+            return True
+        return False
+
+    stop_event.wait = MagicMock(side_effect=fake_wait)
+
+    with patch("src.scheduler.datetime") as mock_dt:
+        mock_dt.now.return_value = fake_now
+        _scheduler_loop(poll_interval=0.01, stop_event=stop_event)
+
+    mock_trigger.assert_called_once()
