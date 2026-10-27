@@ -307,21 +307,65 @@ class WebAgentFetcher:
                         f"無法存取聯盟 {league_id} 網頁 ({reason})，請透過手機登入網址完成 Yahoo 帳號授權。"
                     )
 
-                # 動態從頁面識別聯賽當前週數，並依目標日期自動推算目標週數 (以美西每週一至週日為一週)
-                current_week_val = page.evaluate("""() => {
-                    const m = document.body.innerText.match(/Week\\s*(\\d+)/i);
-                    return m ? parseInt(m[1], 10) : 1;
-                }""") or 1
+                # 智慧週數定位：從 Yahoo Matchup 官方日期導覽直接判定目標日期所屬週數
+                # 徹底防禦明星賽週 (All-Star Week 跨兩週 14 天) 或長短週合併造成的日曆除法偏差
+                smart_week_info = page.evaluate("""async (baseUrl) => {
+                    let navDoc = document;
+                    try {
+                        const mResp = await fetch(`${baseUrl}/matchup`, { credentials: 'include' });
+                        if (mResp.ok) {
+                            const html = await mResp.text();
+                            const parser = new DOMParser();
+                            navDoc = parser.parseFromString(html, 'text/html');
+                        }
+                    } catch (e) {}
 
-                from src.utils.time_utils import get_pacific_datetime
-                from datetime import datetime, timedelta
-                now_pt = get_pacific_datetime()
-                curr_monday = (now_pt - timedelta(days=now_pt.weekday())).date()
-                target_dt = datetime.strptime(target_date, "%Y-%m-%d").date()
-                target_monday = target_dt - timedelta(days=target_dt.weekday())
-                week_diff = (target_monday - curr_monday).days // 7
-                target_week = max(1, current_week_val + week_diff)
-                logging.info(f"[WEB_AGENT] 聯賽當前為 Week {current_week_val}，目標日期 {target_date} 自動計算為 Week {target_week}")
+                    const text = navDoc.body.innerText;
+                    const wm = text.match(/Week\\s*(\\d+)/i);
+                    const currWeek = wm ? parseInt(wm[1], 10) : 1;
+
+                    const dates = [];
+                    for (const a of Array.from(navDoc.querySelectorAll('a[href*="date="]'))) {
+                        try {
+                            const u = new URL(a.href, window.location.origin);
+                            const d = u.searchParams.get('date');
+                            if (d && /^\\d{4}-\\d{2}-\\d{2}$/.test(d)) {
+                                dates.push(d);
+                            }
+                        } catch (e) {}
+                    }
+                    const uniqueDates = Array.from(new Set(dates)).sort();
+
+                    let prevWeek = null;
+                    let nextWeek = null;
+                    for (const a of Array.from(navDoc.querySelectorAll('a[href*="week="]'))) {
+                        try {
+                            const u = new URL(a.href, window.location.origin);
+                            const w = parseInt(u.searchParams.get('week'), 10);
+                            if (w < currWeek) prevWeek = w;
+                            if (w > currWeek && nextWeek === null) nextWeek = w;
+                        } catch (e) {}
+                    }
+                    return { currWeek, dates: uniqueDates, prevWeek, nextWeek };
+                }""", base_url)
+
+                curr_week_val = smart_week_info.get("currWeek") or 1
+                week_dates = smart_week_info.get("dates") or []
+                prev_week_val = smart_week_info.get("prevWeek") or max(1, curr_week_val - 1)
+                next_week_val = smart_week_info.get("nextWeek") or (curr_week_val + 1)
+
+                if week_dates and target_date in week_dates:
+                    target_week = curr_week_val
+                    logging.info(f"[WEB_AGENT] 目標日期 {target_date} 命中當前 Matchup 日期列表，判定為 Week {target_week}")
+                elif week_dates and target_date < week_dates[0]:
+                    target_week = prev_week_val
+                    logging.info(f"[WEB_AGENT] 目標日期 {target_date} 早於當前週起始 ({week_dates[0]})，依 Yahoo 導航判定為上一週 Week {target_week}")
+                elif week_dates and target_date > week_dates[-1]:
+                    target_week = next_week_val
+                    logging.info(f"[WEB_AGENT] 目標日期 {target_date} 晚於當前週結束 ({week_dates[-1]})，依 Yahoo 導航判定為下一週 Week {target_week}")
+                else:
+                    target_week = curr_week_val
+                    logging.info(f"[WEB_AGENT] 目標日期 {target_date} 預設對齊當前聯賽週數 Week {target_week}")
 
                 scraped = page.evaluate(
                     """async ({ baseUrl, sportSlug, rawId, targetDate, targetWeek }) => {
