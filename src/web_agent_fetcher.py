@@ -307,8 +307,24 @@ class WebAgentFetcher:
                         f"無法存取聯盟 {league_id} 網頁 ({reason})，請透過手機登入網址完成 Yahoo 帳號授權。"
                     )
 
+                # 動態從頁面識別聯賽當前週數，並依目標日期自動推算目標週數 (以美西每週一至週日為一週)
+                current_week_val = page.evaluate("""() => {
+                    const m = document.body.innerText.match(/Week\\s*(\\d+)/i);
+                    return m ? parseInt(m[1], 10) : 1;
+                }""") or 1
+
+                from src.utils.time_utils import get_pacific_datetime
+                from datetime import datetime, timedelta
+                now_pt = get_pacific_datetime()
+                curr_monday = (now_pt - timedelta(days=now_pt.weekday())).date()
+                target_dt = datetime.strptime(target_date, "%Y-%m-%d").date()
+                target_monday = target_dt - timedelta(days=target_dt.weekday())
+                week_diff = (target_monday - curr_monday).days // 7
+                target_week = max(1, current_week_val + week_diff)
+                logging.info(f"[WEB_AGENT] 聯賽當前為 Week {current_week_val}，目標日期 {target_date} 自動計算為 Week {target_week}")
+
                 scraped = page.evaluate(
-                    """async ({ baseUrl, sportSlug, rawId, targetDate }) => {
+                    """async ({ baseUrl, sportSlug, rawId, targetDate, targetWeek }) => {
                         const extractTablesText = (rootDoc) => {
                             const tables = Array.from(rootDoc.querySelectorAll('table'));
                             return tables.map(t => {
@@ -337,7 +353,7 @@ class WebAgentFetcher:
                             } catch (e) {}
                         }
 
-                        // 2. 探索本週所有 Matchup 連結
+                        // 2. 探索目標週數的所有 Matchup 連結 (動態鎖定 targetWeek)
                         const matchupUrls = new Set();
                         for (const a of Array.from(document.querySelectorAll('a[href*="matchup"]'))) {
                             try {
@@ -345,7 +361,7 @@ class WebAgentFetcher:
                                 if (u.pathname.includes(`/${sportSlug}/${rawId}/matchup`) && u.searchParams.has('mid1') && u.searchParams.has('mid2')) {
                                     const m1 = Number(u.searchParams.get('mid1'));
                                     const m2 = Number(u.searchParams.get('mid2'));
-                                    matchupUrls.add(`${baseUrl}/matchup?mid1=${Math.min(m1, m2)}&mid2=${Math.max(m1, m2)}`);
+                                    matchupUrls.add(`${baseUrl}/matchup?week=${targetWeek}&mid1=${Math.min(m1, m2)}&mid2=${Math.max(m1, m2)}`);
                                 }
                             } catch (e) {}
                         }
@@ -355,7 +371,7 @@ class WebAgentFetcher:
                             const tids = Array.from(teamMap.keys()).sort((a, b) => Number(a) - Number(b));
                             for (let i = 0; i < tids.length; i += 2) {
                                 if (i + 1 < tids.length) {
-                                    matchupList.push(`${baseUrl}/matchup?mid1=${tids[i]}&mid2=${tids[i+1]}`);
+                                    matchupList.push(`${baseUrl}/matchup?week=${targetWeek}&mid1=${tids[i]}&mid2=${tids[i+1]}`);
                                 }
                             }
                         }
@@ -401,7 +417,8 @@ class WebAgentFetcher:
                         "baseUrl": base_url,
                         "sportSlug": sport_slug,
                         "rawId": raw_id,
-                        "targetDate": target_date
+                        "targetDate": target_date,
+                        "targetWeek": target_week
                     }
                 )
 
