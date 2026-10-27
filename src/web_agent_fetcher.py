@@ -17,6 +17,8 @@ from src.utils.path_utils import (
     DATA_DIR,
     parse_league_id,
     get_league_image_dir,
+    get_league_daily_dir,
+    get_league_weekly_dir,
     get_league_team_mapping_path,
 )
 from src.utils.time_utils import get_pacific_date
@@ -376,8 +378,6 @@ class WebAgentFetcher:
                             }
                         };
 
-                        const weeklyResults = await Promise.all(matchupList.map(u => fetchDocTables(u)));
-
                         const teamEntries = Array.from(teamMap.entries());
                         const dailyResults = await Promise.all(teamEntries.map(async ([tid, tname]) => {
                             const dailyUrl = `${baseUrl}/${tid}?date=${targetDate}`;
@@ -393,7 +393,7 @@ class WebAgentFetcher:
                         return {
                             discovered_teams: teamEntries.map(([team_id, name]) => ({ team_id, name })),
                             home_tables: extractTablesText(document),
-                            weekly_pages: weeklyResults,
+                            matchup_urls: matchupList,
                             daily_pages: dailyResults
                         };
                     }""",
@@ -407,6 +407,35 @@ class WebAgentFetcher:
 
                 if not scraped.get("discovered_teams"):
                     raise LeagueWebAuthError(f"聯盟 {league_id} 頁面未找到任何隊伍資料，可能尚未登入或無檢視權限。")
+
+                weekly_pages = []
+                for m_url in scraped.get("matchup_urls", []):
+                    try:
+                        page.goto(m_url, wait_until="domcontentloaded", timeout=20000)
+                        page.wait_for_timeout(1000)
+                        m_data = page.evaluate("""() => {
+                            const extractTablesText = (rootDoc) => {
+                                const tables = Array.from(rootDoc.querySelectorAll('table'));
+                                return tables.map(t => {
+                                    const rows = Array.from(t.querySelectorAll('tr'));
+                                    return rows.map(r => {
+                                        const cells = Array.from(r.querySelectorAll('th, td'));
+                                        return cells.map(c => c.innerText.replace(/\\s+/g, ' ').trim()).join(' | ');
+                                    }).filter(Boolean).join('\\n');
+                                }).filter(Boolean);
+                            };
+                            const gpMatch = document.body.innerText.match(/(\\d+\\/\\d+)\\s*Games Played\\s*(\\d+\\/\\d+)/i);
+                            return {
+                                url: window.location.href,
+                                title: document.title,
+                                tables: extractTablesText(document),
+                                games_played_banner: gpMatch ? gpMatch[0] : ''
+                            };
+                        }""")
+                        weekly_pages.append(m_data)
+                    except Exception as me:
+                        logging.warning(f"[WEB_AGENT] 載入對戰頁面 {m_url} 失敗: {me}")
+                scraped["weekly_pages"] = weekly_pages
 
                 return scraped
             finally:
@@ -437,7 +466,7 @@ class WebAgentFetcher:
                 '- FG% 與 FT% 請輸出 0~1 的小數（例如 0.485 代表 48.5%）。\n'
                 '- A/T (或 AST/TO) 請輸出數值比率（例如 2.45）。\n'
                 '- "Today Player"：僅用於 daily_stats，請統計該隊當天出賽或有比賽安排的球員人數（整數，如 5，無比賽填 0）。\n'
-                '- "Game Player"：僅用於 weekly_stats，若網頁有本週累計/應出賽人數請填寫 "已出賽 / 應出賽"（例如 "12 / 35"），若無則填 "-"。'
+                '- "Game Player"：僅用於 weekly_stats，請提取對戰中的出賽人次（例如 "8/40" 或 "9/34"）。若網頁內容提供 games_played_banner 如 "8/40 Games Played 7/34"，左側隊伍填 "8/40"，右側隊伍填 "7/34"；若無則填 "-"。'
             )
 
         system_instruction = f"""
@@ -578,13 +607,34 @@ class WebAgentFetcher:
         scraped_data = self._scrape_league_pages(lid, date_str)
         parsed = self._parse_with_gemini(scraped_data, sport, date_str)
 
+        if isinstance(parsed, list):
+            merged = {}
+            for item in parsed:
+                if isinstance(item, dict):
+                    merged.update(item)
+            parsed = merged
+
         daily_raw = (parsed.get("daily_stats") or {}).get("team_stats", [])
         weekly_raw = (parsed.get("weekly_stats") or {}).get("team_stats", [])
         if not daily_raw and not weekly_raw:
             raise LeagueWebAuthError(f"無法從聯賽 {lid} 網頁獲取有效數據，Yahoo 網頁登入狀態可能已失效。")
 
-        daily_stats = {"league_id": lid, "team_stats": self._normalize_team_list(daily_raw, is_daily=True)}
-        weekly_stats = {"league_id": lid, "team_stats": self._normalize_team_list(weekly_raw, is_daily=False)}
+        daily_stats = {"league_id": lid, "date": date_str, "team_stats": self._normalize_team_list(daily_raw, is_daily=True)}
+        weekly_stats = {"league_id": lid, "date": date_str, "team_stats": self._normalize_team_list(weekly_raw, is_daily=False)}
+
+        try:
+            daily_dir = get_league_daily_dir(lid)
+            weekly_dir = get_league_weekly_dir(lid)
+            os.makedirs(daily_dir, exist_ok=True)
+            os.makedirs(weekly_dir, exist_ok=True)
+            with open(os.path.join(daily_dir, f"date_{date_str}.json"), "w", encoding="utf-8") as f:
+                json.dump(daily_stats, f, ensure_ascii=False, indent=2)
+            with open(os.path.join(weekly_dir, f"date_{date_str}_weekly.json"), "w", encoding="utf-8") as f:
+                json.dump(weekly_stats, f, ensure_ascii=False, indent=2)
+            logging.info(f"[WEB_AGENT] 已成功儲存數據表 JSON 快取 ({lid}, 日期: {date_str})")
+        except Exception as e:
+            logging.warning(f"[WEB_AGENT] 儲存數據表 JSON 快取失敗: {e}")
+
         return daily_stats, weekly_stats
 
 
