@@ -369,20 +369,32 @@ class WebAgentFetcher:
 
                 scraped = page.evaluate(
                     """async ({ baseUrl, sportSlug, rawId, targetDate, targetWeek }) => {
+                        const teamRegex = new RegExp(`/${sportSlug}/${rawId}/(\\\\d+)$`);
                         const extractTablesText = (rootDoc) => {
                             const tables = Array.from(rootDoc.querySelectorAll('table'));
                             return tables.map(t => {
                                 const rows = Array.from(t.querySelectorAll('tr'));
                                 return rows.map(r => {
                                     const cells = Array.from(r.querySelectorAll('th, td'));
-                                    return cells.map(c => c.innerText.replace(/\\s+/g, ' ').trim()).join(' | ');
+                                    return cells.map(c => {
+                                        const link = c.querySelector('a[href]');
+                                        if (link) {
+                                            try {
+                                                const u = new URL(link.href, window.location.origin);
+                                                const m = u.pathname.match(teamRegex);
+                                                if (m) {
+                                                    return `${c.innerText.trim()} (team_id: ${m[1]})`;
+                                                }
+                                            } catch (e) {}
+                                        }
+                                        return c.innerText.replace(/\\s+/g, ' ').trim();
+                                    }).join(' | ');
                                 }).filter(Boolean).join('\\n');
                             }).filter(Boolean);
                         };
 
                         // 1. 探索聯盟中所有真實隊伍 (team_id 與名稱)
                         const teamMap = new Map();
-                        const teamRegex = new RegExp(`/${sportSlug}/${rawId}/(\\\\d+)$`);
                         for (const a of Array.from(document.querySelectorAll('a[href]'))) {
                             try {
                                 const u = new URL(a.href, window.location.origin);
@@ -390,8 +402,10 @@ class WebAgentFetcher:
                                 if (m && !u.search) {
                                     const tid = m[1];
                                     const name = a.innerText.trim();
-                                    if (name && !teamMap.has(tid)) {
-                                        teamMap.set(tid, name);
+                                    if (name && name.toLowerCase() !== 'my team') {
+                                        if (!teamMap.has(tid) || teamMap.get(tid).toLowerCase() === 'my team') {
+                                            teamMap.set(tid, name);
+                                        }
                                     }
                                 }
                             } catch (e) {}
@@ -474,14 +488,27 @@ class WebAgentFetcher:
                     try:
                         page.goto(m_url, wait_until="domcontentloaded", timeout=20000)
                         page.wait_for_timeout(1000)
-                        m_data = page.evaluate("""() => {
+                        m_data = page.evaluate("""({sportSlug, rawId}) => {
+                            const teamRegex = new RegExp(`/${sportSlug}/${rawId}/(\\\\d+)$`);
                             const extractTablesText = (rootDoc) => {
                                 const tables = Array.from(rootDoc.querySelectorAll('table'));
                                 return tables.map(t => {
                                     const rows = Array.from(t.querySelectorAll('tr'));
                                     return rows.map(r => {
                                         const cells = Array.from(r.querySelectorAll('th, td'));
-                                        return cells.map(c => c.innerText.replace(/\\s+/g, ' ').trim()).join(' | ');
+                                        return cells.map(c => {
+                                            const link = c.querySelector('a[href]');
+                                            if (link) {
+                                                try {
+                                                    const u = new URL(link.href, window.location.origin);
+                                                    const m = u.pathname.match(teamRegex);
+                                                    if (m) {
+                                                        return `${c.innerText.trim()} (team_id: ${m[1]})`;
+                                                    }
+                                                } catch (e) {}
+                                            }
+                                            return c.innerText.replace(/\\s+/g, ' ').trim();
+                                        }).join(' | ');
                                     }).filter(Boolean).join('\\n');
                                 }).filter(Boolean);
                             };
@@ -492,7 +519,7 @@ class WebAgentFetcher:
                                 tables: extractTablesText(document),
                                 games_played_banner: gpMatch ? gpMatch[0] : ''
                             };
-                        }""")
+                        }""", {"sportSlug": sport_slug, "rawId": raw_id})
                         weekly_pages.append(m_data)
                     except Exception as me:
                         logging.warning(f"[WEB_AGENT] 載入對戰頁面 {m_url} 失敗: {me}")
@@ -538,6 +565,7 @@ class WebAgentFetcher:
 
 規則：
 - {categories_hint}
+- 【極重要】網頁對戰表 (Matchup) 與表格各行隊名皆已明確註明 "(team_id: X)"。在解析 `weekly_stats` 時，每一隊的數據必須嚴格對應其該行所標註的 `team_id`，絕不可將對戰雙方的數據反過來填寫！
 - 若某隊當日沒有比賽或 Total 為 `-` / `0`，數值項目請填 `0`，命中率請填 `0.0`，投籃/打數請填 `"0/0"`。
 - 請注意欄位劃分：`daily_stats` 僅包含 "Today Player"（不可包含 "Game Player"）；`weekly_stats` 僅包含 "Game Player"（不可包含 "Today Player"）。
 - 嚴格輸出以下 JSON 結構：
@@ -562,8 +590,10 @@ class WebAgentFetcher:
   }}
 }}
 """
+        discovered = scraped_data.get("discovered_teams", [])
         prompt = (
             f"目標日期: {target_date}\n"
+            f"聯盟隊伍清單 (包含真實隊名與 team_id): {json.dumps(discovered, ensure_ascii=False)}\n"
             f"已知隊伍對應表 (team_mapping): {json.dumps(self.team_mapping, ensure_ascii=False)}\n"
             f"網頁擷取內容:\n{json.dumps(scraped_data, ensure_ascii=False)}"
         )
