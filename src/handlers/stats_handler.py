@@ -135,7 +135,8 @@ class StatsHandler(BaseHandler):
             else:
                 img_urls = [f"{https_url}/images/{sport}/{raw_id}/{img_filename}"]
 
-            messages = [ImageMessage(original_content_url=url, preview_image_url=url) for url in img_urls]
+            date_msg = TextMessage(text=f"戰績數據日期：{target_date}")
+            messages = [date_msg] + [ImageMessage(original_content_url=url, preview_image_url=url) for url in img_urls]
             with ApiClient(configuration) as api_client:
                 MessagingApi(api_client).reply_message(
                     ReplyMessageRequest(reply_token=event.reply_token, messages=messages)

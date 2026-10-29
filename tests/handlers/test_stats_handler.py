@@ -80,9 +80,11 @@ def test_stats_handler_nba_image_hit(mock_exists, mock_messaging_api, mock_api_c
     assert call_args is not None
     reply_request = call_args[0][0]
     messages = reply_request.messages
-    assert len(messages) == 1
-    assert isinstance(messages[0], ImageMessage)
-    assert "2026-10-26_combined.png" in messages[0].original_content_url
+    assert len(messages) == 2
+    assert isinstance(messages[0], TextMessage)
+    assert messages[0].text == "戰績數據日期：2026-10-26"
+    assert isinstance(messages[1], ImageMessage)
+    assert "2026-10-26_combined.png" in messages[1].original_content_url
 
 
 @patch("src.handlers.stats_handler.load_config")
@@ -115,6 +117,8 @@ def test_stats_handler_mlb_image_hit(mock_exists, mock_messaging_api, mock_api_c
     assert call_args is not None
     reply_request = call_args[0][0]
     messages = reply_request.messages
-    assert len(messages) == 2
-    assert "2026-10-26_combined_hitter.png" in messages[0].original_content_url
-    assert "2026-10-26_combined_pitcher.png" in messages[1].original_content_url
+    assert len(messages) == 3
+    assert isinstance(messages[0], TextMessage)
+    assert messages[0].text == "戰績數據日期：2026-10-26"
+    assert "2026-10-26_combined_hitter.png" in messages[1].original_content_url
+    assert "2026-10-26_combined_pitcher.png" in messages[2].original_content_url
