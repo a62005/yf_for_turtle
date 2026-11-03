@@ -131,7 +131,7 @@ def test_run_web_agent_push_no_json_saved_and_pushes_image(
              "LLM_API_KEY": "key_123",
              "LLM_MODEL": "gemini-2.5-flash"
          }):
-        run_web_agent_push(league_id="nba.l.12345", reply_to="C_group_1", target_date="2026-10-20")
+        run_web_agent_push(league_id="nba.l.12345", reply_to="C_group_1", target_date="2026-10-20", send_push=True)
 
     assert stale_img.exists()
     mock_capture.assert_called_once()
@@ -144,6 +144,40 @@ def test_run_web_agent_push_no_json_saved_and_pushes_image(
     push_req = mock_messaging_api.return_value.push_message.call_args[0][0]
     assert push_req.to == "C_group_1"
     assert push_req.messages[0].original_content_url == "https://example.ngrok.app/images/nba/12345/2026-10-20_combined.png"
+
+
+@patch("src.web_agent_fetcher.capture_html_to_png")
+@patch("src.web_agent_fetcher.WebAgentFetcher.fetch_daily_and_weekly_stats")
+@patch("linebot.v3.messaging.ApiClient")
+@patch("linebot.v3.messaging.MessagingApi")
+def test_run_web_agent_fetch_only_does_not_push_message(
+    mock_messaging_api,
+    mock_api_client,
+    mock_fetch,
+    mock_capture,
+    tmp_path
+):
+    mock_fetch.return_value = (
+        {"team_stats": [{"team_id": "1", "name": "Team 1", "stats": {"PTS": 100}}]},
+        {"team_stats": [{"team_id": "1", "name": "Team 1", "stats": {"PTS": 500}}]}
+    )
+    img_dir = tmp_path / "league" / "nba" / "12345" / "image"
+    img_dir.mkdir(parents=True)
+
+    with patch("src.utils.path_utils.DATA_DIR", str(tmp_path)), \
+         patch("src.web_agent_fetcher.load_config", return_value={
+             "LEAGUE_ID": "nba.l.12345",
+             "LINE_CHANNEL_ACCESS_TOKEN": "token_123",
+             "SERVER_URL": "https://example.ngrok.app",
+             "LLM_API_KEY": "key_123",
+             "LLM_MODEL": "gemini-2.5-flash"
+         }):
+        # 預設 send_push=False
+        run_web_agent_push(league_id="nba.l.12345", reply_to="C_group_1", target_date="2026-10-20")
+
+    mock_capture.assert_called_once()
+    # 驗證關閉主動推播：不呼叫 push_message
+    mock_messaging_api.return_value.push_message.assert_not_called()
 
 
 @patch("src.web_agent_fetcher.capture_html_to_png")

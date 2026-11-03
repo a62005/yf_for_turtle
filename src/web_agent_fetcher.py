@@ -740,8 +740,8 @@ def clean_old_images(image_dir: str) -> None:
     pass
 
 
-def run_web_agent_push(league_id: str = None, reply_to: str = None, target_date: str = None) -> None:
-    """執行 AI Agent 網頁戰績抓取、渲染成原格式圖片並推播至 LINE（若未登入則推播手機登入網址）。"""
+def run_web_agent_push(league_id: str = None, reply_to: str = None, target_date: str = None, send_push: bool = False) -> None:
+    """執行 AI Agent 網頁戰績抓取、渲染並儲存圖檔。預設 send_push=False 不主動發送 LINE 圖片，僅在用戶輸入 #戰績 時回傳。"""
     config = load_config()
     lid = league_id or os.getenv("LEAGUE_ID") or config.get("LEAGUE_ID")
     target_chat = reply_to or os.getenv("LINE_REPLY_TO")
@@ -817,7 +817,9 @@ def run_web_agent_push(league_id: str = None, reply_to: str = None, target_date:
         capture_html_to_png(combined_html, combined_path)
         logging.info(f"[WEB_AGENT] 暫存戰績圖檔已生成: {combined_path}")
 
-    if target_chat and config.get("LINE_CHANNEL_ACCESS_TOKEN"):
+    # 依使用者需求：關閉主動推播，僅快取圖檔供 #戰績 查詢回傳
+    auto_push_enabled = send_push or (str(os.getenv("ENABLE_AUTO_PUSH", "")).lower() in ("true", "1", "yes"))
+    if auto_push_enabled and target_chat and config.get("LINE_CHANNEL_ACCESS_TOKEN"):
         from linebot.v3.messaging import Configuration, ApiClient, MessagingApi, PushMessageRequest, ImageMessage
         from src.utils.bot_utils import get_public_server_url
 
@@ -856,7 +858,8 @@ if __name__ == "__main__":
     )
     parser = argparse.ArgumentParser(description="Yahoo Fantasy Web AI Agent 工具")
     parser.add_argument("--login", action="store_true", help="開啟本地瀏覽器視窗以登入 Yahoo Fantasy 並保存狀態")
-    parser.add_argument("--push", action="store_true", help="執行 AI Agent 抓取並推播戰績圖片至 LINE")
+    parser.add_argument("--push", action="store_true", help="執行 AI Agent 抓取並主動推播戰績圖片至 LINE (預設關閉)")
+    parser.add_argument("--fetch-only", action="store_true", help="僅執行 AI Agent 抓取與生成圖檔快取，不推播至 LINE")
     parser.add_argument("--league-id", type=str, default=None, help="指定聯盟 ID (如 nba.l.49432)")
     parser.add_argument("--reply-to", type=str, default=None, help="指定推播目標 LINE Chat ID")
     parser.add_argument("--date", type=str, default=None, help="指定日期 (YYYY-MM-DD)")
@@ -864,8 +867,8 @@ if __name__ == "__main__":
 
     if args.login:
         login_interactively(args.league_id)
-    elif args.push:
-        run_web_agent_push(league_id=args.league_id, reply_to=args.reply_to, target_date=args.date)
+    elif args.push or args.fetch_only:
+        run_web_agent_push(league_id=args.league_id, reply_to=args.reply_to, target_date=args.date, send_push=args.push)
     else:
         fetcher = WebAgentFetcher(league_id=args.league_id)
         d_stats, w_stats = fetcher.fetch_daily_and_weekly_stats(args.league_id, args.date)

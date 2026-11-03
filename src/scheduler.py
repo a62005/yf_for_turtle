@@ -61,9 +61,9 @@ def trigger_daily_stats_push(target_date: str = None) -> int:
         env["LINE_REPLY_TO"] = str(chat_id)
         env["LEAGUE_ID"] = str(league_id)
         env["PYTHONPATH"] = BASE_DIR + os.pathsep + env.get("PYTHONPATH", "")
-        logging.info(f"[SCHEDULER] 觸發每日 AI Agent 戰績更新任務 ({target_date}): chat_id={chat_id}, league_id={league_id}")
+        logging.info(f"[SCHEDULER] 觸發每日 AI Agent 戰績快取更新任務 ({target_date}): chat_id={chat_id}, league_id={league_id}")
         subprocess.Popen(
-            [sys.executable, agent_script, "--push", "--league-id", str(league_id), "--reply-to", str(chat_id), "--date", str(target_date)],
+            [sys.executable, agent_script, "--fetch-only", "--league-id", str(league_id), "--reply-to", str(chat_id), "--date", str(target_date)],
             env=env
         )
         triggered += 1

@@ -33,7 +33,7 @@ def test_trigger_daily_stats_push_spawns_agent(mock_popen, tmp_path):
         assert count == 1
         mock_popen.assert_called_once()
         cmd = mock_popen.call_args[0][0]
-        assert "--push" in cmd
+        assert "--fetch-only" in cmd
         assert "nba.l.49432" in cmd
         assert "C_group_1" in cmd
 
