@@ -512,12 +512,39 @@ class WebAgentFetcher:
                                     }).filter(Boolean).join('\\n');
                                 }).filter(Boolean);
                             };
-                            const gpMatch = document.body.innerText.match(/(\\d+\\/\\d+)\\s*Games Played\\s*(\\d+\\/\\d+)/i);
+                            // 增強匹配：支援跨行空格、大小寫、以及可能的標點
+                            const gpMatch = document.body.innerText.match(/(\\d+\\/\\d+)[\\s\\S]{0,35}Games Played[\\s\\S]{0,35}(\\d+\\/\\d+)/i);
+                            
+                            // 精確提取對戰雙方各自的 team_id 與對應出賽人次 (games_played_map)
+                            const gpMap = {};
+                            try {
+                                const allLinks = Array.from(document.querySelectorAll('a[href]'));
+                                const matchedTeamLinks = [];
+                                for (const a of allLinks) {
+                                    try {
+                                        const u = new URL(a.href, window.location.origin);
+                                        const m = u.pathname.match(teamRegex);
+                                        if (m && !u.search) {
+                                            const tid = m[1];
+                                            if (!matchedTeamLinks.some(x => x.tid === tid)) {
+                                                matchedTeamLinks.push({ tid, element: a });
+                                            }
+                                        }
+                                    } catch (e) {}
+                                }
+                                if (gpMatch && matchedTeamLinks.length >= 2) {
+                                    // 第一隊對應左側出賽人次，第二隊對應右側出賽人次
+                                    gpMap[matchedTeamLinks[0].tid] = gpMatch[1];
+                                    gpMap[matchedTeamLinks[1].tid] = gpMatch[2];
+                                }
+                            } catch (e) {}
+
                             return {
                                 url: window.location.href,
                                 title: document.title,
                                 tables: extractTablesText(document),
-                                games_played_banner: gpMatch ? gpMatch[0] : ''
+                                games_played_banner: gpMatch ? gpMatch[0] : '',
+                                games_played_map: gpMap
                             };
                         }""", {"sportSlug": sport_slug, "rawId": raw_id})
                         weekly_pages.append(m_data)
@@ -554,7 +581,7 @@ class WebAgentFetcher:
                 '- FG% 與 FT% 請輸出 0~1 的小數（例如 0.485 代表 48.5%）。\n'
                 '- A/T (或 AST/TO) 請輸出數值比率（例如 2.45）。\n'
                 '- "Today Player"：僅用於 daily_stats，請統計該隊當天出賽或有比賽安排的球員人數（整數，如 5，無比賽填 0）。\n'
-                '- "Game Player"：僅用於 weekly_stats，請提取對戰中的出賽人次（例如 "8/40" 或 "9/34"）。若網頁內容提供 games_played_banner 如 "8/40 Games Played 7/34"，左側隊伍填 "8/40"，右側隊伍填 "7/34"；若無則填 "-"。'
+                '- "Game Player"：僅用於 weekly_stats，請提取對戰中的出賽人次（例如 "8/40" 或 "9/34"）。若網頁提供 games_played_map (例如 {"1": "8/40", "8": "9/34"})，請務必嚴格依據 team_id 填入對應隊伍的 "Game Player"；若未提供 games_played_map 但有 games_played_banner 如 "8/40 Games Played 9/34"，左側隊伍填 "8/40"，右側隊伍填 "9/34"；若無則填 "-"。'
             )
 
         system_instruction = f"""
@@ -709,6 +736,22 @@ class WebAgentFetcher:
         weekly_raw = (parsed.get("weekly_stats") or {}).get("team_stats", [])
         if not daily_raw and not weekly_raw:
             raise LeagueWebAuthError(f"無法從聯賽 {lid} 網頁獲取有效數據，Yahoo 網頁登入狀態可能已失效。")
+
+        # 兜底防護：若 weekly_stats 中的出賽人次依然為 "-"，自動從 games_played_map 補回
+        try:
+            gp_map_total = {}
+            for wp in scraped_data.get("weekly_pages", []):
+                m_map = wp.get("games_played_map") or {}
+                gp_map_total.update(m_map)
+            if gp_map_total:
+                for t in weekly_raw:
+                    tid = str(t.get("team_id") or "")
+                    if tid in gp_map_total:
+                        stats = t.setdefault("stats", {})
+                        if stats.get("Game Player") in (None, "-", ""):
+                            stats["Game Player"] = gp_map_total[tid]
+        except Exception as ge:
+            logging.debug(f"[WEB_AGENT] 自動補全 games_played 失敗: {ge}")
 
         daily_stats = {"league_id": lid, "date": date_str, "team_stats": self._normalize_team_list(daily_raw, is_daily=True)}
         weekly_stats = {"league_id": lid, "date": date_str, "team_stats": self._normalize_team_list(weekly_raw, is_daily=False)}
