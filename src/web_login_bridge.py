@@ -27,6 +27,44 @@ def get_league_storage_state_path(league_id: str) -> str:
     return os.path.join(league_dir, "yahoo_web_state.json")
 
 
+def save_and_sync_league_storage_state(context, league_id: str) -> str:
+    """
+    保存當前 Playwright context 的 storage_state (包含最新展延的 Session Cookie)，
+    並自動同步給同一個 manager (管理員) 底下的所有其他聯盟，
+    達到自動滑動過期 (Rolling Session) 與跨聯盟免重複登入效果。
+    """
+    if not league_id or str(league_id) == "default":
+        return ""
+    state_path = get_league_storage_state_path(league_id)
+    try:
+        os.makedirs(os.path.dirname(state_path), exist_ok=True)
+        context.storage_state(path=state_path)
+        logging.info(f"[WEB_AUTH] 已保存聯盟 {league_id} 的最新登入狀態 (Session Refreshed)")
+    except Exception as e:
+        logging.warning(f"[WEB_AUTH] 儲存聯盟 {league_id} 登入狀態失敗: {e}")
+        return state_path
+
+    # 自動同步至同管理員之其他聯盟
+    try:
+        roles = security_manager._load_json(security_manager.league_roles_path, {})
+        current_manager = None
+        if isinstance(roles, dict) and league_id in roles:
+            current_manager = roles[league_id].get("manager")
+
+        if current_manager:
+            for other_lid, other_data in roles.items():
+                if other_lid != league_id and isinstance(other_data, dict):
+                    if other_data.get("manager") == current_manager:
+                        other_state_path = get_league_storage_state_path(other_lid)
+                        os.makedirs(os.path.dirname(other_state_path), exist_ok=True)
+                        shutil.copy2(state_path, other_state_path)
+                        logging.info(f"[WEB_AUTH] 已自動同步最新 Session 至同管理員之聯盟 {other_lid}")
+    except Exception as sync_err:
+        logging.warning(f"[WEB_AUTH] 同步同管理員聯盟登入狀態時發生非致命異常: {sync_err}")
+
+    return state_path
+
+
 def build_league_web_url(league_id: str) -> tuple[str, str, str]:
     """根據 league_id 回傳 (sport, raw_id, url)。"""
     sport, raw_id = parse_league_id(league_id)
@@ -158,7 +196,7 @@ def verify_league_web_access(league_id: str, headless: bool = True) -> tuple[boo
                 page.wait_for_timeout(1500)
                 ok, _, teams = extract_teams_and_check_auth(page, league_id)
                 if ok:
-                    context.storage_state(path=state_path)
+                    save_and_sync_league_storage_state(context, league_id)
                     final_teams = save_discovered_team_mapping(league_id, teams, page=page)
                     return True, final_teams or teams
                 return False, {}
@@ -621,9 +659,18 @@ class RemoteLoginWorker:
                         ok, reason, teams = extract_teams_and_check_auth(page, self.league_id)
                         self.status_msg = reason
                         if ok:
-                            context.storage_state(path=state_path)
+                            save_and_sync_league_storage_state(context, self.league_id)
                             save_discovered_team_mapping(self.league_id, teams, page=page)
                             security_manager.set_league_authorized(self.league_id, True)
+                            try:
+                                roles = security_manager._load_json(security_manager.league_roles_path, {})
+                                cur_mgr = roles.get(self.league_id, {}).get("manager") if isinstance(roles, dict) else None
+                                if cur_mgr:
+                                    for other_lid, odata in roles.items():
+                                        if other_lid != self.league_id and isinstance(odata, dict) and odata.get("manager") == cur_mgr:
+                                            security_manager.set_league_authorized(other_lid, True)
+                            except Exception:
+                                pass
                             self.authorized = True
                             self.closed = True
                             reply_q.put({

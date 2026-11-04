@@ -422,3 +422,63 @@ def test_set_league_id_when_login_expired_prompts_user_to_relogin(tmp_path):
         assert "https://my-bot.ngrok.app/yahoo/web-login?league_id=nba.l.49432&chat_id=C_group_test" in reply_msg
     finally:
         current_chat_id.reset(token)
+
+
+def test_save_and_sync_league_storage_state_syncs_to_same_manager(tmp_path):
+    from src.web_login_bridge import save_and_sync_league_storage_state
+
+    mock_context = MagicMock()
+    def fake_storage_state(path=None):
+        if path:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write('{"cookies": [{"name": "T", "value": "refreshed_val"}]}')
+    mock_context.storage_state.side_effect = fake_storage_state
+
+    fake_roles = {
+        "nba.l.49432": {"manager": "U_mgr_1"},
+        "nba.l.49434": {"manager": "U_mgr_1"},
+        "nba.l.99999": {"manager": "U_other_user"}
+    }
+
+    with patch("src.utils.path_utils.DATA_DIR", str(tmp_path)), \
+         patch("src.utils.security.security_manager._load_json", return_value=fake_roles):
+        saved_path = save_and_sync_league_storage_state(mock_context, "nba.l.49432")
+
+    assert os.path.exists(saved_path)
+    sync_target = tmp_path / "league" / "nba" / "49434" / "yahoo_web_state.json"
+    assert sync_target.exists()
+    assert "refreshed_val" in sync_target.read_text(encoding="utf-8")
+
+    other_target = tmp_path / "league" / "nba" / "99999" / "yahoo_web_state.json"
+    assert not other_target.exists()
+
+
+def test_scrape_league_pages_calls_save_and_sync(tmp_path):
+    fetcher = WebAgentFetcher(league_id="nba.l.49432", api_key="dummy")
+    state_file = tmp_path / "league" / "nba" / "49432" / "yahoo_web_state.json"
+    state_file.parent.mkdir(parents=True)
+    state_file.write_text('{"cookies": []}', encoding="utf-8")
+
+    mock_playwright = MagicMock()
+    mock_browser = MagicMock()
+    mock_context = MagicMock()
+    mock_page = MagicMock()
+
+    mock_playwright.chromium.launch.return_value = mock_browser
+    mock_browser.new_context.return_value = mock_context
+    mock_context.pages = [mock_page]
+
+    mock_page.evaluate.side_effect = [
+        {"currWeek": 1, "dates": ["2026-11-04"], "prevWeek": 1, "nextWeek": 2},
+        {"discovered_teams": [{"team_id": "1", "name": "Team A"}], "matchup_urls": [], "daily_pages": []}
+    ]
+
+    with patch("src.utils.path_utils.DATA_DIR", str(tmp_path)), \
+         patch("src.web_agent_fetcher.sync_playwright") as mock_pw_ctx, \
+         patch("src.web_agent_fetcher.is_page_authorized_for_league", return_value=(True, "OK")), \
+         patch("src.web_agent_fetcher.save_and_sync_league_storage_state") as mock_save_sync:
+        mock_pw_ctx.return_value.__enter__.return_value = mock_playwright
+
+        scraped = fetcher._scrape_league_pages("nba.l.49432", "2026-11-04")
+        assert scraped is not None
+        mock_save_sync.assert_called_once_with(mock_context, "nba.l.49432")

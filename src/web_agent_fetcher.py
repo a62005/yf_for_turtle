@@ -30,6 +30,7 @@ from src.web_login_bridge import (
     get_league_storage_state_path,
     is_page_authorized_for_league,
     build_mobile_web_login_url,
+    save_and_sync_league_storage_state,
 )
 
 
@@ -212,6 +213,7 @@ class WebAgentFetcher:
                     new_page.goto(base_url, wait_until="domcontentloaded", timeout=45000)
                     new_page.wait_for_timeout(1500)
                     raw_page_data = _extract_raw_from_page(new_page)
+                    save_and_sync_league_storage_state(context, lid)
                 finally:
                     browser.close()
 
@@ -551,6 +553,14 @@ class WebAgentFetcher:
                     except Exception as me:
                         logging.warning(f"[WEB_AGENT] 載入對戰頁面 {m_url} 失敗: {me}")
                 scraped["weekly_pages"] = weekly_pages
+
+                # 在成功擷取所有頁面後，將更新後的 Session / Cookie 狀態回寫至檔案並同步給同管理員聯盟，達到自動滑動展延的效果
+                if state_path and context:
+                    try:
+                        save_and_sync_league_storage_state(context, league_id)
+                        logging.info(f"[WEB_AGENT] 戰績抓取成功，已自動展延聯盟 {league_id} 及其關聯聯盟之網頁 Session")
+                    except Exception as refresh_err:
+                        logging.warning(f"[WEB_AGENT] 自動展延 Session 失敗: {refresh_err}")
 
                 return scraped
             finally:
