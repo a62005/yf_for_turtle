@@ -482,3 +482,83 @@ def test_scrape_league_pages_calls_save_and_sync(tmp_path):
         scraped = fetcher._scrape_league_pages("nba.l.49432", "2026-11-04")
         assert scraped is not None
         mock_save_sync.assert_called_once_with(mock_context, "nba.l.49432")
+
+
+def test_has_ongoing_games_and_run_web_agent_push_postpones_on_live_game(tmp_path):
+    from src.web_agent_fetcher import has_ongoing_games_in_scraped_data, GamesInProgressError
+    from src.scheduler import get_daily_schedule_state, clear_daily_schedule_state
+
+    scraped_live = {
+        "daily_pages": [
+            {
+                "team_id": "1",
+                "tables": ["PG | Stephen Curry | @ LAL | Q4 02:15 | 28 | 5 | 7"]
+            }
+        ]
+    }
+    scraped_finished = {
+        "daily_pages": [
+            {
+                "team_id": "1",
+                "tables": ["PG | Stephen Curry | @ LAL | W 118-112 | 32 | 6 | 8"]
+            }
+        ]
+    }
+    assert has_ongoing_games_in_scraped_data(scraped_live, "nba") is True
+    assert has_ongoing_games_in_scraped_data(scraped_finished, "nba") is False
+
+    with patch("src.utils.path_utils.DATA_DIR", str(tmp_path)), \
+         patch("src.scheduler.DATA_DIR", str(tmp_path)), \
+         patch("src.web_agent_fetcher.load_config", return_value={"LEAGUE_ID": "nba.l.49432", "LLM_API_KEY": "dummy"}), \
+         patch("src.web_agent_fetcher.WebAgentFetcher.fetch_daily_and_weekly_stats", side_effect=GamesInProgressError("進行中")), \
+         patch("src.web_agent_fetcher.capture_html_to_png") as mock_capture:
+        clear_daily_schedule_state()
+        run_web_agent_push(league_id="nba.l.49432", target_date="2026-11-05")
+        mock_capture.assert_not_called()
+        st = get_daily_schedule_state("2026-11-05")
+        assert st is not None
+        assert st["games_in_progress"] is True
+        clear_daily_schedule_state()
+
+
+def test_fetch_daily_and_weekly_stats_authoritative_override_for_today_and_game_player(tmp_path):
+    fetcher = WebAgentFetcher(league_id="nba.l.49434", api_key="dummy")
+    fake_scraped = {
+        "discovered_teams": [{"team_id": "3", "name": "Serjinler"}, {"team_id": "6", "name": "胡哲"}],
+        "daily_pages": [
+            {"team_id": "3", "today_active_players": 10, "tables": []},
+            {"team_id": "6", "today_active_players": 10, "tables": []}
+        ],
+        "weekly_pages": [
+            {"games_played_map": {"3": "20/40", "6": "20/36"}, "tables": []}
+        ]
+    }
+    # 模擬 AI 誤算板凳球員 (11人) 與被截斷的週人次 ("0/43")
+    fake_parsed = {
+        "games_in_progress": False,
+        "daily_stats": {
+            "team_stats": [
+                {"team_id": "3", "name": "Serjinler", "stats": {"Today Player": 10, "PTS": 142}},
+                {"team_id": "6", "name": "胡哲", "stats": {"Today Player": 11, "PTS": 173}}
+            ]
+        },
+        "weekly_stats": {
+            "team_stats": [
+                {"team_id": "3", "name": "Serjinler", "stats": {"Game Player": "0/43", "PTS": 272}},
+                {"team_id": "6", "name": "胡哲", "stats": {"Game Player": "0/36", "PTS": 342}}
+            ]
+        }
+    }
+
+    with patch("src.utils.path_utils.DATA_DIR", str(tmp_path)), \
+         patch.object(fetcher, "_scrape_league_pages", return_value=fake_scraped), \
+         patch.object(fetcher, "_parse_with_gemini", return_value=fake_parsed):
+        d_stats, w_stats = fetcher.fetch_daily_and_weekly_stats("nba.l.49434", "2026-11-04")
+
+    d_map = {t["team_id"]: t["stats"]["Today Player"] for t in d_stats["team_stats"]}
+    w_map = {t["team_id"]: t["stats"]["Game Player"] for t in w_stats["team_stats"]}
+
+    assert d_map["6"] == 10
+    assert w_map["3"] == "20/40"
+    assert w_map["6"] == "20/36"
+

@@ -72,6 +72,46 @@ def get_stats_rule_date(current_tw_dt=None) -> str:
         return (tw_date - timedelta(days=1)).strftime("%Y-%m-%d")
     return tw_date.strftime("%Y-%m-%d")
 
+
+def hm_to_minutes(hm_str: str) -> int:
+    """將 HH:MM 字串轉換為當日累計分鐘數 (0 ~ 1439)。"""
+    parts = hm_str.strip().split(":")
+    return int(parts[0]) * 60 + int(parts[1])
+
+
+def minutes_to_hm(total_minutes: int) -> str:
+    """將當日累計分鐘數轉換為 HH:MM 字串 (24 小時制)。"""
+    total_minutes = total_minutes % (24 * 60)
+    h = total_minutes // 60
+    m = total_minutes % 60
+    return f"{h:02d}:{m:02d}"
+
+
+def add_minutes_to_hm(hm_str: str, minutes: int) -> str:
+    """將 HH:MM 字串加上指定分鐘數並回傳新的 HH:MM 字串。"""
+    return minutes_to_hm(hm_to_minutes(hm_str) + minutes)
+
+
+def get_next_schedule_slot(current_hm: str, base_update_time: str = "13:55") -> tuple[str, str]:
+    """
+    根據當前時間 (HH:MM) 與基準更新時間 (預設 13:55)，計算延後半小時後的：
+    (下次自動更新時間 next_update_time, 對應開放查詢時間 query_open_time)。
+    規則：
+    - 13:55 仍有比賽 -> 延至 14:25 更新，14:30 開放查詢
+    - 14:25 仍有比賽 -> 延至 14:55 更新，15:00 開放查詢
+    - 以此類推，每次延後 30 分鐘，開放查詢時間為更新時間 + 5 分鐘。
+    """
+    curr_min = hm_to_minutes(current_hm)
+    base_min = hm_to_minutes(base_update_time)
+    if curr_min < base_min:
+        next_update_min = base_min
+    else:
+        slots_passed = ((curr_min - base_min) // 30) + 1
+        next_update_min = base_min + 30 * slots_passed
+    next_update_hm = minutes_to_hm(next_update_min)
+    query_open_hm = minutes_to_hm(next_update_min + 5)
+    return next_update_hm, query_open_hm
+
 def get_target_date(is_offseason: bool = False, end_date: str = None, current_tw_dt=None) -> str:
     """
     計算美西目標日期 YYYY-MM-DD。
@@ -163,6 +203,11 @@ def check_game_status(sport: str, date_str: str) -> tuple[bool, str] | None:
         for event in events:
             status = event.get("status", {})
             status_type = status.get("type", {})
+            type_name = str(status_type.get("name") or "").upper()
+            type_desc = str(status_type.get("description") or "").lower()
+            if type_name in ("STATUS_POSTPONED", "STATUS_CANCELED", "STATUS_CANCELLED") or type_desc in ("postponed", "canceled", "cancelled"):
+                n_post += 1
+                continue
             state = status_type.get("state")  # 'pre', 'in', 'post'
             
             if state == "pre":

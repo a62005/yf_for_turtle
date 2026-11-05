@@ -15,9 +15,139 @@ import argparse
 from datetime import datetime
 import pytz
 from src.config import load_config
-from src.utils.path_utils import BASE_DIR, DATA_DIR
+from src.utils.path_utils import BASE_DIR, DATA_DIR, parse_league_id
+from src.utils.time_utils import (
+    add_minutes_to_hm,
+    get_next_schedule_slot,
+    tw_date_to_yahoo_date,
+    check_game_status,
+)
 
 TAIPEI_TZ = pytz.timezone("Asia/Taipei")
+_MEMORY_SCHEDULE_STATE: dict[str, dict] = {}
+
+
+def get_schedule_state_path() -> str:
+    """回傳當日排程延後狀態檔路徑。"""
+    return os.path.join(DATA_DIR, "security", "daily_schedule_state.json")
+
+
+def clear_daily_schedule_state() -> None:
+    """清除記憶體與磁碟中的當日排程狀態（供測試或重置使用）。"""
+    _MEMORY_SCHEDULE_STATE.clear()
+    state_path = get_schedule_state_path()
+    if os.path.exists(state_path):
+        try:
+            os.remove(state_path)
+        except Exception:
+            pass
+
+
+def get_daily_schedule_state(date_str: str) -> dict | None:
+    """讀取指定台灣日期 (YYYY-MM-DD) 的排程與查詢開放時間狀態。"""
+    state_path = get_schedule_state_path()
+    try:
+        if os.path.exists(state_path):
+            with open(state_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if isinstance(data, dict) and data.get("date") == date_str:
+                    _MEMORY_SCHEDULE_STATE[date_str] = data
+                    return dict(data)
+    except Exception:
+        pass
+
+    mem = _MEMORY_SCHEDULE_STATE.get(date_str)
+    if mem and mem.get("date") == date_str:
+        return dict(mem)
+    return None
+
+
+def save_daily_schedule_state(
+    date_str: str,
+    next_update_time: str,
+    query_open_time: str,
+    games_in_progress: bool,
+    completed: bool = False
+) -> dict:
+    """儲存指定台灣日期的自動更新時間與 #戰績 開放查詢時間狀態。"""
+    state = {
+        "date": date_str,
+        "next_update_time": next_update_time,
+        "query_open_time": query_open_time,
+        "games_in_progress": bool(games_in_progress),
+        "completed": bool(completed),
+    }
+    _MEMORY_SCHEDULE_STATE[date_str] = dict(state)
+    state_path = get_schedule_state_path()
+    try:
+        os.makedirs(os.path.dirname(state_path), exist_ok=True)
+        with open(state_path, "w", encoding="utf-8") as f:
+            json.dump(state, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        logging.debug(f"[SCHEDULER] 寫入 daily_schedule_state.json 失敗: {e}")
+    return state
+
+
+def postpone_daily_schedule(
+    date_str: str,
+    current_hm: str = None,
+    base_update_time: str = "13:55"
+) -> dict:
+    """
+    因比賽仍在進行中，將自動更新時間延後半小時 (例如 13:55 -> 14:25 -> 14:55)，
+    並將開放查詢時間同步設為下次更新時間 + 5 分鐘 (例如 14:00 -> 14:30 -> 15:00)。
+    """
+    if not current_hm:
+        current_hm = datetime.now(TAIPEI_TZ).strftime("%H:%M")
+    next_update_time, query_open_time = get_next_schedule_slot(current_hm, base_update_time=base_update_time)
+    return save_daily_schedule_state(
+        date_str=date_str,
+        next_update_time=next_update_time,
+        query_open_time=query_open_time,
+        games_in_progress=True,
+        completed=False
+    )
+
+
+def mark_daily_schedule_completed(date_str: str, update_time: str, query_open_time: str = None) -> dict:
+    """標記當日自動更新已啟動/完成，並記錄該梯次對應的開放查詢時間 (update_time + 5 分鐘)。"""
+    open_time = query_open_time or add_minutes_to_hm(update_time, 5)
+    return save_daily_schedule_state(
+        date_str=date_str,
+        next_update_time=update_time,
+        query_open_time=open_time,
+        games_in_progress=False,
+        completed=True
+    )
+
+
+def are_games_still_in_progress(tw_date_str: str = None, sport: str = None) -> bool:
+    """
+    檢查指定台灣日期對應之美西比賽日是否仍有比賽正在進行或尚未結束。
+    回傳 True 代表仍有比賽進行中（需延後更新）；False 代表比賽已全部結束或無賽事。
+    """
+    if not tw_date_str:
+        tw_date_str = datetime.now(TAIPEI_TZ).strftime("%Y-%m-%d")
+    yahoo_date = tw_date_to_yahoo_date(tw_date_str)
+
+    if sport:
+        sports_to_check = [sport]
+    else:
+        bindings = get_bound_chat_leagues()
+        sports_set = set()
+        for lid in bindings.values():
+            sp, _ = parse_league_id(lid)
+            if sp in ("nba", "mlb"):
+                sports_set.add(sp)
+        sports_to_check = sorted(sports_set) if sports_set else ["nba"]
+
+    for sp in sports_to_check:
+        res = check_game_status(sp, yahoo_date)
+        if res is not None:
+            allowed, _ = res
+            if not allowed:
+                return True
+    return False
 
 
 def get_bound_chat_leagues() -> dict[str, str]:
@@ -72,8 +202,15 @@ def trigger_daily_stats_push(target_date: str = None) -> int:
 
 
 def _scheduler_loop(target_time: str = "13:55", poll_interval: float = 20.0, stop_event: threading.Event = None):
-    """背景常駐迴圈：每天到達指定台灣時間 (預設 13:55) 時執行一次推播任務。"""
-    last_triggered_date = None
+    """
+    背景常駐迴圈：每天到達指定台灣時間 (預設 13:55) 時執行一次推播任務。
+    若當下仍有比賽正在進行，則自動延後半小時 (例如 13:55 -> 14:25 -> 14:55...) 再嘗試更新，
+    並同步將當日開放查詢時間順延半小時 (例如 14:00 -> 14:30 -> 15:00...)。
+    """
+    active_date = None
+    active_target_time = target_time
+    completed_date = None
+    last_attempted_slot = None
     logging.info(f"[SCHEDULER] 每日定時戰績 Agent 排程器已啟動，預定執行時間: 每日 {target_time} (Asia/Taipei)")
 
     while True:
@@ -84,11 +221,42 @@ def _scheduler_loop(target_time: str = "13:55", poll_interval: float = 20.0, sto
         today_str = now_tw.strftime("%Y-%m-%d")
         current_hm = now_tw.strftime("%H:%M")
 
-        if current_hm == target_time and last_triggered_date != today_str:
-            last_triggered_date = today_str
+        if active_date != today_str:
+            active_date = today_str
+            active_target_time = target_time
+            completed_date = None
+            last_attempted_slot = None
+
+        state = get_daily_schedule_state(today_str)
+        if state and not state.get("completed") and state.get("next_update_time"):
+            if state["next_update_time"] > active_target_time:
+                active_target_time = state["next_update_time"]
+                completed_date = None
+
+        if (
+            completed_date != today_str
+            and current_hm == active_target_time
+            and last_attempted_slot != (today_str, active_target_time)
+        ):
+            last_attempted_slot = (today_str, active_target_time)
             try:
-                logging.info(f"[SCHEDULER] 時間到達 {today_str} {current_hm}，開始執行每日戰績抓取與推播...")
-                trigger_daily_stats_push(today_str)
+                if are_games_still_in_progress(today_str):
+                    postponed = postpone_daily_schedule(
+                        today_str,
+                        current_hm=active_target_time,
+                        base_update_time=target_time
+                    )
+                    active_target_time = postponed["next_update_time"]
+                    logging.info(
+                        f"[SCHEDULER] 時間 {today_str} {current_hm} 檢測到仍有比賽正在進行，"
+                        f"自動更新延後半小時至 {active_target_time}（開放查詢時間順延至 {postponed['query_open_time']}）。"
+                    )
+                else:
+                    if active_target_time != target_time or state is not None:
+                        mark_daily_schedule_completed(today_str, update_time=active_target_time)
+                    completed_date = today_str
+                    logging.info(f"[SCHEDULER] 時間到達 {today_str} {current_hm}，開始執行每日戰績抓取與推播...")
+                    trigger_daily_stats_push(today_str)
             except Exception as e:
                 logging.error(f"[SCHEDULER] 執行每日排程時發生錯誤: {e}")
 

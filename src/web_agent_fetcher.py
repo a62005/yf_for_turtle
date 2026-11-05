@@ -43,6 +43,47 @@ class LeagueWebAuthError(RuntimeError):
     pass
 
 
+class GamesInProgressError(RuntimeError):
+    """當網頁或賽事計分板顯示當日仍有比賽正在進行中時拋出。"""
+    pass
+
+
+def has_ongoing_games_in_scraped_data(scraped_data: dict, sport: str = "nba") -> bool:
+    """
+    從擷取的 Yahoo Fantasy 每日頁面表格資料中檢測是否仍有比賽正在進行中。
+    當發現明確的比賽進行中標記（如 Q1~Q4 節數時間、Halftime、OT、In Progress、Top/Bot 局數）時回傳 True。
+    """
+    import re
+
+    if not isinstance(scraped_data, dict):
+        return False
+    if scraped_data.get("games_in_progress") is True:
+        return True
+
+    live_pattern = re.compile(
+        r"\b(?:"
+        r"Q[1-4](?:\s+\d{1,2}:\d{2})?|"
+        r"[1-4](?:st|nd|rd|th)\s+\d{1,2}:\d{2}|"
+        r"[1-4]?OT(?:\s+\d{1,2}:\d{2})?|"
+        r"Halftime|In\s+Progress|"
+        r"(?:Top|Bot|Mid|End)\s+(?:1st|2nd|3rd|[4-9]th|1\dth)|"
+        r"End\s+Q[1-4]"
+        r")\b",
+        re.IGNORECASE
+    )
+
+    for dp in scraped_data.get("daily_pages") or []:
+        if not isinstance(dp, dict):
+            continue
+        for table_text in dp.get("tables") or []:
+            if not isinstance(table_text, str):
+                continue
+            for row in table_text.splitlines():
+                if live_pattern.search(row):
+                    return True
+    return False
+
+
 def get_browser_profile_dir() -> str:
     """回傳本地 Playwright 持久化瀏覽器設定檔目錄 (位於 credentials/browser_profile)。"""
     profile_dir = os.path.join(BASE_DIR, "credentials", "browser_profile")
@@ -436,10 +477,45 @@ class WebAgentFetcher:
                             }
                         }
 
+                        const countTodayActivePlayers = (rootDoc) => {
+                            const nonStarting = new Set(['BN', 'IL', 'IL+', 'NA', 'DL', 'DL+']);
+                            let activeCount = 0;
+                            for (const t of Array.from(rootDoc.querySelectorAll('table'))) {
+                                const headerRow = Array.from(t.querySelectorAll('thead tr, tr')).find(r =>
+                                    Array.from(r.querySelectorAll('th')).some(th => th.innerText.trim() === 'Pos') &&
+                                    Array.from(r.querySelectorAll('th')).some(th => th.innerText.trim() === 'Opp')
+                                );
+                                if (!headerRow) continue;
+                                const headers = [];
+                                for (const th of Array.from(headerRow.querySelectorAll('th'))) {
+                                    const span = parseInt(th.getAttribute('colspan') || '1', 10) || 1;
+                                    const txt = th.innerText.trim();
+                                    for (let i = 0; i < span; i++) headers.push(txt);
+                                }
+                                const oppIdx = headers.indexOf('Opp');
+                                const rows = Array.from(t.querySelectorAll('tbody tr'));
+                                for (const r of rows) {
+                                    const posCell = r.querySelector('td.pos') || r.querySelector('td:first-child');
+                                    const playerCell = r.querySelector('td.player');
+                                    if (!posCell || !playerCell) continue;
+                                    const pos = posCell.innerText.trim();
+                                    if (!pos || pos === 'Pos' || pos.includes('Total') || nonStarting.has(pos.toUpperCase())) continue;
+                                    const playerText = playerCell.innerText.replace(/\\s+/g, ' ').trim();
+                                    if (!playerText || /^\\(Empty\\)$/i.test(playerText)) continue;
+                                    const allTds = Array.from(r.querySelectorAll('td'));
+                                    const oppText = (oppIdx >= 0 && oppIdx < allTds.length) ? allTds[oppIdx].innerText.trim() : '';
+                                    if (oppText && oppText !== '-') {
+                                        activeCount++;
+                                    }
+                                }
+                            }
+                            return activeCount;
+                        };
+
                         const fetchDocTables = async (url) => {
                             try {
                                 const resp = await fetch(url, { credentials: 'include' });
-                                if (!resp.ok) return { url, tables: [] };
+                                if (!resp.ok) return { url, tables: [], today_active_players: null };
                                 const html = await resp.text();
                                 const parser = new DOMParser();
                                 const doc = parser.parseFromString(html, 'text/html');
@@ -447,10 +523,11 @@ class WebAgentFetcher:
                                 return {
                                     url,
                                     title: titleEl ? titleEl.innerText.trim() : '',
-                                    tables: extractTablesText(doc)
+                                    tables: extractTablesText(doc),
+                                    today_active_players: countTodayActivePlayers(doc)
                                 };
                             } catch (e) {
-                                return { url, tables: [], error: String(e) };
+                                return { url, tables: [], today_active_players: null, error: String(e) };
                             }
                         };
 
@@ -462,6 +539,7 @@ class WebAgentFetcher:
                                 team_id: tid,
                                 team_name: tname,
                                 url: dailyUrl,
+                                today_active_players: res.today_active_players,
                                 tables: res.tables
                             };
                         }));
@@ -514,30 +592,36 @@ class WebAgentFetcher:
                                     }).filter(Boolean).join('\\n');
                                 }).filter(Boolean);
                             };
-                            // 增強匹配：支援跨行空格、大小寫、以及可能的標點
-                            const gpMatch = document.body.innerText.match(/(\\d+\\/\\d+)[\\s\\S]{0,35}Games Played[\\s\\S]{0,35}(\\d+\\/\\d+)/i);
-                            
+                            // 優先從 #remaining-games 區塊精確擷取，避免受到前綴 "20 Remaining 20/40" 貪婪正則截斷成 "0/40"
+                            const rgEl = document.getElementById('remaining-games');
+                            const gpSourceText = rgEl ? rgEl.innerText : document.body.innerText;
+                            const gpMatch = gpSourceText.match(/(?:^|\\D)(\\d+\\/\\d+)\\s*Games Played\\s*(\\d+\\/\\d+)(?:\\D|$)/i);
+
                             // 精確提取對戰雙方各自的 team_id 與對應出賽人次 (games_played_map)
+                            // 注意：必須從對戰統計表格 (table) 內部提取對戰雙方的連結，不可從整個 document 抓，否則第一個連結永遠是頂部導覽列的 "My Team"
                             const gpMap = {};
                             try {
-                                const allLinks = Array.from(document.querySelectorAll('a[href]'));
-                                const matchedTeamLinks = [];
-                                for (const a of allLinks) {
-                                    try {
-                                        const u = new URL(a.href, window.location.origin);
-                                        const m = u.pathname.match(teamRegex);
-                                        if (m && !u.search) {
-                                            const tid = m[1];
-                                            if (!matchedTeamLinks.some(x => x.tid === tid)) {
-                                                matchedTeamLinks.push({ tid, element: a });
+                                let matchedTeamIds = [];
+                                for (const t of Array.from(document.querySelectorAll('table'))) {
+                                    const tidsInTable = [];
+                                    for (const a of Array.from(t.querySelectorAll('a[href]'))) {
+                                        try {
+                                            const u = new URL(a.href, window.location.origin);
+                                            const m = u.pathname.match(teamRegex);
+                                            if (m && !u.search && !tidsInTable.includes(m[1])) {
+                                                tidsInTable.push(m[1]);
                                             }
-                                        }
-                                    } catch (e) {}
+                                        } catch (e) {}
+                                    }
+                                    if (tidsInTable.length === 2) {
+                                        matchedTeamIds = tidsInTable;
+                                        break;
+                                    }
                                 }
-                                if (gpMatch && matchedTeamLinks.length >= 2) {
-                                    // 第一隊對應左側出賽人次，第二隊對應右側出賽人次
-                                    gpMap[matchedTeamLinks[0].tid] = gpMatch[1];
-                                    gpMap[matchedTeamLinks[1].tid] = gpMatch[2];
+                                if (gpMatch && matchedTeamIds.length === 2) {
+                                    // 對戰表格第一列/左側隊伍對應左側出賽人次，第二列/右側隊伍對應右側出賽人次
+                                    gpMap[matchedTeamIds[0]] = gpMatch[1];
+                                    gpMap[matchedTeamIds[1]] = gpMatch[2];
                                 }
                             } catch (e) {}
 
@@ -545,7 +629,7 @@ class WebAgentFetcher:
                                 url: window.location.href,
                                 title: document.title,
                                 tables: extractTablesText(document),
-                                games_played_banner: gpMatch ? gpMatch[0] : '',
+                                games_played_banner: gpMatch ? `${gpMatch[1]} Games Played ${gpMatch[2]}` : '',
                                 games_played_map: gpMap
                             };
                         }""", {"sportSlug": sport_slug, "rawId": raw_id})
@@ -590,7 +674,7 @@ class WebAgentFetcher:
                 '- 請務必動態萃取表格中存在的全部比分項目，包含 DD, A/T (或 AST/TO) 等自訂項目，切勿遺漏！\n'
                 '- FG% 與 FT% 請輸出 0~1 的小數（例如 0.485 代表 48.5%）。\n'
                 '- A/T (或 AST/TO) 請輸出數值比率（例如 2.45）。\n'
-                '- "Today Player"：僅用於 daily_stats，請統計該隊當天出賽或有比賽安排的球員人數（整數，如 5，無比賽填 0）。\n'
+                '- "Today Player"：僅用於 daily_stats，請統計該隊當天排在先發名單（排除 BN 板凳、IL/IL+/NA 傷兵欄位，NBA 先發最多 10 人）且當天有比賽安排（Opp 欄位非空白）的球員人數（整數，如 5，無比賽填 0）。若 daily_pages 已提供 today_active_players 數值，請直接使用該數值。\n'
                 '- "Game Player"：僅用於 weekly_stats，請提取對戰中的出賽人次（例如 "8/40" 或 "9/34"）。若網頁提供 games_played_map (例如 {"1": "8/40", "8": "9/34"})，請務必嚴格依據 team_id 填入對應隊伍的 "Game Player"；若未提供 games_played_map 但有 games_played_banner 如 "8/40 Games Played 9/34"，左側隊伍填 "8/40"，右側隊伍填 "9/34"；若無則填 "-"。'
             )
 
@@ -605,8 +689,10 @@ class WebAgentFetcher:
 - 【極重要】網頁對戰表 (Matchup) 與表格各行隊名皆已明確註明 "(team_id: X)"。在解析 `weekly_stats` 時，每一隊的數據必須嚴格對應其該行所標註的 `team_id`，絕不可將對戰雙方的數據反過來填寫！
 - 若某隊當日沒有比賽或 Total 為 `-` / `0`，數值項目請填 `0`，命中率請填 `0.0`，投籃/打數請填 `"0/0"`。
 - 請注意欄位劃分：`daily_stats` 僅包含 "Today Player"（不可包含 "Game Player"）；`weekly_stats` 僅包含 "Game Player"（不可包含 "Today Player"）。
+- 若 `daily_pages` 表格中顯示 {target_date} 當天仍有任何一場比賽正在進行中（例如狀態顯示 Q1~Q4、Halftime、OT、Top/Bot 局數、In Progress 等尚未結束的狀態），請將 `"games_in_progress"` 設為 `true`，否則設為 `false`。
 - 嚴格輸出以下 JSON 結構：
 {{
+  "games_in_progress": false,
   "daily_stats": {{
     "team_stats": [
       {{
@@ -733,6 +819,9 @@ class WebAgentFetcher:
         sport, _, _ = build_league_url(lid)
 
         scraped_data = self._scrape_league_pages(lid, date_str)
+        if has_ongoing_games_in_scraped_data(scraped_data, sport):
+            raise GamesInProgressError(f"聯盟 {lid} 於 {date_str} 網頁顯示仍有比賽正在進行中。")
+
         parsed = self._parse_with_gemini(scraped_data, sport, date_str)
 
         if isinstance(parsed, list):
@@ -742,12 +831,31 @@ class WebAgentFetcher:
                     merged.update(item)
             parsed = merged
 
+        if isinstance(parsed, dict) and parsed.get("games_in_progress") is True:
+            raise GamesInProgressError(f"聯盟 {lid} 於 {date_str} 仍有比賽正在進行中。")
+
         daily_raw = (parsed.get("daily_stats") or {}).get("team_stats", [])
         weekly_raw = (parsed.get("weekly_stats") or {}).get("team_stats", [])
         if not daily_raw and not weekly_raw:
             raise LeagueWebAuthError(f"無法從聯賽 {lid} 網頁獲取有效數據，Yahoo 網頁登入狀態可能已失效。")
 
-        # 兜底防護：若 weekly_stats 中的出賽人次依然為 "-"，自動從 games_played_map 補回
+        # 權威資料覆寫：以 DOM 直接解析的 today_active_players 與 games_played_map 強制校準，徹底杜絕 AI 誤算板凳球員或錯配對戰人次
+        try:
+            today_gp_map = {}
+            for dp in scraped_data.get("daily_pages", []):
+                tid = str(dp.get("team_id") or "")
+                val = dp.get("today_active_players")
+                if tid and isinstance(val, int) and val >= 0:
+                    today_gp_map[tid] = val
+            if today_gp_map:
+                for t in daily_raw:
+                    tid = str(t.get("team_id") or "")
+                    if tid in today_gp_map:
+                        stats = t.setdefault("stats", {})
+                        stats["Today Player"] = today_gp_map[tid]
+        except Exception as te:
+            logging.debug(f"[WEB_AGENT] 自動校準 Today Player 失敗: {te}")
+
         try:
             gp_map_total = {}
             for wp in scraped_data.get("weekly_pages", []):
@@ -756,12 +864,11 @@ class WebAgentFetcher:
             if gp_map_total:
                 for t in weekly_raw:
                     tid = str(t.get("team_id") or "")
-                    if tid in gp_map_total:
+                    if tid in gp_map_total and gp_map_total[tid]:
                         stats = t.setdefault("stats", {})
-                        if stats.get("Game Player") in (None, "-", ""):
-                            stats["Game Player"] = gp_map_total[tid]
+                        stats["Game Player"] = gp_map_total[tid]
         except Exception as ge:
-            logging.debug(f"[WEB_AGENT] 自動補全 games_played 失敗: {ge}")
+            logging.debug(f"[WEB_AGENT] 自動校準 games_played 失敗: {ge}")
 
         daily_stats = {"league_id": lid, "date": date_str, "team_stats": self._normalize_team_list(daily_raw, is_daily=True)}
         weekly_stats = {"league_id": lid, "date": date_str, "team_stats": self._normalize_team_list(weekly_raw, is_daily=False)}
@@ -823,6 +930,14 @@ def run_web_agent_push(league_id: str = None, reply_to: str = None, target_date:
     try:
         logging.info(f"[WEB_AGENT] 正在從網站擷取聯盟 {lid} 於美西 {yahoo_date_str} (對應台灣 {tw_today_str}) 的當日與當週戰績...")
         daily_stats, weekly_stats = fetcher.fetch_daily_and_weekly_stats(lid, yahoo_date_str)
+    except GamesInProgressError as gip_err:
+        from src.scheduler import postpone_daily_schedule
+        postponed = postpone_daily_schedule(tw_today_str)
+        logging.info(
+            f"[WEB_AGENT] {gip_err} 自動更新順延半小時至 {postponed['next_update_time']} "
+            f"（開放查詢時間順延至 {postponed['query_open_time']}）。"
+        )
+        return
     except LeagueWebAuthError as auth_err:
         logging.warning(f"[WEB_AGENT] 網頁未登入或登入已失效: {auth_err}")
         try:

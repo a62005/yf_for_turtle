@@ -3,6 +3,7 @@ import os
 import sys
 import logging
 from datetime import datetime
+import pytz
 from linebot.v3.webhooks import MessageEvent
 from linebot.v3.messaging import Configuration, ApiClient, MessagingApi, ReplyMessageRequest, TextMessage, ImageMessage
 from .base_handler import BaseHandler
@@ -12,6 +13,16 @@ from src.config import load_config
 from src.utils.cache_utils import load_league_metadata
 from src.utils.time_utils import get_stats_rule_date, tw_date_to_yahoo_date
 from src.utils.path_utils import get_league_dir, get_league_image_dir, parse_league_id
+from src.scheduler import (
+    get_daily_schedule_state,
+    postpone_daily_schedule,
+    mark_daily_schedule_completed,
+    are_games_still_in_progress,
+)
+
+
+def _get_now_tw() -> datetime:
+    return datetime.now(pytz.timezone("Asia/Taipei"))
 
 
 def _split_mlb_stats(processed_list):
@@ -64,9 +75,37 @@ class StatsHandler(BaseHandler):
                 )
             return
 
-        target_date = get_stats_rule_date()
+        now_tw = _get_now_tw()
+        today_str = now_tw.strftime("%Y-%m-%d")
+        current_hm = now_tw.strftime("%H:%M")
+        target_date = get_stats_rule_date(now_tw)
         sport, raw_id = parse_league_id(league_id)
         image_dir = get_league_image_dir(league_id)
+
+        # 若為 14:00 後查詢當日戰績，檢查是否因仍有比賽進行而延後開放查詢時間
+        is_today_query = (current_hm >= "14:00" and target_date == today_str)
+        if is_today_query:
+            state = get_daily_schedule_state(target_date)
+            if state is not None:
+                if state.get("games_in_progress") and current_hm >= state.get("next_update_time", "13:55"):
+                    if are_games_still_in_progress(target_date, sport=sport):
+                        state = postpone_daily_schedule(target_date, current_hm=current_hm)
+                    else:
+                        state = mark_daily_schedule_completed(
+                            target_date,
+                            update_time=state.get("next_update_time", "13:55")
+                        )
+
+                query_open_time = state.get("query_open_time", "14:00")
+                if state.get("games_in_progress") or current_hm < query_open_time:
+                    with ApiClient(configuration) as api_client:
+                        MessagingApi(api_client).reply_message(
+                            ReplyMessageRequest(
+                                reply_token=event.reply_token,
+                                messages=[TextMessage(text=f"因仍有比賽正在進行，請於{query_open_time}後再次查詢")]
+                            )
+                        )
+                    return
 
         is_mlb = (sport == "mlb")
         if is_mlb:
@@ -80,12 +119,24 @@ class StatsHandler(BaseHandler):
             img_path = os.path.join(image_dir, img_filename)
             image_exists = os.path.exists(img_path)
 
-        # 本地若無圖檔，嘗試現場以 WebAgentFetcher 即時擷取並生成
+        # 本地若無圖檔，先檢查當日是否仍有比賽正在進行，若無則嘗試現場以 WebAgentFetcher 即時擷取並生成
         if not image_exists:
+            if is_today_query and are_games_still_in_progress(target_date, sport=sport):
+                postponed = postpone_daily_schedule(target_date, current_hm=current_hm)
+                query_open_time = postponed["query_open_time"]
+                with ApiClient(configuration) as api_client:
+                    MessagingApi(api_client).reply_message(
+                        ReplyMessageRequest(
+                            reply_token=event.reply_token,
+                            messages=[TextMessage(text=f"因仍有比賽正在進行，請於{query_open_time}後再次查詢")]
+                        )
+                    )
+                return
+
             logging.info(f"[STATS] 本地尚未有 {target_date} 圖片，正在啟動 WebAgentFetcher 現場生成...")
             try:
                 import json
-                from src.web_agent_fetcher import WebAgentFetcher
+                from src.web_agent_fetcher import WebAgentFetcher, GamesInProgressError
                 from src.visualizer.processor import process_stats_for_visual
                 from src.visualizer.renderer import render_stats_html
                 from src.visualizer.capturer import capture_html_to_png
@@ -117,6 +168,17 @@ class StatsHandler(BaseHandler):
                     combined_html = render_stats_html(daily_processed, weekly_processed)
                     capture_html_to_png(combined_html, img_path)
                     image_exists = os.path.exists(img_path)
+            except GamesInProgressError:
+                postponed = postpone_daily_schedule(target_date, current_hm=current_hm)
+                query_open_time = postponed["query_open_time"]
+                with ApiClient(configuration) as api_client:
+                    MessagingApi(api_client).reply_message(
+                        ReplyMessageRequest(
+                            reply_token=event.reply_token,
+                            messages=[TextMessage(text=f"因仍有比賽正在進行，請於{query_open_time}後再次查詢")]
+                        )
+                    )
+                return
             except Exception as fe:
                 logging.error(f"[STATS] 現場生成戰績圖片失敗: {fe}")
 
