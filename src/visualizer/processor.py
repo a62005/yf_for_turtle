@@ -203,29 +203,29 @@ def process_stats_for_visual(data: dict, league_id: str = None) -> list:
                 added_labels.add(std_key)
                 added_keys.update([std_key, actual_key])
 
-    remaining_keys = [k for k in all_team_keys if k not in ignored_keys and k not in added_keys and DISPLAY_ALIASES.get(k, k) not in added_labels]
+        remaining_keys = [k for k in all_team_keys if k not in ignored_keys and k not in added_keys and DISPLAY_ALIASES.get(k, k) not in added_labels]
 
-    def key_sort_order(k):
-        try:
-            return (0, KNOWN_ORDER.index(k))
-        except ValueError:
-            return (1, k)
+        def key_sort_order(k):
+            try:
+                return (0, KNOWN_ORDER.index(k))
+            except ValueError:
+                return (1, k)
 
-    for k in sorted(remaining_keys, key=key_sort_order):
-        label = DISPLAY_ALIASES.get(k, k)
-        if label in added_labels:
-            continue
-        reverse_val = False if k.upper() in ["TO", "ERA", "WHIP", "L"] else True
-        categories.append({
-            "label": label,
-            "data_key": k,
-            "sort_key": k,
-            "reverse": reverse_val,
-            "is_pitcher": is_mlb_pitcher_stat("", k),
-            "is_common": False
-        })
-        added_labels.add(label)
-        added_keys.add(k)
+        for k in sorted(remaining_keys, key=key_sort_order):
+            label = DISPLAY_ALIASES.get(k, k)
+            if label in added_labels:
+                continue
+            reverse_val = False if k.upper() in ["TO", "ERA", "WHIP", "L"] else True
+            categories.append({
+                "label": label,
+                "data_key": k,
+                "sort_key": k,
+                "reverse": reverse_val,
+                "is_pitcher": is_mlb_pitcher_stat("", k),
+                "is_common": False
+            })
+            added_labels.add(label)
+            added_keys.add(k)
 
     # Formatting heuristics helper
     def format_val(label, val):

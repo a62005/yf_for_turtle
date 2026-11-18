@@ -28,19 +28,15 @@ def test_llm_agent_gemini_command_intent(mock_generate_json):
 def test_llm_agent_gemini_chat_intent(mock_generate_json, mock_generate):
     # Stage 1: intent classifier returns "casual_chat"
     mock_generate_json.return_value = {"category": "casual_chat"}
-    # Stage 2: chat generator returns text response
-    mock_generate.return_value = "哈囉！"
 
     with patch.dict('os.environ', {'LLM_API_KEY': 'fake_key', 'LLM_MODEL': 'gemini-2.5-flash'}, clear=True):
         agent = LLMAgent()
         result = agent.analyze_intent("你好", "指令清單")
         assert result["is_command"] is False
-        assert result["reply_text"] == "哈囉！"
+        assert result["command_text"] is None
+        assert result["reply_text"] is None
         mock_generate_json.assert_called_once()
-        mock_generate.assert_called_once()
-        # Verify commands_desc was formatted into CHAT_PROMPT
-        args, kwargs = mock_generate.call_args
-        assert "指令清單" in kwargs.get("system_instruction")
+        mock_generate.assert_not_called()
 
 
 @patch('requests.post')
@@ -57,28 +53,16 @@ def test_llm_agent_agnes_chat_intent(mock_post):
             }
         ]
     }
-    
-    # Stage 2: Agnes response for casual chat generation
-    mock_resp_2 = MagicMock()
-    mock_resp_2.status_code = 200
-    mock_resp_2.json.return_value = {
-        "choices": [
-            {
-                "message": {
-                    "content": "哈囉！我是 Agnes AI。"
-                }
-            }
-        ]
-    }
-    mock_post.side_effect = [mock_resp_1, mock_resp_2]
+    mock_post.side_effect = [mock_resp_1]
 
     with patch.dict('os.environ', {'LLM_MODEL': 'agnes-2.0-flash', 'LLM_API_KEY': 'agnes_key'}, clear=True):
         agent = LLMAgent()
         result = agent.analyze_intent("你好", "指令清單")
         
         assert result["is_command"] is False
-        assert result["reply_text"] == "哈囉！我是 Agnes AI。"
-        assert mock_post.call_count == 2
+        assert result["command_text"] is None
+        assert result["reply_text"] is None
+        assert mock_post.call_count == 1
 
 
 def test_llm_agent_missing_api_key():

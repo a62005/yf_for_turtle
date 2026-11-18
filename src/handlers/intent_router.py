@@ -219,20 +219,8 @@ class IntentRouter:
                 
             self.dispatcher.handle(event, configuration)
         else:
-            if is_mentioned and result.get("error"):
-                logging.info("[IntentRouter] LLM 服務未啟用或異常，且為群組提及，不回覆任何訊息。")
-                return
-
-            reply_text = result.get("reply_text") or "我現在無法理解您的意思，請試著換個方式詢問。"
-            logging.info(f"[IntentRouter] LLM 生成對話回覆: {reply_text}")
-            
-            with ApiClient(configuration) as api_client:
-                MessagingApi(api_client).reply_message(
-                    ReplyMessageRequest(
-                        reply_token=event.reply_token,
-                        messages=[TextMessage(text=reply_text)]
-                    )
-                )
+            logging.info("[IntentRouter] 非標準查詢指令意圖（閒聊功能已關閉），靜默略過不回覆。")
+            return
 
     def _load_team_mapping(self) -> dict:
         """Load and return the team mapping from json config file."""

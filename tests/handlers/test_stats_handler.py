@@ -134,9 +134,9 @@ def test_stats_handler_postponed_blocks_query_and_prompts_next_open_time(
     測試：
     1. 13:55 判定仍有比賽 -> 延後至 14:25 更新、14:30 開放查詢
     2. 13:58 查詢 #戰績 (14:00 前) -> 正常回傳前一天 (2026-11-04) 戰績
-    3. 14:05 查詢 #戰績 -> 提示 "因仍有比賽正在進行，請於14:30後再次查詢"，且不回傳任何戰績
-    4. 14:25 再次判定仍有比賽 -> 延後至 14:55 更新、15:00 開放查詢；14:35 查詢 -> 提示 "因仍有比賽正在進行，請於15:00後再次查詢"
-    5. 14:55 更新完成 (completed=True, query_open_time=15:00)，14:57 查詢 -> 仍提示 "因仍有比賽正在進行，請於15:00後再次查詢"
+    3. 14:05 查詢 #戰績 -> 提示 "因稍早或當前仍有比賽正在進行，請於14:30後再次查詢"，且不回傳任何戰績
+    4. 14:25 再次判定仍有比賽 -> 延後至 14:55 更新、15:00 開放查詢；14:35 查詢 -> 提示 "因稍早或當前仍有比賽正在進行，請於15:00後再次查詢"
+    5. 14:55 更新完成 (completed=True, query_open_time=15:00)，14:57 查詢 -> 仍提示 "因稍早或當前仍有比賽正在進行，請於15:00後再次查詢"
     6. 15:00 查詢 -> 正常回傳當天 (2026-11-05) 戰績圖片
     """
     from src.scheduler import (
@@ -185,7 +185,7 @@ def test_stats_handler_postponed_blocks_query_and_prompts_next_open_time(
             handler.execute(event, config)
         msgs_1405 = mock_api_instance.reply_message.call_args[0][0].messages
         assert len(msgs_1405) == 1
-        assert msgs_1405[0].text == "因仍有比賽正在進行，請於14:30後再次查詢"
+        assert msgs_1405[0].text == "因稍早或當前仍有比賽正在進行，請於14:30後再次查詢"
 
         # 4. 14:25 仍有比賽 -> 延後至 14:55 更新、15:00 開放查詢；14:35 查詢 -> 提示 15:00 後再次查詢
         postpone_daily_schedule("2026-11-05", current_hm="14:25")
@@ -194,7 +194,7 @@ def test_stats_handler_postponed_blocks_query_and_prompts_next_open_time(
             handler.execute(event, config)
         msgs_1435 = mock_api_instance.reply_message.call_args[0][0].messages
         assert len(msgs_1435) == 1
-        assert msgs_1435[0].text == "因仍有比賽正在進行，請於15:00後再次查詢"
+        assert msgs_1435[0].text == "因稍早或當前仍有比賽正在進行，請於15:00後再次查詢"
 
         # 5. 14:55 比賽結束並完成更新，但 14:57 查詢 (未滿 15:00) -> 仍提示 15:00 後再次查詢
         mark_daily_schedule_completed("2026-11-05", update_time="14:55")
@@ -203,7 +203,7 @@ def test_stats_handler_postponed_blocks_query_and_prompts_next_open_time(
             handler.execute(event, config)
         msgs_1457 = mock_api_instance.reply_message.call_args[0][0].messages
         assert len(msgs_1457) == 1
-        assert msgs_1457[0].text == "因仍有比賽正在進行，請於15:00後再次查詢"
+        assert msgs_1457[0].text == "因稍早或當前仍有比賽正在進行，請於15:00後再次查詢"
 
         # 6. 15:00 查詢 -> 正常回傳當天 2026-11-05 戰績圖片
         mock_api_instance.reset_mock()

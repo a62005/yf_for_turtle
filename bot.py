@@ -21,6 +21,8 @@ from src.handlers.stats_handler import StatsHandler
 from src.handlers.player_handler import PlayerHandler
 from src.handlers.user_stats_handler import UserStatsHandler
 from src.handlers.matchup_handler import MatchupHandler
+from src.handlers.local_user_stats_handler import LocalUserStatsHandler
+from src.handlers.local_matchup_handler import LocalMatchupHandler
 from src.handlers.misc_handler import MiscHandler
 from src.handlers.intent_router import IntentRouter
 from src.handlers.football_handler import FootballHandler
@@ -56,6 +58,8 @@ dispatcher.register(StatsHandler())
 # dispatcher.register(PlayerHandler())
 # dispatcher.register(UserStatsHandler())
 # dispatcher.register(MatchupHandler())
+dispatcher.register(LocalUserStatsHandler())
+dispatcher.register(LocalMatchupHandler())
 dispatcher.register(MiscHandler())
 # dispatcher.register(FootballHandler())
 # dispatcher.register(InjuryHandler())
@@ -66,9 +70,8 @@ dispatcher.register(SetNicknameHandler())
 dispatcher.register(SetTimeHandler())
 dispatcher.register(SetPrizeHandler())
 
-# Initialize IntentRouter (關閉一般 LLM 對話回覆，僅處理上述已註冊之指令與其會話)
+# Initialize IntentRouter (支援標準指令、會話以及 @提及 / 單聊之 LLM 語意解析路由)
 intent_router = IntentRouter(dispatcher)
-intent_router._handle_llm_flow = lambda *args, **kwargs: None
 
 
 @app.route("/callback", methods=['POST'])

@@ -40,7 +40,7 @@ class LLMAgent:
                 from src.config import load_config as _load_config
                 
                 _league_id = _load_config().get("LEAGUE_ID")
-                meta = load_league_metadata(_league_id)
+                meta = load_league_metadata(_league_id) or {}
                 today_str = get_pacific_date()
                 current_week = meta.get("date_to_week", {}).get(today_str)
                 end_week = meta.get("end_week")
@@ -56,9 +56,14 @@ class LLMAgent:
 
         # 第一階段：意圖分類
         from .prompts.intent_router_prompt import CLASSIFIER_PROMPT, CHAT_PROMPT
+        classifier_prompt = CLASSIFIER_PROMPT.replace("{players_list}", players_list or "")
         try:
-            category_res = self.provider.generate_json(text, system_instruction=CLASSIFIER_PROMPT, temperature=0.1)
+            category_res = self.provider.generate_json(text, system_instruction=classifier_prompt, temperature=0.1)
             category = category_res.get("category", "casual_chat")
+            # 若輸入文字中明確包含聯賽玩家名稱，強制視為聯賽查詢意圖
+            player_names = [p.strip() for p in (players_list or "").split(",") if p.strip()]
+            if category != "league_query" and any(p in text for p in player_names):
+                category = "league_query"
             logging.info(f"[LLM] 第一階段意圖分類結果: {category}")
         except Exception as ce:
             logging.error(f"[LLM] 第一階段意圖分類失敗: {ce}，預設進行聯賽查詢解析")
@@ -78,18 +83,13 @@ class LLMAgent:
                 logging.error(f"[LLM] 第二階段聯賽意圖解析失敗: {e}")
                 return self._handle_exception()
         else:
-            # 閒聊意圖：使用極簡對話 Prompt，避免無謂的 Token 浪費與指令綁定
-            try:
-                formatted_chat = CHAT_PROMPT.replace("{commands_desc}", commands_desc)
-                chat_reply = self.provider.generate(text, system_instruction=formatted_chat, temperature=0.7)
-                return {
-                    "is_command": False,
-                    "command_text": None,
-                    "reply_text": chat_reply
-                }
-            except Exception as e:
-                logging.error(f"[LLM] 第二階段閒聊生成失敗: {e}")
-                return self._handle_exception()
+            # 閒聊功能已關閉：不呼叫第二階段 LLM，直接回傳非指令且不回覆
+            logging.info("[LLM] 閒聊功能已停用，略過 casual_chat 對話生成。")
+            return {
+                "is_command": False,
+                "command_text": None,
+                "reply_text": None
+            }
 
     def _handle_exception(self) -> dict:
         from .agnes import AgnesProvider

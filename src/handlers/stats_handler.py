@@ -102,7 +102,7 @@ class StatsHandler(BaseHandler):
                         MessagingApi(api_client).reply_message(
                             ReplyMessageRequest(
                                 reply_token=event.reply_token,
-                                messages=[TextMessage(text=f"因仍有比賽正在進行，請於{query_open_time}後再次查詢")]
+                                messages=[TextMessage(text=f"因稍早或當前仍有比賽正在進行，請於{query_open_time}後再次查詢")]
                             )
                         )
                     return
@@ -128,7 +128,7 @@ class StatsHandler(BaseHandler):
                     MessagingApi(api_client).reply_message(
                         ReplyMessageRequest(
                             reply_token=event.reply_token,
-                            messages=[TextMessage(text=f"因仍有比賽正在進行，請於{query_open_time}後再次查詢")]
+                            messages=[TextMessage(text=f"因稍早或當前仍有比賽正在進行，請於{query_open_time}後再次查詢")]
                         )
                     )
                 return
@@ -175,7 +175,7 @@ class StatsHandler(BaseHandler):
                     MessagingApi(api_client).reply_message(
                         ReplyMessageRequest(
                             reply_token=event.reply_token,
-                            messages=[TextMessage(text=f"因仍有比賽正在進行，請於{query_open_time}後再次查詢")]
+                            messages=[TextMessage(text=f"因稍早或當前仍有比賽正在進行，請於{query_open_time}後再次查詢")]
                         )
                     )
                 return
