@@ -561,4 +561,195 @@ def test_fetch_daily_and_weekly_stats_authoritative_override_for_today_and_game_
     assert d_map["6"] == 10
     assert w_map["3"] == "20/40"
     assert w_map["6"] == "20/36"
+    assert w_stats["matchups"] == [{"team1_id": "3", "team2_id": "6"}]
+    assert d_stats["team_stats"][0]["official_name"] == "Serjinler"
+    assert w_stats["team_stats"][0]["official_name"] == "Serjinler"
+
+
+def test_sanitize_stat_categories_strips_hallucinated_at_in_9cat_and_keeps_in_11cat(tmp_path):
+    fetcher = WebAgentFetcher(league_id="nba.l.49432", api_key="dummy")
+
+    # 1. 9-CAT 聯盟 (表格標題不含 A/T，AI 卻在 weekly 腦補算出 A/T)
+    scraped_9cat = {
+        "discovered_teams": [{"team_id": "1", "name": "小謝"}],
+        "daily_pages": [{"team_id": "1", "today_active_players": 6, "tables": ["Pos | Player | PTS | AST | TO"]}],
+        "weekly_pages": [{"games_played_map": {"1": "6/40"}, "tables": ["Team | PTS | AST | TO | Score"]}]
+    }
+    parsed_9cat = {
+        "games_in_progress": False,
+        "daily_stats": {"team_stats": [{"team_id": "1", "name": "小謝", "stats": {"PTS": 108, "AST": 31, "TO": 12}}]},
+        "weekly_stats": {"team_stats": [{"team_id": "1", "name": "小謝", "stats": {"PTS": 108, "AST": 31, "TO": 12, "A/T": 2.58}}]}
+    }
+
+    with patch("src.utils.path_utils.DATA_DIR", str(tmp_path)), \
+         patch.object(fetcher, "_scrape_league_pages", return_value=scraped_9cat), \
+         patch.object(fetcher, "_parse_with_gemini", return_value=parsed_9cat):
+        d_9, w_9 = fetcher.fetch_daily_and_weekly_stats("nba.l.49432", "2026-11-09")
+
+    assert "A/T" not in d_9["team_stats"][0]["stats"]
+    assert "A/T" not in w_9["team_stats"][0]["stats"]
+
+    # 2. 11-CAT 聯盟 (表格標題確實包含 DD 與 A/T)
+    scraped_11cat = {
+        "discovered_teams": [{"team_id": "1", "name": "肥儒"}],
+        "daily_pages": [{"team_id": "1", "today_active_players": 8, "tables": ["Pos | Player | PTS | AST | TO | DD | A/T"]}],
+        "weekly_pages": [{"games_played_map": {"1": "8/40"}, "tables": ["Team | PTS | AST | TO | DD | A/T | Score"]}]
+    }
+    parsed_11cat = {
+        "games_in_progress": False,
+        "daily_stats": {"team_stats": [{"team_id": "1", "name": "肥儒", "stats": {"PTS": 120, "AST": 30, "TO": 10, "DD": 2, "A/T": 3.0}}]},
+        "weekly_stats": {"team_stats": [{"team_id": "1", "name": "肥儒", "stats": {"PTS": 120, "AST": 30, "TO": 10, "DD": 2, "A/T": 3.0}}]}
+    }
+
+    with patch("src.utils.path_utils.DATA_DIR", str(tmp_path)), \
+         patch.object(fetcher, "_scrape_league_pages", return_value=scraped_11cat), \
+         patch.object(fetcher, "_parse_with_gemini", return_value=parsed_11cat):
+        d_11, w_11 = fetcher.fetch_daily_and_weekly_stats("nba.l.16645", "2026-11-09")
+
+    assert d_11["team_stats"][0]["stats"]["DD"] == 2
+    assert d_11["team_stats"][0]["stats"]["A/T"] == 3.0
+    assert w_11["team_stats"][0]["stats"]["DD"] == 2
+    assert w_11["team_stats"][0]["stats"]["A/T"] == 3.0
+
+
+def test_deterministic_dom_table_extraction_bypasses_gemini_and_parses_exact_stats(tmp_path):
+    fetcher = WebAgentFetcher(
+        team_mapping={"6": "Andy", "10": "小謝"},
+        league_id="nba.l.49432",
+        api_key="dummy"
+    )
+    scraped_dom = {
+        "week": 5,
+        "discovered_teams": [
+            {"team_id": "6", "name": "來囉來囉"},
+            {"team_id": "10", "name": "姆主席萬歲"}
+        ],
+        "matchup_urls": ["https://basketball.fantasysports.yahoo.com/nba/49432/matchup?week=5&mid1=6&mid2=10"],
+        "daily_pages": [
+            {
+                "team_id": "6",
+                "team_name": "來囉來囉",
+                "today_active_players": 4,
+                "tables": [
+                    "Pos | Players | Opp | Pre-Season | % Start | % Ros | MIN* | FGM/A* | FG% | FTM/A* | FT% | 3PTM | PTS | REB | AST | ST | BLK | TO |\n"
+                    " | Starting Lineup Totals |  |  |  |  |  | 20/36 | .556 | 9/13 | .692 | 2 | 51 | 30 | 21 | 7 | 3 | 5 |"
+                ]
+            },
+            {
+                "team_id": "10",
+                "team_name": "姆主席萬歲",
+                "today_active_players": 3,
+                "tables": [
+                    "Pos | Players | Opp | Pre-Season | % Start | % Ros | MIN* | FGM/A* | FG% | FTM/A* | FT% | 3PTM | PTS | REB | AST | ST | BLK | TO |\n"
+                    " | Starting Lineup Totals |  |  |  |  |  | 15/27 | .556 | 0/0 |  | 3 | 33 | 6 | 8 | 2 | 3 | 2 |"
+                ]
+            }
+        ],
+        "weekly_pages": [
+            {
+                "url": "https://basketball.fantasysports.yahoo.com/nba/49432/matchup?week=5&mid1=6&mid2=10",
+                "matched_team_ids": ["10", "6"],
+                "games_played_map": {"10": "7/32", "6": "10/32"},
+                "tables": [
+                    "Team | FGM/A* | FG% | FTM/A* | FT% | 3PTM | PTS | REB | AST | ST | BLK | TO | \n"
+                    "姆主席萬歲 (team_id: 10) | 45/84 | .536 | 9/12 | .750 | 10 | 109 | 28 | 29 | 10 | 4 | 3 | 3\n"
+                    "來囉來囉 (team_id: 6) | 59/121 | .488 | 38/45 | .844 | 11 | 167 | 68 | 52 | 11 | 5 | 19 | 6"
+                ]
+            }
+        ]
+    }
+
+    with patch("src.utils.path_utils.DATA_DIR", str(tmp_path)), \
+         patch.object(fetcher, "_scrape_league_pages", return_value=scraped_dom), \
+         patch.object(fetcher, "_parse_with_gemini") as mock_gemini:
+        d_stats, w_stats = fetcher.fetch_daily_and_weekly_stats("nba.l.49432", "2026-11-17")
+
+    # 驗證 100% 由 DOM 確定性解析完成，完全不需呼叫 Gemini 猜測數字
+    mock_gemini.assert_not_called()
+
+    w_by_id = {t["team_id"]: t for t in w_stats["team_stats"]}
+    assert w_by_id["6"]["name"] == "Andy"
+    assert w_by_id["6"]["stats"]["Game Player"] == "10/32"
+    assert w_by_id["6"]["stats"]["PTS"] == 167
+    assert w_by_id["6"]["stats"]["FGM/A"] == "59/121"
+    assert w_by_id["10"]["name"] == "小謝"
+    assert w_by_id["10"]["stats"]["Game Player"] == "7/32"
+    assert w_by_id["10"]["stats"]["PTS"] == 109
+
+
+def test_validate_stats_integrity_rejects_zero_matchup_and_retries_successfully(tmp_path):
+    from src.web_agent_fetcher import StatsDataValidationError
+
+    fetcher = WebAgentFetcher(league_id="nba.l.49432", api_key="dummy")
+
+    # 第一次抓取：漏掉第二組對戰 (6 vs 10)，且 AI 將第 6 隊填為 0 分 (小於當日 51 分)
+    bad_scraped = {
+        "week": 5,
+        "discovered_teams": [{"team_id": "1", "name": "A"}, {"team_id": "6", "name": "Andy"}],
+        "matchup_urls": ["url_1", "url_2"],
+        "daily_pages": [
+            {"team_id": "1", "today_active_players": 3, "tables": []},
+            {"team_id": "6", "today_active_players": 4, "tables": []}
+        ],
+        "weekly_pages": [
+            {"url": "url_1", "matched_team_ids": ["1", "3"], "games_played_map": {"1": "11/41"}, "tables": []}
+        ]
+    }
+    good_scraped = {
+        "week": 5,
+        "discovered_teams": [{"team_id": "1", "name": "A"}, {"team_id": "6", "name": "Andy"}],
+        "matchup_urls": ["url_1", "url_2"],
+        "daily_pages": [
+            {"team_id": "1", "today_active_players": 3, "tables": []},
+            {"team_id": "6", "today_active_players": 4, "tables": []}
+        ],
+        "weekly_pages": [
+            {"url": "url_1", "matched_team_ids": ["1", "3"], "games_played_map": {"1": "11/41"}, "tables": []},
+            {"url": "url_2", "matched_team_ids": ["6", "10"], "games_played_map": {"6": "10/32"}, "tables": []}
+        ]
+    }
+
+    bad_parsed = {
+        "games_in_progress": False,
+        "daily_stats": {"team_stats": [
+            {"team_id": "1", "name": "A", "stats": {"PTS": 53}},
+            {"team_id": "6", "name": "Andy", "stats": {"PTS": 51}}
+        ]},
+        "weekly_stats": {"team_stats": [
+            {"team_id": "1", "name": "A", "stats": {"PTS": 154}},
+            {"team_id": "6", "name": "Andy", "stats": {"PTS": 0}}
+        ]}
+    }
+    good_parsed = {
+        "games_in_progress": False,
+        "daily_stats": {"team_stats": [
+            {"team_id": "1", "name": "A", "stats": {"PTS": 53}},
+            {"team_id": "6", "name": "Andy", "stats": {"PTS": 51}}
+        ]},
+        "weekly_stats": {"team_stats": [
+            {"team_id": "1", "name": "A", "stats": {"PTS": 154}},
+            {"team_id": "6", "name": "Andy", "stats": {"PTS": 167}}
+        ]}
+    }
+
+    with patch("src.utils.path_utils.DATA_DIR", str(tmp_path)), \
+         patch("src.web_agent_fetcher.time.sleep"), \
+         patch.object(fetcher, "_scrape_league_pages", side_effect=[bad_scraped, good_scraped]) as mock_scrape, \
+         patch.object(fetcher, "_parse_with_gemini", side_effect=[bad_parsed, good_parsed]):
+        d_stats, w_stats = fetcher.fetch_daily_and_weekly_stats("nba.l.49432", "2026-11-17")
+
+    assert mock_scrape.call_count == 2
+    w_by_id = {t["team_id"]: t for t in w_stats["team_stats"]}
+    assert w_by_id["6"]["stats"]["PTS"] == 167
+
+    # 若連續 3 次皆為錯誤數據 (daily PTS=51 > weekly PTS=0)，則拋出 StatsDataValidationError 且絕不寫入錯誤 JSON
+    with patch("src.utils.path_utils.DATA_DIR", str(tmp_path)), \
+         patch("src.web_agent_fetcher.time.sleep"), \
+         patch.object(fetcher, "_scrape_league_pages", return_value=good_scraped), \
+         patch.object(fetcher, "_parse_with_gemini", return_value=bad_parsed):
+        with pytest.raises(StatsDataValidationError):
+            fetcher.fetch_daily_and_weekly_stats("nba.l.49432", "2026-11-18")
+
+
+
 

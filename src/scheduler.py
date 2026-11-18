@@ -192,10 +192,14 @@ def trigger_daily_stats_push(target_date: str = None) -> int:
         env["LEAGUE_ID"] = str(league_id)
         env["PYTHONPATH"] = BASE_DIR + os.pathsep + env.get("PYTHONPATH", "")
         logging.info(f"[SCHEDULER] 觸發每日 AI Agent 戰績快取更新任務 ({target_date}): chat_id={chat_id}, league_id={league_id}")
-        subprocess.Popen(
+        proc = subprocess.Popen(
             [sys.executable, agent_script, "--fetch-only", "--league-id", str(league_id), "--reply-to", str(chat_id), "--date", str(target_date)],
             env=env
         )
+        try:
+            proc.wait(timeout=240)
+        except Exception as wait_err:
+            logging.warning(f"[SCHEDULER] 等待聯盟 {league_id} 更新程序完成時逾時或發生錯誤: {wait_err}")
         triggered += 1
 
     return triggered
