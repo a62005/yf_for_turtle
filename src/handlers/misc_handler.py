@@ -130,7 +130,7 @@ class MiscHandler(BaseHandler):
                         },
                         {
                             "type": "text",
-                            "text": "※ 球員數據請直接在對話框輸入：\n#球員 球員名字 (例：#球員 老詹)",
+                            "text": "支援點擊選單或輸入 #對戰 [暱稱]、#玩家 [暱稱]",
                             "size": "xs",
                             "color": "#777777",
                             "wrap": True
@@ -632,6 +632,17 @@ class MiscHandler(BaseHandler):
                     if not self._is_command_registered("#球員 老詹"):
                         continue
                     kept_command_notes += 1
+                elif "#對戰" in text_val or "#玩家" in text_val:
+                    had_buttons_or_cmd_notes = True
+                    has_m = self._is_command_registered("#對戰")
+                    has_u = self._is_command_registered("#玩家")
+                    if not (has_m or has_u):
+                        continue
+                    if has_u and not has_m:
+                        item["text"] = "支援點擊選單或輸入 #玩家 [暱稱]"
+                    elif has_m and not has_u:
+                        item["text"] = "支援點擊選單或輸入 #對戰 [暱稱]"
+                    kept_command_notes += 1
                 elif "選秀與開季" in text_val:
                     had_buttons_or_cmd_notes = True
                     if not (self._is_command_registered("#選秀") or self._is_command_registered("#開季")):
@@ -728,26 +739,27 @@ class MiscHandler(BaseHandler):
         except Exception as e:
             logging.error(f"[MiscHandler] 發送 Flex 幫助選單失敗: {e}，改用純文字 Fallback。")
             help_items = [
-                ("● #戰績 ：查詢當日聯賽綜合戰績", "#戰績"),
-                ("● #對戰 肥儒 ：查詢指定玩家當週即時 9-Cat 對決", "#對戰"),
-                ("● #玩家 肥儒 ：查詢指定玩家今日累積數據與排名", "#玩家"),
+                ("● #戰績 ：查詢當日聯賽綜合戰績（支援 #戰績昨天、#戰績上週、#戰績W3、#戰績YYYYMMDD）", "#戰績"),
+                ("● #對戰 [暱稱] ：查詢指定玩家當週即時對決比分", "#對戰"),
+                ("● #玩家 [暱稱] ：查詢指定玩家當日與當週戰績數據", "#玩家"),
                 ("● #球員 老詹 ：查詢指定球員今日即時比賽表現", "#球員 老詹"),
+                ("● #獎金 ：查詢聯賽獎金資訊", "#獎金"),
+                ("● #開季 ：查詢新賽季開季倒數（休賽季）", "#開季"),
+                ("● #選秀 ：查詢聯盟選秀倒數（休賽季）", "#選秀"),
+                ("● #我的ID ：查詢您目前的 LINE User ID", "#我的ID"),
             ]
+            if is_admin:
+                help_items.extend([
+                    ("● #設置 ：開啟系統設置選單（限管理員/白名單）", "#設置"),
+                    ("● #設置玩家暱稱 ：調整玩家在 Bot 中的顯示暱稱（限管理員/白名單）", "#設置玩家暱稱"),
+                ])
             active_lines = [line for line, cmd in help_items if self._is_command_registered(cmd)]
-            if not active_lines and getattr(self, "dispatcher", None) is not None:
-                extra_items = [
-                    ("● #獎金 ：查詢聯賽獎金資訊", "#獎金"),
-                    ("● #開季 ：查詢新賽季開季倒數", "#開季"),
-                    ("● #選秀 ：查詢聯盟選秀倒數", "#選秀"),
-                    ("● #設置 ：開啟系統設置選單", "#設置"),
-                ]
-                active_lines = [line for line, cmd in extra_items if self._is_command_registered(cmd)]
 
             default_help = (
                 "👋 您好！歡迎使用聯賽數據助手。\n\n"
                 "【常用指令】\n"
                 + ("\n".join(active_lines) + "\n\n" if active_lines else "")
-                + "※ 提示：輸入「#幫助」可獲取完整的指令複製清單。"
+                + "※ 提示：輸入「#幫助」可獲取完整的指令選單。"
             )
             # 若 data/help.txt 存在，試圖讀取
             help_txt_path = os.path.join(project_root, "data", "help.txt")

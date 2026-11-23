@@ -184,7 +184,7 @@ class SeasonStartTimeSession(ConversationSession):
             return True
 
 class LeagueIdSession(ConversationSession):
-    def __init__(self, user_id: str, sport: str, duration_sec: int = 60):
+    def __init__(self, user_id: str, sport: str = "nba", duration_sec: int = 60):
         super().__init__(user_id, duration_sec)
         self.sport = sport
 

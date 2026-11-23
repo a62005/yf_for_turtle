@@ -135,36 +135,37 @@ def test_set_league_id_handler_interactive_flow(mocker):
     mock_reply_flex = mocker.patch.object(handler, "reply_flex")
     mock_reply_text = mocker.patch.object(handler, "reply_text")
     
-    # 測試 1: 傳送 "#設置聯盟ID" (無參數)
+    # 測試 1: 傳送 "#設置聯盟ID" (無參數) -> 直接進入 NBA 聯盟 ID 輸入會話，不顯示 MLB 選單
     event1 = MagicMock()
     event1.message.text = "#設置聯盟ID"
     event1.source.user_id = "user_test_123"
     
     handler.execute(event1, MagicMock())
     
-    # 驗證是否回覆 Flex Message
-    mock_reply_flex.assert_called_once()
-    flex_msg = mock_reply_flex.call_args[0][3]
-    assert flex_msg is not None
-    
-    # 測試 2: 選擇運動 "#設置聯盟ID nba"
-    event2 = MagicMock()
-    event2.message.text = "#設置聯盟ID nba"
-    event2.source.user_id = "user_test_123"
-    
-    mock_reply_flex.reset_mock()
-    
-    handler.execute(event2, MagicMock())
-    
-    # 驗證是否設定了對話會話 (session_manager)
+    mock_reply_flex.assert_not_called()
     session = session_manager.get_active_session("user_test_123")
     assert session is not None
     assert isinstance(session, session_manager.LeagueIdSession)
     assert session.sport == "nba"
-    
-    # 驗證回覆了引導提示文字
     mock_reply_text.assert_called_once()
-    assert "請在 60 秒內輸入您的聯盟 ID" in mock_reply_text.call_args[0][2]
+    assert "請在 60 秒內輸入您的 NBA 聯盟 ID" in mock_reply_text.call_args[0][2]
+
+    # 測試 2: 嘗試設置 MLB 聯盟 ("#設置聯盟ID mlb" 或 "#設置聯盟ID mlb.l.12345") -> 拒絕並提示目前僅支援 NBA
+    mock_reply_text.reset_mock()
+    event_mlb = MagicMock()
+    event_mlb.message.text = "#設置聯盟ID mlb"
+    event_mlb.source.user_id = "user_test_123"
+    handler.execute(event_mlb, MagicMock())
+    mock_reply_text.assert_called_once()
+    assert "目前僅支援 NBA" in mock_reply_text.call_args[0][2]
+
+    mock_reply_text.reset_mock()
+    event_mlb_id = MagicMock()
+    event_mlb_id.message.text = "#設置聯盟ID mlb.l.12345"
+    event_mlb_id.source.user_id = "user_test_123"
+    handler.execute(event_mlb_id, MagicMock())
+    mock_reply_text.assert_called_once()
+    assert "目前僅支援 NBA" in mock_reply_text.call_args[0][2]
 
 
 def test_set_league_id_handler_interactive_session_digit(mocker):
@@ -487,7 +488,7 @@ def test_set_league_id_reuses_existing_user_token(mocker):
     handler = SetLeagueIdHandler()
     handler.reply_text = mocker.MagicMock()
     event = mocker.MagicMock()
-    event.message.text = "#設置聯盟ID mlb.l.22222"
+    event.message.text = "#設置聯盟ID nba.l.22222"
     event.source.user_id = "user_abc"
     config = mocker.MagicMock()
     
@@ -532,7 +533,7 @@ def test_set_league_id_reuses_existing_user_token(mocker):
             mocker.ANY,
             mocker.ANY
         )
-        handler.reply_text.assert_called_once_with(event, config, "✅ 成功將此聊天室綁定至聯賽 ID：mlb.l.22222")
+        handler.reply_text.assert_called_once_with(event, config, "✅ 成功將此聊天室綁定至聯賽 ID：nba.l.22222")
     finally:
         current_chat_id.reset(token)
 
@@ -543,7 +544,7 @@ def test_set_league_id_does_not_reuse_unauthorized_token(mocker):
     handler = SetLeagueIdHandler()
     handler.reply_text = mocker.MagicMock()
     event = mocker.MagicMock()
-    event.message.text = "#設置聯盟ID mlb.l.22222"
+    event.message.text = "#設置聯盟ID nba.l.22222"
     event.source.user_id = "user_abc"
     config = mocker.MagicMock()
     

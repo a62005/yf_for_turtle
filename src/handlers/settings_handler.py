@@ -28,7 +28,7 @@ class SettingsHandler(BaseHandler):
         if not league_id:
             title = "系統初始化設置"
             subtitle = None
-            buttons = [("設置聯盟 ID", "#設置聯盟ID ")] if is_manager else []
+            buttons = [("設置聯盟 ID", "#設置聯盟ID")] if is_manager else []
         else:
             title = f"聯盟設置 (ID: {league_id})"
             subtitle = None

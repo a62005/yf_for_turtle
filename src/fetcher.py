@@ -72,7 +72,10 @@ class YahooFantasyFetcher:
             else:
                 sport = "nba"
                 raw_id = lid_str
-            rel_league_dir = os.path.relpath(league_dir, BASE_DIR).replace("\\", "/")
+            try:
+                rel_league_dir = os.path.relpath(league_dir, BASE_DIR).replace("\\", "/")
+            except ValueError:
+                rel_league_dir = league_dir.replace("\\", "/")
             persist_key = f"{rel_league_dir}/"
 
         # 清除 yahoofantasy 的全域記憶體快取，避免同一 process 中切換聯賽時

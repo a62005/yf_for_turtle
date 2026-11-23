@@ -121,50 +121,44 @@ class SetLeagueIdHandler(BaseHandler):
             self.reply_text(event, configuration, "✅ 已成功解除此群組的聯盟綁定。")
             return
 
-        # 1. 收到無參數 #設置聯盟ID 時，發送包含 NBA 籃球與 MLB 棒球按鈕的 Flex Message
-        if user_text == "#設置聯盟ID":
-            from src.visualizer.flex_builder import build_button_menu_card
-            title = "選擇要設置的運動項目"
-            buttons = [
-                ("NBA 籃球", "#設置聯盟ID nba"),
-                ("MLB 棒球", "#設置聯盟ID mlb")
-            ]
-            flex_dict = build_button_menu_card(title, None, buttons)
-            self.reply_flex(event, configuration, "請選擇要設置的運動項目", flex_dict)
-            return
-
+        # 1. 收到無參數 #設置聯盟ID（或舊格式 #設置聯盟ID nba）時，直接進入 NBA 聯盟 ID 輸入會話（目前僅支援 NBA）
         parts = user_text.split()
-        
-        # 2. 收到選擇後（例如 #設置聯盟ID nba），以 session_manager 設定對話狀態，攜帶 sport，引導輸入數字 ID
-        if len(parts) == 2 and parts[1].lower() in ["nba", "mlb"]:
-            sport = parts[1].lower()
+        if user_text == "#設置聯盟ID" or (len(parts) == 2 and parts[1].lower() == "nba"):
             if user_id:
-                register_session(LeagueIdSession(user_id, sport, duration_sec=60))
-                sport_name = "NBA 籃球" if sport == "nba" else "MLB 棒球"
-                self.reply_text(event, configuration, f"您選擇了 {sport_name}。請在 60 秒內輸入您的聯盟 ID（純數字，例如 18457）：")
+                register_session(LeagueIdSession(user_id, "nba", duration_sec=60))
+                self.reply_text(event, configuration, "請在 60 秒內輸入您的 NBA 聯盟 ID（純數字，例如 18457）：")
             else:
                 self.reply_text(event, configuration, "⚠️ 無法獲取您的 User ID，請重新嘗試。")
             return
 
-        # 3. 處理使用者輸入的數字 ID (互動會話中)
+        if len(parts) == 2 and parts[1].lower() == "mlb":
+            self.reply_text(event, configuration, "⚠️ 目前僅支援 NBA 聯盟綁定。")
+            return
+
+        # 2. 處理使用者輸入的數字 ID (互動會話中)
         session = None
         if user_id:
             session = get_active_session(user_id)
 
         if isinstance(session, LeagueIdSession) and len(parts) == 2 and parts[1].isdigit():
-            sport = session.sport
+            sport = getattr(session, "sport", "nba") or "nba"
+            if sport != "nba":
+                sport = "nba"
             target_id = f"{sport}.l.{parts[1]}"
             clear_active_session(user_id)
         else:
-            # 4. 直接輸入參數或是其他情況
+            # 3. 直接輸入參數或是其他情況
             if len(parts) < 2:
                 self.reply_text(event, configuration, "⚠️ 指令格式錯誤。")
                 return
             target_id = parts[1].strip()
+            if target_id.lower().startswith("mlb.l."):
+                self.reply_text(event, configuration, "⚠️ 目前僅支援 NBA 聯盟綁定。")
+                return
             # 補全前綴
             if target_id.isdigit():
                 target_id = f"nba.l.{target_id}"
-            elif not target_id.startswith("nba.l.") and not target_id.startswith("mlb.l."):
+            elif not target_id.startswith("nba.l."):
                 target_id = f"nba.l.{target_id}"
 
         # 檢查該聯盟 ID 是否已被其他管理員管理
