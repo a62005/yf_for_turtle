@@ -23,6 +23,7 @@ from src.handlers.user_stats_handler import UserStatsHandler
 from src.handlers.matchup_handler import MatchupHandler
 from src.handlers.local_user_stats_handler import LocalUserStatsHandler
 from src.handlers.local_matchup_handler import LocalMatchupHandler
+from src.handlers.local_score_handler import LocalScoreHandler
 from src.handlers.misc_handler import MiscHandler
 from src.handlers.intent_router import IntentRouter
 from src.handlers.football_handler import FootballHandler
@@ -60,6 +61,7 @@ dispatcher.register(StatsHandler())
 # dispatcher.register(MatchupHandler())
 dispatcher.register(LocalUserStatsHandler())
 dispatcher.register(LocalMatchupHandler())
+dispatcher.register(LocalScoreHandler())
 dispatcher.register(MiscHandler())
 # dispatcher.register(FootballHandler())
 # dispatcher.register(InjuryHandler())

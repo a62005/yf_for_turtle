@@ -130,7 +130,7 @@ class MiscHandler(BaseHandler):
                         },
                         {
                             "type": "text",
-                            "text": "支援點擊選單或輸入 #對戰 [暱稱]、#玩家 [暱稱]",
+                            "text": "支援點擊選單或輸入 #對戰 [暱稱]、#比分 [暱稱]、#玩家 [暱稱]",
                             "size": "xs",
                             "color": "#777777",
                             "wrap": True
@@ -148,6 +148,16 @@ class MiscHandler(BaseHandler):
                                         "type": "message",
                                         "label": "即時對決",
                                         "text": "#對戰"
+                                    }
+                                },
+                                {
+                                    "type": "button",
+                                    "style": "secondary",
+                                    "height": "sm",
+                                    "action": {
+                                        "type": "message",
+                                        "label": "全聯盟比分",
+                                        "text": "#比分"
                                     }
                                 },
                                 {
@@ -632,16 +642,21 @@ class MiscHandler(BaseHandler):
                     if not self._is_command_registered("#球員 老詹"):
                         continue
                     kept_command_notes += 1
-                elif "#對戰" in text_val or "#玩家" in text_val:
+                elif "#對戰" in text_val or "#玩家" in text_val or "#比分" in text_val:
                     had_buttons_or_cmd_notes = True
                     has_m = self._is_command_registered("#對戰")
+                    has_s = self._is_command_registered("#比分")
                     has_u = self._is_command_registered("#玩家")
-                    if not (has_m or has_u):
+                    if not (has_m or has_s or has_u):
                         continue
-                    if has_u and not has_m:
-                        item["text"] = "支援點擊選單或輸入 #玩家 [暱稱]"
-                    elif has_m and not has_u:
-                        item["text"] = "支援點擊選單或輸入 #對戰 [暱稱]"
+                    active_notes = []
+                    if has_m:
+                        active_notes.append("#對戰 [暱稱]")
+                    if has_s:
+                        active_notes.append("#比分 [暱稱]")
+                    if has_u:
+                        active_notes.append("#玩家 [暱稱]")
+                    item["text"] = "支援點擊選單或輸入 " + "、".join(active_notes)
                     kept_command_notes += 1
                 elif "選秀與開季" in text_val:
                     had_buttons_or_cmd_notes = True
@@ -660,7 +675,7 @@ class MiscHandler(BaseHandler):
             if item.get("type") == "box" and "contents" in item:
                 sub_items = item.get("contents", [])
                 if len(sub_items) >= 2 and sub_items[0].get("type") == "text" and "玩家與對戰" in sub_items[0].get("text", ""):
-                    has_matchup = "#對戰" in remaining_button_cmds
+                    has_matchup = "#對戰" in remaining_button_cmds or "#比分" in remaining_button_cmds
                     has_user = "#玩家" in remaining_button_cmds
                     if has_user and not has_matchup:
                         sub_items[0]["text"] = "⚔️ 玩家數據"
@@ -741,6 +756,7 @@ class MiscHandler(BaseHandler):
             help_items = [
                 ("● #戰績 ：查詢當日聯賽綜合戰績（支援 #戰績昨天、#戰績上週、#戰績W3、#戰績YYYYMMDD）", "#戰績"),
                 ("● #對戰 [暱稱] ：查詢指定玩家當週即時對決比分", "#對戰"),
+                ("● #比分 [暱稱] ：查詢指定玩家對全聯盟所有人的模擬比分（支援 #比分 [暱稱] W3、#比分 [暱稱] 上週）", "#比分"),
                 ("● #玩家 [暱稱] ：查詢指定玩家當日與當週戰績數據", "#玩家"),
                 ("● #球員 老詹 ：查詢指定球員今日即時比賽表現", "#球員 老詹"),
                 ("● #獎金 ：查詢聯賽獎金資訊", "#獎金"),

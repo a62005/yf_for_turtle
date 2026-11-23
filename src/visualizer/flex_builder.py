@@ -523,3 +523,164 @@ def build_button_menu_card(title: str, subtitle: str = None, buttons: list = Non
         body_contents.append(buttons_box)
 
     return _create_bubble(body_contents)
+
+
+def _build_all_play_opponent_row(item: dict, score_color: str) -> dict:
+    opp_name = str(item.get("opp_nickname") or "")
+    is_actual = bool(item.get("is_actual_opponent"))
+    wins = int(item.get("wins", 0))
+    losses = int(item.get("losses", 0))
+    ties = int(item.get("ties", 0))
+    score_str = f"{wins} : {losses} : {ties}" if ties > 0 else f"{wins} : {losses}"
+
+    if is_actual:
+        left_box = {
+            "type": "box",
+            "layout": "horizontal",
+            "alignItems": "center",
+            "spacing": "sm",
+            "flex": 7,
+            "contents": [
+                {
+                    "type": "text",
+                    "text": f"⚔️ {opp_name}",
+                    "size": "sm",
+                    "weight": "bold",
+                    "color": "#111111",
+                    "flex": 0,
+                },
+                {
+                    "type": "box",
+                    "layout": "vertical",
+                    "backgroundColor": "#EBF5FB",
+                    "borderColor": "#AED6F1",
+                    "borderWidth": "1px",
+                    "cornerRadius": "4px",
+                    "paddingStart": "6px",
+                    "paddingEnd": "6px",
+                    "paddingTop": "1px",
+                    "paddingBottom": "1px",
+                    "flex": 0,
+                    "contents": [
+                        {
+                            "type": "text",
+                            "text": "當週對手",
+                            "size": "xxs",
+                            "weight": "bold",
+                            "color": "#2980B9",
+                        }
+                    ],
+                },
+            ],
+        }
+    else:
+        left_box = {
+            "type": "text",
+            "text": opp_name,
+            "size": "sm",
+            "weight": "regular",
+            "color": "#333333",
+            "flex": 7,
+        }
+
+    return {
+        "type": "box",
+        "layout": "horizontal",
+        "alignItems": "center",
+        "contents": [
+            left_box,
+            {
+                "type": "text",
+                "text": score_str,
+                "size": "sm",
+                "weight": "bold",
+                "color": score_color,
+                "align": "end",
+                "flex": 4,
+            },
+        ],
+    }
+
+
+def build_all_play_score_card(
+    title: str,
+    player_info: dict,
+    win_rows: list[dict],
+    tie_rows: list[dict],
+    loss_rows: list[dict],
+) -> dict:
+    """Build an All-Play Score Simulation Flex Message card."""
+    header_contents = [
+        {
+            "type": "text",
+            "text": str(player_info.get("my_nickname") or ""),
+            "weight": "bold",
+            "size": "xl",
+            "color": "#111111",
+        }
+    ]
+    my_official = str(player_info.get("my_official") or "").strip()
+    if my_official:
+        header_contents.append(
+            {
+                "type": "text",
+                "text": my_official,
+                "size": "xs",
+                "color": "#888888",
+            }
+        )
+
+    body_contents = [
+        {
+            "type": "text",
+            "text": title,
+            "weight": "bold",
+            "size": "xxs",
+            "color": "#cccccc",
+            "align": "center",
+            "margin": "xs",
+        },
+        {
+            "type": "box",
+            "layout": "vertical",
+            "spacing": "xs",
+            "contents": header_contents,
+        },
+    ]
+
+    groups = [
+        (f"🟢 勝場 ({len(win_rows)})", "#27AE60", win_rows, "#111111"),
+        (f"⚪ 平手 ({len(tie_rows)})", "#7F8C8D", tie_rows, "#555555"),
+        (f"🔴 敗場 ({len(loss_rows)})", "#C0392B", loss_rows, "#666666"),
+    ]
+
+    for group_title, header_color, rows, score_color in groups:
+        if not rows:
+            continue
+        body_contents.append(_create_separator())
+        row_boxes = [_build_all_play_opponent_row(r, score_color) for r in rows]
+        body_contents.append(
+            {
+                "type": "box",
+                "layout": "vertical",
+                "spacing": "xs",
+                "contents": [
+                    {
+                        "type": "text",
+                        "text": group_title,
+                        "weight": "bold",
+                        "size": "sm",
+                        "color": header_color,
+                    },
+                    {
+                        "type": "box",
+                        "layout": "vertical",
+                        "spacing": "xs",
+                        "contents": row_boxes,
+                    },
+                ],
+            }
+        )
+
+    return _create_bubble(body_contents)
+

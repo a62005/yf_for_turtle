@@ -27,7 +27,7 @@
       },
       {
         "type": "text",
-        "text": "支援點擊選單或輸入 #對戰 [暱稱]、#玩家 [暱稱]",
+        "text": "支援點擊選單或輸入 #對戰 [暱稱]、#比分 [暱稱]、#玩家 [暱稱]",
         "size": "xs",
         "color": "#777777",
         "wrap": true
@@ -45,6 +45,16 @@
               "type": "message",
               "label": "即時對決",
               "text": "#對戰"
+            }
+          },
+          {
+            "type": "button",
+            "style": "secondary",
+            "height": "sm",
+            "action": {
+              "type": "message",
+              "label": "全聯盟比分",
+              "text": "#比分"
             }
           },
           {
