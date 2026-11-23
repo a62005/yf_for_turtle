@@ -429,7 +429,7 @@ class WebAgentFetcher:
                     logging.info(f"[WEB_AGENT] 目標日期 {target_date} 預設對齊當前聯賽週數 Week {target_week}")
 
                 scraped = page.evaluate(
-                    """async ({ baseUrl, sportSlug, rawId, targetDate, targetWeek }) => {
+                    """async ({ baseUrl, sportSlug, rawId, targetDate, targetWeek, currWeek }) => {
                         const teamRegex = new RegExp(`/${sportSlug}/${rawId}/(\\\\d+)$`);
                         const extractTablesText = (rootDoc) => {
                             const tables = Array.from(rootDoc.querySelectorAll('table'));
@@ -478,9 +478,21 @@ class WebAgentFetcher:
                             } catch (e) {}
                         }
 
-                        // 2. 探索目標週數的所有 Matchup 連結 (動態鎖定 targetWeek)
+                        // 2. 探索目標週數的所有 Matchup 連結 (動態鎖定 targetWeek，若目標週非首頁當前週，主動抓取 targetWeek 的 matchups 模組)
+                        let matchupSourceDoc = document;
+                        if (Number(targetWeek) !== Number(currWeek)) {
+                            try {
+                                const mwResp = await fetch(`${baseUrl}?matchup_week=${targetWeek}&module=matchups&lhst=matchups`, { credentials: 'include' });
+                                if (mwResp.ok) {
+                                    const mwHtml = await mwResp.text();
+                                    const mwParser = new DOMParser();
+                                    matchupSourceDoc = mwParser.parseFromString(mwHtml, 'text/html');
+                                }
+                            } catch (e) {}
+                        }
+
                         const matchupUrls = new Set();
-                        for (const a of Array.from(document.querySelectorAll('a[href*="matchup"]'))) {
+                        for (const a of Array.from(matchupSourceDoc.querySelectorAll('a[href*="matchup"]'))) {
                             try {
                                 const u = new URL(a.href, window.location.origin);
                                 if (u.pathname.includes(`/${sportSlug}/${rawId}/matchup`) && u.searchParams.has('mid1') && u.searchParams.has('mid2')) {
@@ -596,7 +608,8 @@ class WebAgentFetcher:
                         "sportSlug": sport_slug,
                         "rawId": raw_id,
                         "targetDate": target_date,
-                        "targetWeek": target_week
+                        "targetWeek": target_week,
+                        "currWeek": curr_week_val,
                     }
                 )
 
