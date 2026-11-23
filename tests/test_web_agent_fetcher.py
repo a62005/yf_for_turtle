@@ -751,5 +751,82 @@ def test_validate_stats_integrity_rejects_zero_matchup_and_retries_successfully(
             fetcher.fetch_daily_and_weekly_stats("nba.l.49432", "2026-11-18")
 
 
+def test_fetch_daily_and_weekly_stats_blocks_no_game_day_and_all_zero_daily(tmp_path):
+    from src.web_agent_fetcher import NoGamesScheduledError
+
+    fetcher = WebAgentFetcher(league_id="nba.l.49432", api_key="dummy")
+
+    # 1. 前置 ESPN 檢測無比賽 (has_games_on_yahoo_date=False) -> 不啟動瀏覽器直接拋出 NoGamesScheduledError
+    with patch("src.utils.path_utils.DATA_DIR", str(tmp_path)), \
+         patch("src.web_agent_fetcher.has_games_on_yahoo_date", return_value=False), \
+         patch.object(fetcher, "_scrape_league_pages") as mock_scrape:
+        with pytest.raises(NoGamesScheduledError):
+            fetcher.fetch_daily_and_weekly_stats("nba.l.49432", "2026-11-26")
+        mock_scrape.assert_not_called()
+
+    # 2. ESPN 無法判斷 (None)，但爬回來發現全聯盟 Today Player=0 且當日計數統計皆為 0 -> 守門員拋出 NoGamesScheduledError 且不寫入 JSON
+    zero_scraped = {
+        "week": 6,
+        "discovered_teams": [{"team_id": "1", "name": "A"}, {"team_id": "2", "name": "B"}],
+        "matchup_urls": ["url_1"],
+        "daily_pages": [
+            {"team_id": "1", "today_active_players": 0, "tables": []},
+            {"team_id": "2", "today_active_players": 0, "tables": []},
+        ],
+        "weekly_pages": [
+            {"url": "url_1", "matched_team_ids": ["1", "2"], "games_played_map": {"1": "15/40", "2": "14/40"}, "tables": []}
+        ],
+    }
+    zero_parsed = {
+        "games_in_progress": False,
+        "daily_stats": {"team_stats": [
+            {"team_id": "1", "name": "A", "stats": {"Today Player": 0, "PTS": 0, "REB": 0, "AST": 0}},
+            {"team_id": "2", "name": "B", "stats": {"Today Player": 0, "PTS": 0, "REB": 0, "AST": 0}},
+        ]},
+        "weekly_stats": {"team_stats": [
+            {"team_id": "1", "name": "A", "stats": {"Game Player": "15/40", "PTS": 310, "REB": 120, "AST": 80}},
+            {"team_id": "2", "name": "B", "stats": {"Game Player": "14/40", "PTS": 290, "REB": 115, "AST": 75}},
+        ]},
+    }
+
+    with patch("src.utils.path_utils.DATA_DIR", str(tmp_path)), \
+         patch("src.web_agent_fetcher.has_games_on_yahoo_date", return_value=None), \
+         patch.object(fetcher, "_scrape_league_pages", return_value=zero_scraped), \
+         patch.object(fetcher, "_parse_with_gemini", return_value=zero_parsed):
+        with pytest.raises(NoGamesScheduledError):
+            fetcher.fetch_daily_and_weekly_stats("nba.l.49432", "2026-11-26")
+
+    assert not (tmp_path / "league" / "nba" / "49432" / "daily" / "date_2026-11-26.json").exists()
+
+
+@patch("src.web_agent_fetcher.capture_html_to_png")
+@patch("src.web_agent_fetcher.render_stats_html", return_value="<html></html>")
+@patch("src.web_agent_fetcher.process_stats_for_visual", return_value=[{"label": "PTS", "rows": []}])
+def test_run_web_agent_push_falls_back_to_last_active_game_date_on_no_game_day(
+    mock_process, mock_render, mock_capture, tmp_path
+):
+    from src.web_agent_fetcher import NoGamesScheduledError
+
+    # 模擬當天 2026-11-27 (美西 2026-11-26 感恩節) 無比賽，最後一天比賽為台灣 2026-11-26 (美西 2026-11-25)
+    def fake_fetch_stats(lid, yahoo_date):
+        if yahoo_date == "2026-11-26":
+            raise NoGamesScheduledError("無比賽")
+        return (
+            {"team_stats": [{"team_id": "1", "name": "Team 1", "stats": {"PTS": 115}}]},
+            {"team_stats": [{"team_id": "1", "name": "Team 1", "stats": {"PTS": 520}}]},
+        )
+
+    with patch("src.utils.path_utils.DATA_DIR", str(tmp_path)), \
+         patch("src.web_agent_fetcher.load_config", return_value={"LEAGUE_ID": "nba.l.49432", "LLM_API_KEY": "dummy"}), \
+         patch("src.web_agent_fetcher.resolve_latest_active_tw_date", return_value="2026-11-26"), \
+         patch("src.web_agent_fetcher.WebAgentFetcher.fetch_daily_and_weekly_stats", side_effect=fake_fetch_stats):
+        run_web_agent_push(league_id="nba.l.49432", target_date="2026-11-27", send_push=False)
+
+    mock_capture.assert_called_once()
+    captured_path = mock_capture.call_args[0][1]
+    assert captured_path.endswith("2026-11-26_combined.png")
+
+
+
 
 

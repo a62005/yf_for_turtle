@@ -22,7 +22,14 @@ from src.utils.path_utils import (
     get_league_weekly_dir,
     get_league_team_mapping_path,
 )
-from src.utils.time_utils import get_pacific_date, get_today_tw_date, tw_date_to_yahoo_date
+from src.utils.time_utils import (
+    get_pacific_date,
+    get_today_tw_date,
+    tw_date_to_yahoo_date,
+    yahoo_date_to_tw_date,
+    has_games_on_yahoo_date,
+    resolve_latest_active_tw_date,
+)
 from src.llm.gemini import GeminiProvider
 from src.visualizer.processor import process_stats_for_visual
 from src.visualizer.renderer import render_stats_html
@@ -46,6 +53,11 @@ class LeagueWebAuthError(RuntimeError):
 
 class GamesInProgressError(RuntimeError):
     """當網頁或賽事計分板顯示當日仍有比賽正在進行中時拋出。"""
+    pass
+
+
+class NoGamesScheduledError(RuntimeError):
+    """當目標日期無任何賽事排程，或擷取結果顯示全聯盟當日皆無出賽且計數全為 0 時拋出。"""
     pass
 
 
@@ -806,7 +818,14 @@ class WebAgentFetcher:
                 else:
                     raw_stats["Game Player"] = str(raw_stats["Game Player"]).strip()
 
-            # 徹底剔除多餘的 FG, FT 鍵名，保留標準 FGM/A, FTM/A
+            # 徹底剔除多餘的 FG, FT 鍵名與任何尾端星號 (如 FGM/A*, FTM/A*)，保留標準 FGM/A, FTM/A
+            for k in list(raw_stats.keys()):
+                if isinstance(k, str) and "*" in k:
+                    clean_k = k.replace("*", "").strip()
+                    val_k = raw_stats.pop(k)
+                    if clean_k and clean_k not in raw_stats:
+                        raw_stats[clean_k] = val_k
+
             raw_stats.pop("FG", None)
             raw_stats.pop("FT", None)
 
@@ -1275,13 +1294,25 @@ class WebAgentFetcher:
         daily_by_id = {str(t.get("team_id")): t for t in (daily_list or []) if isinstance(t, dict) and t.get("team_id")}
         weekly_by_id = {str(t.get("team_id")): t for t in (weekly_list or []) if isinstance(t, dict) and t.get("team_id")}
 
-        # 1. 日/週交叉校驗 (Daily <= Weekly 鐵律)：當週累計計數項目絕不可能小於當日單日數據
+        # 1. 日/週交叉校驗 (Daily <= Weekly 鐵律) 與 日/週欄位對稱校驗：
+        #    - 當週累計計數項目絕不可能小於當日單日數據
+        #    - 若當日數據已包含 FGM/FGA 或 FTM/FTA (或 MLB H/AB)，當週數據也必須具備該欄位，且不可全隊 Game Player 皆為 '-'
+        all_weekly_gp_missing = bool(weekly_by_id) and all(
+            str((wt.get("stats") or {}).get("Game Player", "-")).strip() in ("-", "", "None")
+            for wt in weekly_by_id.values()
+        )
         for tid, d_team in daily_by_id.items():
             w_team = weekly_by_id.get(tid)
             if not w_team:
                 continue
             d_st = d_team.get("stats") or {}
             w_st = w_team.get("stats") or {}
+            for req_key in ("FGM/FGA", "FTM/FTA", "H/AB"):
+                if req_key in d_st and req_key not in w_st:
+                    raise StatsDataValidationError(
+                        f"聯賽 {league_id} 隊伍 {tid} ({d_team.get('name')}) 當週數據缺少必要欄位 '{req_key}' "
+                        f"（疑似抓到首頁摘要表而非 Matchup 對戰詳情表）。"
+                    )
             for ck in counting_keys:
                 if ck in d_st and ck in w_st:
                     try:
@@ -1294,6 +1325,11 @@ class WebAgentFetcher:
                             f"聯賽 {league_id} 隊伍 {tid} ({d_team.get('name')}) 數據異常："
                             f"當日 {ck}={d_val} 大於當週累計 {ck}={w_val}（疑似對戰頁面漏抓或歸零）。"
                         )
+
+        if all_weekly_gp_missing and isinstance(scraped_data, dict) and (scraped_data.get("weekly_pages") or scraped_data.get("matchup_urls")):
+            raise StatsDataValidationError(
+                f"聯賽 {league_id} 所有隊伍的當週出賽人次 (Game Player) 皆為 '-'，判定對戰頁面未完整載入。"
+            )
 
         # 2. 單組對戰漏抓歸零檢測：若同聯賽其他隊伍已有當週出賽人次 (如 "11/41") 與正數成績，
         #    任一隊伍不可同時出現 Game Player == "-" 且所有計數統計全為 0
@@ -1321,7 +1357,26 @@ class WebAgentFetcher:
                         f"聯賽 {league_id} 隊伍 {tid} ({wt.get('name')}) 當週對戰數據全為 0 且無出賽人次 (Game Player='{gp_str}')，判定為對戰漏抓異常。"
                     )
 
-        # 3. 同週歷史遞增校驗：若同週前一日已有存檔，今日當週累計數據不得退化歸零
+        # 3. 當日無賽事 / 全聯盟當日全 0 防護：
+        #    若全聯盟所有隊伍在 daily_list 中的 Today Player 皆為 0 且所有計數統計總和皆為 0，
+        #    代表該日無任何比賽或尚未開打，拋出 NoGamesScheduledError 阻斷寫入全 0 的 daily JSON 與圖片。
+        if daily_by_id:
+            all_daily_zero = True
+            for dt in daily_by_id.values():
+                d_st = dt.get("stats") or {}
+                try:
+                    tp_val = int(d_st.get("Today Player") or 0)
+                except (ValueError, TypeError):
+                    tp_val = 0
+                if tp_val > 0 or _team_counting_sum(d_st) > 0:
+                    all_daily_zero = False
+                    break
+            if all_daily_zero:
+                raise NoGamesScheduledError(
+                    f"聯賽 {league_id} 於美西 {date_str} 全聯盟當日出賽人數與計數數據皆為 0（判定當日無比賽），已阻斷全 0 戰績存檔。"
+                )
+
+        # 4. 同週歷史遞增校驗：若同週前一日已有存檔，今日當週累計數據不得退化歸零
         if week_num is not None and league_id:
             try:
                 weekly_dir = get_league_weekly_dir(league_id)
@@ -1358,6 +1413,13 @@ class WebAgentFetcher:
 
         date_str = target_date or get_pacific_date()
         sport, _, _ = build_league_url(lid)
+
+        # 前置賽事檢查：透過 ESPN Scoreboard API 檢查該美西日期是否有比賽，避免爬出全 0 戰績
+        has_games = has_games_on_yahoo_date(sport, date_str)
+        if has_games is False:
+            raise NoGamesScheduledError(
+                f"聯盟 {lid} 於美西 {date_str} (對應台灣 {yahoo_date_to_tw_date(date_str)}) 確定無任何比賽排程，跳過當日戰績抓取。"
+            )
 
         max_attempts = 3
         last_validation_err = None
@@ -1520,7 +1582,7 @@ class WebAgentFetcher:
 
                 return daily_stats, weekly_stats
 
-            except (LeagueWebAuthError, GamesInProgressError):
+            except (LeagueWebAuthError, GamesInProgressError, NoGamesScheduledError):
                 raise
             except StatsDataValidationError as val_err:
                 last_validation_err = val_err
@@ -1553,11 +1615,43 @@ def run_web_agent_push(league_id: str = None, reply_to: str = None, target_date:
     config = load_config()
     lid = league_id or os.getenv("LEAGUE_ID") or config.get("LEAGUE_ID")
     target_chat = reply_to or os.getenv("LINE_REPLY_TO")
-    tw_today_str = target_date or os.getenv("TEST_DATE") or get_today_tw_date()
+    explicit_date = target_date or os.getenv("TEST_DATE")
+    tw_today_str = explicit_date or get_today_tw_date()
     yahoo_date_str = tw_date_to_yahoo_date(tw_today_str)
 
     if not lid:
         raise ValueError("未指定 LEAGUE_ID，無法執行 AI Agent 戰績抓取。")
+
+    sport, raw_id = parse_league_id(lid)
+
+    # 前置防線：當未強制指定特定日期時，若當日無比賽，自動回退至最後一天有比賽的台灣日期，避免產生全為 0 的戰績圖
+    if not explicit_date:
+        resolved_tw_date = resolve_latest_active_tw_date(sport, tw_today_str, league_id=lid)
+    else:
+        resolved_tw_date = tw_today_str
+    if resolved_tw_date != tw_today_str:
+        logging.info(
+            f"[WEB_AGENT] 檢測到台灣 {tw_today_str} (美西 {yahoo_date_str}) 無賽事排程，"
+            f"自動改以最後一天比賽日 {resolved_tw_date} 作為目標戰績日期。"
+        )
+        tw_today_str = resolved_tw_date
+        yahoo_date_str = tw_date_to_yahoo_date(tw_today_str)
+
+        # 若該最後比賽日的戰績圖片與 JSON 快取皆已存在，無須重複啟動瀏覽器抓取
+        image_dir = get_league_image_dir(lid)
+        daily_json_path = os.path.join(get_league_daily_dir(lid), f"date_{yahoo_date_str}.json")
+        weekly_json_path = os.path.join(get_league_weekly_dir(lid), f"date_{yahoo_date_str}_weekly.json")
+        if sport == "mlb":
+            imgs_ready = (
+                os.path.exists(os.path.join(image_dir, f"{tw_today_str}_combined_hitter.png"))
+                and os.path.exists(os.path.join(image_dir, f"{tw_today_str}_combined_pitcher.png"))
+            )
+        else:
+            imgs_ready = os.path.exists(os.path.join(image_dir, f"{tw_today_str}_combined.png"))
+
+        if imgs_ready and os.path.exists(daily_json_path) and os.path.exists(weekly_json_path) and not send_push:
+            logging.info(f"[WEB_AGENT] 最後比賽日 {tw_today_str} 本地戰績圖檔與 JSON 快取皆已備妥，跳過重複抓取。")
+            return
 
     mapping_file = get_league_team_mapping_path(lid)
     team_mapping = {}
@@ -1586,6 +1680,22 @@ def run_web_agent_push(league_id: str = None, reply_to: str = None, target_date:
             f"（開放查詢時間順延至 {postponed['query_open_time']}）。"
         )
         return
+    except NoGamesScheduledError as ng_err:
+        fallback_tw = resolve_latest_active_tw_date(sport, tw_today_str, league_id=lid)
+        if fallback_tw != tw_today_str:
+            logging.info(
+                f"[WEB_AGENT] {ng_err} 自動回退至最後一天比賽日 {fallback_tw} 抓取戰績..."
+            )
+            tw_today_str = fallback_tw
+            yahoo_date_str = tw_date_to_yahoo_date(tw_today_str)
+            try:
+                daily_stats, weekly_stats = fetcher.fetch_daily_and_weekly_stats(lid, yahoo_date_str)
+            except Exception as retry_err:
+                logging.warning(f"[WEB_AGENT] 回退至最後比賽日 {fallback_tw} 抓取失敗: {retry_err}")
+                return
+        else:
+            logging.info(f"[WEB_AGENT] {ng_err} 已跳過產出全 0 戰績圖檔。")
+            return
     except StatsDataValidationError as val_err:
         logging.error(f"[WEB_AGENT] 聯盟 {lid} 數據未通過合理性與完整性守門員，已阻斷錯誤戰績圖檔產出: {val_err}")
         return
