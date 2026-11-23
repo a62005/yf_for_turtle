@@ -273,3 +273,61 @@ def test_help_menu_displays_local_matchup_and_local_user_stats(mocker, mock_even
     assert "#對戰" in flex_str
     assert "玩家數據" in flex_str
     assert "#玩家" in flex_str
+
+
+def test_local_matchup_historical_query_case_insensitive(mocker, tmp_path, mock_event, mock_config):
+    mocker.patch("src.utils.path_utils.DATA_DIR", str(tmp_path))
+    mocker.patch("src.handlers.local_matchup_handler.load_config", return_value={"LEAGUE_ID": "nba.l.123"})
+    mocker.patch("src.handlers.local_matchup_handler.load_league_metadata", return_value=None)
+    mocker.patch.object(
+        LocalMatchupHandler,
+        "_load_team_mapping",
+        return_value={"6": "胡哲", "7": "Covi", "11": "小謝", "1": "韋哥"},
+    )
+    tw_tz = pytz.timezone("Asia/Taipei")
+    # Current time in Week 2
+    mocker.patch(
+        "src.handlers.local_matchup_handler._get_now_tw",
+        return_value=tw_tz.localize(datetime(2026, 11, 1, 15, 0, 0)),
+    )
+
+    weekly_dir = tmp_path / "league" / "nba" / "123" / "weekly"
+    weekly_dir.mkdir(parents=True, exist_ok=True)
+
+    w1_payload = {
+        "league_id": "nba.l.123",
+        "date": "2026-10-25",
+        "week": 1,
+        "matchups": [
+            {"team1_id": "6", "team2_id": "7"},
+            {"team1_id": "11", "team2_id": "1"},
+        ],
+        "team_stats": [
+            {"team_id": "6", "name": "胡哲", "stats": {"PTS": 300, "REB": 100, "AST": 50}},
+            {"team_id": "7", "name": "Covi", "stats": {"PTS": 350, "REB": 90, "AST": 60}},
+            {"team_id": "11", "name": "小謝", "stats": {"PTS": 280, "REB": 110, "AST": 40}},
+            {"team_id": "1", "name": "韋哥", "stats": {"PTS": 310, "REB": 80, "AST": 70}},
+        ],
+    }
+    (weekly_dir / "date_2026-10-25_weekly.json").write_text(
+        json.dumps(w1_payload, ensure_ascii=False), encoding="utf-8"
+    )
+
+    handler = LocalMatchupHandler()
+    mock_reply_flex = mocker.patch.object(handler, "reply_flex")
+
+    # 1. Test #對戰 COVI W1 (Uppercase nickname + specific week)
+    mock_event.message.text = "#對戰 COVI W1"
+    handler.execute(mock_event, mock_config)
+    mock_reply_flex.assert_called_once()
+    alt_text = mock_reply_flex.call_args[0][2]
+    assert "WEEK 1 MATCHUP - Covi vs 胡哲" in alt_text
+
+    # 2. Test #對戰 covi 上週 (Lowercase nickname + last week)
+    mock_reply_flex.reset_mock()
+    mock_event.message.text = "#對戰 covi 上週"
+    handler.execute(mock_event, mock_config)
+    mock_reply_flex.assert_called_once()
+    alt_text2 = mock_reply_flex.call_args[0][2]
+    assert "WEEK 1 MATCHUP - Covi vs 胡哲" in alt_text2
+
