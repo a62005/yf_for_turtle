@@ -631,4 +631,76 @@ def test_local_score_11_cat_and_mlb_custom_stat_categories(mocker, tmp_path, moc
     assert "5 : 6" in flex_str
 
 
+def test_local_score_historical_query_case_insensitive_actual_opponent(
+    mocker, tmp_path, mock_event, mock_config
+):
+    mocker.patch("src.utils.path_utils.DATA_DIR", str(tmp_path))
+    mocker.patch("src.handlers.local_score_handler.load_config", return_value={"LEAGUE_ID": "nba.l.123"})
+    mocker.patch("src.handlers.local_score_handler.load_league_metadata", return_value=None)
+    mocker.patch.object(
+        LocalScoreHandler,
+        "_load_team_mapping",
+        return_value={"6": "胡哲", "7": "Covi", "12": "肥儒"},
+    )
+    tw_tz = pytz.timezone("Asia/Taipei")
+    mocker.patch(
+        "src.handlers.local_score_handler._get_now_tw",
+        return_value=tw_tz.localize(datetime(2026, 11, 23, 15, 0, 0)),
+    )
+
+    weekly_dir = tmp_path / "league" / "nba" / "123" / "weekly"
+    weekly_dir.mkdir(parents=True, exist_ok=True)
+
+    w1_payload = {
+        "league_id": "nba.l.123",
+        "date": "2026-10-25",
+        "week": 1,
+        "matchups": [
+            {"team1_id": "6", "team2_id": "7"},
+        ],
+        "team_stats": [
+            {
+                "team_id": "6",
+                "name": "胡哲",
+                "stats": {
+                    "FGM/A": "180/350", "FG%": 0.514, "FTM/A": "20/25", "FT%": 0.8,
+                    "3PTM": 35, "PTS": 450, "REB": 110, "AST": 95, "ST": 25, "BLK": 12, "TO": 32
+                },
+            },
+            {
+                "team_id": "7",
+                "name": "Covi",
+                "stats": {
+                    "FGM/A": "165/340", "FG%": 0.485, "FTM/A": "15/20", "FT%": 0.75,
+                    "3PTM": 42, "PTS": 410, "REB": 125, "AST": 80, "ST": 20, "BLK": 18, "TO": 38
+                },
+            },
+            {
+                "team_id": "12",
+                "name": "肥儒",
+                "stats": {
+                    "FGM/A": "150/330", "FG%": 0.455, "FTM/A": "10/15", "FT%": 0.66,
+                    "3PTM": 20, "PTS": 350, "REB": 90, "AST": 60, "ST": 15, "BLK": 5, "TO": 40
+                },
+            },
+        ],
+    }
+    (weekly_dir / "date_2026-10-25_weekly.json").write_text(
+        json.dumps(w1_payload, ensure_ascii=False), encoding="utf-8"
+    )
+
+    handler = LocalScoreHandler()
+    mock_reply_flex = mocker.patch.object(handler, "reply_flex")
+
+    # 1. 查詢 #比分 COVI W1 (大小寫不敏感 + 歷史週次)
+    mock_event.message.text = "#比分 COVI W1"
+    handler.execute(mock_event, mock_config)
+    mock_reply_flex.assert_called_once()
+    flex_str = json.dumps(mock_reply_flex.call_args[0][3], ensure_ascii=False)
+    # 確保實際對手被標記為 ⚔️ 胡哲，且 肥儒 絕不是實際對手
+    assert "⚔️ 胡哲" in flex_str
+    assert "⚔️ 肥儒" not in flex_str
+
+
+
 
