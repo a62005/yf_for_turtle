@@ -40,9 +40,10 @@ def test_trigger_daily_stats_push_spawns_agent(mock_popen, tmp_path):
         assert "C_group_1" in cmd
 
 
+@patch("src.scheduler.fetch_daily_game_times_tw", return_value=None)
 @patch("src.scheduler.are_games_still_in_progress", return_value=False)
 @patch("src.scheduler.trigger_daily_stats_push")
-def test_scheduler_loop_triggers_at_14_00_once_per_day(mock_trigger, mock_in_progress, tmp_path):
+def test_scheduler_loop_triggers_at_14_00_once_per_day(mock_trigger, mock_in_progress, mock_fetch_times, tmp_path):
     clear_daily_schedule_state()
     stop_event = threading.Event()
     fake_now = TAIPEI_TZ.localize(datetime(2026, 10, 20, 14, 0, 5))
@@ -68,9 +69,10 @@ def test_scheduler_loop_triggers_at_14_00_once_per_day(mock_trigger, mock_in_pro
     mock_trigger.assert_called_once()
 
 
+@patch("src.scheduler.fetch_daily_game_times_tw", return_value=None)
 @patch("src.scheduler.are_games_still_in_progress", return_value=False)
 @patch("src.scheduler.trigger_daily_stats_push")
-def test_scheduler_loop_triggers_at_13_55_default(mock_trigger, mock_in_progress, tmp_path):
+def test_scheduler_loop_triggers_at_13_55_default(mock_trigger, mock_in_progress, mock_fetch_times, tmp_path):
     clear_daily_schedule_state()
     stop_event = threading.Event()
     fake_now = TAIPEI_TZ.localize(datetime(2026, 10, 20, 13, 55, 5))
@@ -95,8 +97,9 @@ def test_scheduler_loop_triggers_at_13_55_default(mock_trigger, mock_in_progress
     mock_trigger.assert_called_once()
 
 
+@patch("src.scheduler.fetch_daily_game_times_tw", return_value=None)
 @patch("src.scheduler.trigger_daily_stats_push")
-def test_scheduler_loop_postpones_by_30_mins_when_games_in_progress(mock_trigger, tmp_path):
+def test_scheduler_loop_postpones_by_30_mins_when_games_in_progress(mock_trigger, mock_fetch_times, tmp_path):
     """
     測試：
     1. 13:55 仍有比賽 -> 不更新，延至 14:25 (開放查詢時間 14:30)
@@ -151,5 +154,69 @@ def test_scheduler_loop_postpones_by_30_mins_when_games_in_progress(mock_trigger
     assert observed_states[2]["query_open_time"] == "15:00"
     assert observed_states[2]["games_in_progress"] is False
     assert observed_states[2]["completed"] is True
+    mock_trigger.assert_called_once_with("2026-11-05")
+    clear_daily_schedule_state()
+
+
+@patch("src.scheduler.trigger_daily_stats_push")
+def test_scheduler_loop_uses_last_game_plus_2hrs_schedule(mock_trigger, tmp_path):
+    """
+    測試：當日第一場 07:30、最後一場 11:00 時：
+    - 開放時間為 11:00 + 2hr = 13:00，自動排程更新時間為 12:55
+    - 12:55 仍有比賽 -> 順延至 13:25 更新、13:30 開放查詢
+    - 13:25 比賽結束 -> 執行更新，開放查詢時間 13:30
+    """
+    clear_daily_schedule_state()
+    stop_event = threading.Event()
+
+    times = [
+        TAIPEI_TZ.localize(datetime(2026, 11, 5, 12, 55, 0)),
+        TAIPEI_TZ.localize(datetime(2026, 11, 5, 13, 25, 0)),
+    ]
+    game_states = [True, False]
+    observed_states = []
+    idx = 0
+
+    def fake_now_fn(tz=None):
+        return times[min(idx, len(times) - 1)]
+
+    def fake_wait(timeout=None):
+        nonlocal idx
+        st = get_daily_schedule_state("2026-11-05")
+        observed_states.append(dict(st) if st else None)
+        idx += 1
+        if idx >= len(times):
+            stop_event.set()
+            return True
+        return False
+
+    stop_event.wait = MagicMock(side_effect=fake_wait)
+    fake_game_times = {
+        "date": "2026-11-05",
+        "yahoo_date": "2026-11-04",
+        "has_games": True,
+        "first_game_time": "07:30",
+        "last_game_time": "11:00",
+        "base_update_time": "12:55",
+        "query_open_time": "13:00",
+    }
+
+    with patch("src.scheduler.DATA_DIR", str(tmp_path)), \
+         patch("src.scheduler.datetime") as mock_dt, \
+         patch("src.scheduler.fetch_daily_game_times_tw", return_value=fake_game_times), \
+         patch("src.scheduler.are_games_still_in_progress", side_effect=game_states):
+        mock_dt.now.side_effect = fake_now_fn
+        _scheduler_loop(target_time="13:55", poll_interval=0.01, stop_event=stop_event)
+
+    assert observed_states[0]["first_game_time"] == "07:30"
+    assert observed_states[0]["last_game_time"] == "11:00"
+    assert observed_states[0]["next_update_time"] == "13:25"
+    assert observed_states[0]["query_open_time"] == "13:30"
+    assert observed_states[0]["games_in_progress"] is True
+
+    assert observed_states[1]["next_update_time"] == "13:25"
+    assert observed_states[1]["query_open_time"] == "13:30"
+    assert observed_states[1]["games_in_progress"] is False
+    assert observed_states[1]["completed"] is True
     mock_trigger.assert_called_once_with("2026-11-05")
     clear_daily_schedule_state()
