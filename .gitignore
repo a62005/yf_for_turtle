@@ -29,3 +29,4 @@ credentials/
 # AI Assistant CLI temporary directories
 .antigravitycli/
 .superpowers/
+.scratch/
