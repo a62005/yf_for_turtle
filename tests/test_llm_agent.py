@@ -4,30 +4,30 @@ from src.llm.llm_agent import LLMAgent
 
 @patch('src.llm.gemini.GeminiProvider.generate_json')
 def test_llm_agent_gemini_command_intent(mock_generate_json):
-    # Stage 1: intent classifier returns "league_query"
-    # Stage 2: league intent parsing returns the command structure
-    mock_generate_json.side_effect = [
-        {"category": "league_query"},
-        {
-            "is_command": True,
-            "command_text": "#對戰 小謝",
-            "reply_text": None
-        }
-    ]
+    # Single-stage intent parsing returns the command structure directly
+    mock_generate_json.return_value = {
+        "is_command": True,
+        "command_text": "#對戰 小謝",
+        "reply_text": None
+    }
 
     with patch.dict('os.environ', {'LLM_API_KEY': 'fake_key', 'LLM_MODEL': 'gemini-2.5-flash'}, clear=True):
         agent = LLMAgent()
         result = agent.analyze_intent("幫我查小謝這週對戰", "指令清單")
         assert result["is_command"] is True
         assert result["command_text"] == "#對戰 小謝"
-        assert mock_generate_json.call_count == 2
+        assert mock_generate_json.call_count == 1
 
 
 @patch('src.llm.gemini.GeminiProvider.generate')
 @patch('src.llm.gemini.GeminiProvider.generate_json')
 def test_llm_agent_gemini_chat_intent(mock_generate_json, mock_generate):
-    # Stage 1: intent classifier returns "casual_chat"
-    mock_generate_json.return_value = {"category": "casual_chat"}
+    # Single-stage intent parsing returns non-command for casual chat
+    mock_generate_json.return_value = {
+        "is_command": False,
+        "command_text": None,
+        "reply_text": None
+    }
 
     with patch.dict('os.environ', {'LLM_API_KEY': 'fake_key', 'LLM_MODEL': 'gemini-2.5-flash'}, clear=True):
         agent = LLMAgent()
@@ -41,14 +41,14 @@ def test_llm_agent_gemini_chat_intent(mock_generate_json, mock_generate):
 
 @patch('requests.post')
 def test_llm_agent_agnes_chat_intent(mock_post):
-    # Stage 1: Agnes response for intent classifier
+    # Single-stage Agnes response for intent parsing
     mock_resp_1 = MagicMock()
     mock_resp_1.status_code = 200
     mock_resp_1.json.return_value = {
         "choices": [
             {
                 "message": {
-                    "content": '{"category": "casual_chat"}'
+                    "content": '{"is_command": false, "command_text": null, "reply_text": null}'
                 }
             }
         ]
@@ -76,7 +76,7 @@ def test_llm_agent_missing_api_key():
 
 @patch('src.llm.gemini.GeminiProvider.generate_json')
 def test_llm_agent_gemini_exception(mock_generate_json):
-    # Simulate exception on classification stage
+    # Simulate exception on intent analysis
     mock_generate_json.side_effect = Exception("API connection refused")
 
     with patch.dict('os.environ', {'LLM_API_KEY': 'fake_key', 'LLM_MODEL': 'gemini-2.5-flash'}, clear=True):
@@ -85,6 +85,7 @@ def test_llm_agent_gemini_exception(mock_generate_json):
         assert result["is_command"] is False
         assert result.get("error") is True
         assert "大腦暫時離線" in result["reply_text"]
+
 
 @patch('src.llm.gemini.GeminiProvider.generate_json')
 def test_parse_draft_date_success(mock_generate_json):
@@ -105,15 +106,11 @@ def test_parse_draft_date_success(mock_generate_json):
 
 @patch('src.llm.gemini.GeminiProvider.generate_json')
 def test_llm_agent_dynamic_context_loading(mock_generate_json):
-    # Mocking classification response
-    mock_generate_json.side_effect = [
-        {"category": "league_query"},
-        {
-            "is_command": True,
-            "command_text": "#戰績",
-            "reply_text": None
-        }
-    ]
+    mock_generate_json.return_value = {
+        "is_command": True,
+        "command_text": "#戰績",
+        "reply_text": None
+    }
 
     # Setup dispatcher mock
     mock_dispatcher = MagicMock()
@@ -142,6 +139,7 @@ def test_llm_agent_dynamic_context_loading(mock_generate_json):
         
         assert result["is_command"] is True
         assert result["command_text"] == "#戰績"
+        assert mock_generate_json.call_count == 1
         
         # Verify the context values resolved dynamically and were passed to generate_json
         args, kwargs = mock_generate_json.call_args
@@ -154,3 +152,18 @@ def test_llm_agent_dynamic_context_loading(mock_generate_json):
         assert "聯賽的最後一週（例行賽結束週）為第 21 週。" in system_prompt
 
 
+@patch('src.llm.gemini.GeminiProvider.generate_json')
+def test_llm_agent_intent_cache_hit(mock_generate_json):
+    mock_generate_json.return_value = {
+        "is_command": True,
+        "command_text": "#對戰 小謝",
+        "reply_text": None
+    }
+
+    with patch.dict('os.environ', {'LLM_API_KEY': 'fake_key', 'LLM_MODEL': 'gemini-3.5-flash'}, clear=True):
+        agent = LLMAgent()
+        res1 = agent.analyze_intent("幫我查小謝這週對戰", "指令清單", "小謝", "今天日期")
+        res2 = agent.analyze_intent("幫我查小謝這週對戰", "指令清單", "小謝", "今天日期")
+        assert res1 == res2
+        # 第二次查詢相同內容與上下文應命中快取，不重複呼叫 LLM API
+        assert mock_generate_json.call_count == 1

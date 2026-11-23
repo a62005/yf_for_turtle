@@ -1,4 +1,7 @@
 import logging
+import os
+import json
+from cachetools import TTLCache
 from .factory import LLMProviderFactory
 from .prompts.intent_router_prompt import SYSTEM_PROMPT
 
@@ -11,6 +14,9 @@ class LLMAgent:
             self.provider = None
 
         self.system_prompt = SYSTEM_PROMPT
+        self._intent_cache = TTLCache(maxsize=256, ttl=600)
+        self._team_mapping_cache = {}  # mapping_file -> (mtime, dict)
+        self._commands_desc_cache = {} # id(dispatcher) -> (handler_count, str)
 
     def analyze_intent(self, text: str, commands_desc: str = None, players_list: str = None, temporal_context: str = None, dispatcher = None) -> dict:
         if not self.provider:
@@ -24,7 +30,16 @@ class LLMAgent:
         # Dynamic fallback loading of contexts
         if commands_desc is None:
             if dispatcher is not None:
-                commands_desc = dispatcher.get_all_instruction_descs()
+                disp_id = id(dispatcher)
+                handlers = getattr(dispatcher, "_handlers", None)
+                h_count = len(handlers) if isinstance(handlers, list) else -1
+                cached_desc = self._commands_desc_cache.get(disp_id)
+                if cached_desc and cached_desc[0] == h_count and h_count >= 0:
+                    commands_desc = cached_desc[1]
+                else:
+                    commands_desc = dispatcher.get_all_instruction_descs()
+                    if h_count >= 0:
+                        self._commands_desc_cache[disp_id] = (h_count, commands_desc)
             else:
                 commands_desc = ""
 
@@ -54,42 +69,30 @@ class LLMAgent:
             except Exception as te:
                 logging.error(f"[LLM] 獲取時間/週數上下文失敗: {te}")
 
-        # 第一階段：意圖分類
-        from .prompts.intent_router_prompt import CLASSIFIER_PROMPT, CHAT_PROMPT
-        classifier_prompt = CLASSIFIER_PROMPT.replace("{players_list}", players_list or "")
-        try:
-            category_res = self.provider.generate_json(text, system_instruction=classifier_prompt, temperature=0.1)
-            category = category_res.get("category", "casual_chat")
-            # 若輸入文字中明確包含聯賽玩家名稱，強制視為聯賽查詢意圖
-            player_names = [p.strip() for p in (players_list or "").split(",") if p.strip()]
-            if category != "league_query" and any(p in text for p in player_names):
-                category = "league_query"
-            logging.info(f"[LLM] 第一階段意圖分類結果: {category}")
-        except Exception as ce:
-            logging.error(f"[LLM] 第一階段意圖分類失敗: {ce}，預設進行聯賽查詢解析")
-            category = "league_query"
+        cache_key = (text, commands_desc, players_list, temporal_context)
+        if cache_key in self._intent_cache:
+            logging.info(f"[LLM] 命中語意解析快取: {text}")
+            return dict(self._intent_cache[cache_key])
 
-        # 第二階段：根據分類載入相對應的 Prompt 處理
-        if category == "league_query":
-            formatted_system = (
-                self.system_prompt
-                .replace("{commands_desc}", commands_desc)
-                .replace("{players_list}", players_list)
-                .replace("{temporal_context}", temporal_context)
-            )
-            try:
-                return self.provider.generate_json(text, system_instruction=formatted_system, temperature=0.2)
-            except Exception as e:
-                logging.error(f"[LLM] 第二階段聯賽意圖解析失敗: {e}")
-                return self._handle_exception()
-        else:
-            # 閒聊功能已關閉：不呼叫第二階段 LLM，直接回傳非指令且不回覆
-            logging.info("[LLM] 閒聊功能已停用，略過 casual_chat 對話生成。")
-            return {
-                "is_command": False,
-                "command_text": None,
-                "reply_text": None
-            }
+        # 單階段直接解析聯賽查詢與指令轉換（閒聊或無關內容直接由 SYSTEM_PROMPT 判定 is_command=False）
+        formatted_system = (
+            self.system_prompt
+            .replace("{commands_desc}", commands_desc)
+            .replace("{players_list}", players_list)
+            .replace("{temporal_context}", temporal_context)
+        )
+        try:
+            res = self.provider.generate_json(text, system_instruction=formatted_system, temperature=0.1)
+            if isinstance(res, dict) and not res.get("error"):
+                # 確保預設欄位存在
+                res.setdefault("is_command", False)
+                res.setdefault("command_text", None)
+                res.setdefault("reply_text", None)
+                self._intent_cache[cache_key] = dict(res)
+            return res
+        except Exception as e:
+            logging.error(f"[LLM] 語意解析失敗: {e}")
+            return self._handle_exception()
 
     def _handle_exception(self) -> dict:
         from .agnes import AgnesProvider
@@ -227,18 +230,19 @@ class LLMAgent:
             }
 
     def _load_team_mapping(self) -> dict:
-        """Load and return the team mapping from json config file."""
-        import os
-        import json
+        """Load and return the team mapping from json config file with mtime caching."""
         from src.utils.path_utils import get_league_team_mapping_path
         mapping_file = get_league_team_mapping_path()
         if os.path.exists(mapping_file):
             try:
+                mtime = os.path.getmtime(mapping_file)
+                cached = self._team_mapping_cache.get(mapping_file)
+                if cached and cached[0] == mtime:
+                    return cached[1]
                 with open(mapping_file, "r", encoding="utf-8") as f:
-                    return json.load(f)
+                    data = json.load(f)
+                self._team_mapping_cache[mapping_file] = (mtime, data)
+                return data
             except Exception as e:
                 logging.error(f"Failed to load team mapping in LLMAgent: {e}")
         return {}
-
-
-
