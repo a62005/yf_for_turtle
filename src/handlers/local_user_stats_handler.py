@@ -11,12 +11,13 @@ from .base_handler import BaseHandler
 
 from src.config import load_config
 from src.utils.cache_utils import load_league_metadata
-from src.utils.path_utils import get_league_daily_dir, get_league_weekly_dir
+from src.utils.path_utils import get_league_daily_dir, get_league_weekly_dir, parse_league_id
 from src.utils.time_utils import (
     get_pacific_date,
     get_fantasy_week,
     get_stats_rule_date,
     tw_date_to_yahoo_date,
+    resolve_latest_active_tw_date,
 )
 from src.visualizer.flex_builder import build_stats_list_card
 from src.visualizer.processor import is_mlb_pitcher_stat
@@ -278,17 +279,51 @@ class LocalUserStatsHandler(BaseHandler):
             sections=sections,
         )
 
+    @staticmethod
+    def _is_daily_payload_all_zero(data: dict) -> bool:
+        """檢查一份 daily JSON 數據是否全聯盟當日出賽人數與計數數據皆為 0（無比賽日殘留檔）。"""
+        if not isinstance(data, dict):
+            return True
+        teams = data.get("team_stats")
+        if not isinstance(teams, list) or not teams:
+            return True
+        counting_keys = (
+            "PTS", "REB", "AST", "ST", "STL", "BLK", "TO", "3PTM", "3PT", "3PM", "DD", "TD",
+            "R", "H", "HR", "RBI", "SB", "BB", "W", "K", "QS",
+        )
+        for t in teams:
+            st = (t.get("stats") or {}) if isinstance(t, dict) else {}
+            try:
+                if int(st.get("Today Player") or 0) > 0:
+                    return False
+            except (ValueError, TypeError):
+                pass
+            for ck in counting_keys:
+                if ck in st:
+                    try:
+                        if float(st.get(ck) or 0) > 0:
+                            return False
+                    except (ValueError, TypeError):
+                        pass
+        return True
+
     def _load_default_local_daily_data(self, league_id: str) -> tuple[dict | None, str | None]:
         """
-        讀取預設當日的本地 daily 數據（依據 #戰績 14:00 切日規則對應美西日期，若無則退回最新一天檔案）。
+        讀取預設當日的本地 daily 數據（依據 #戰績 14:00 切日規則與無比賽日回退至最後一天比賽數據，若無則退回最新一天非全 0 檔案）。
         回傳 (daily_data, display_tw_date_str)，顯示日期與 #戰績 完全同步。
         """
         daily_dir = get_league_daily_dir(league_id)
         if not os.path.exists(daily_dir):
             return None, None
 
+        sport, _ = parse_league_id(league_id)
         now_tw = _get_now_tw()
-        tw_rule_date = get_stats_rule_date(now_tw)
+        tw_rule_date = resolve_latest_active_tw_date(
+            sport,
+            get_stats_rule_date(now_tw),
+            league_id=league_id,
+            prefer_existing_local=True,
+        )
         yahoo_date = tw_date_to_yahoo_date(tw_rule_date)
 
         candidates = [
@@ -303,12 +338,12 @@ class LocalUserStatsHandler(BaseHandler):
                 try:
                     with open(fpath, "r", encoding="utf-8") as f:
                         data = json.load(f)
-                    if isinstance(data, dict) and data.get("team_stats"):
+                    if isinstance(data, dict) and data.get("team_stats") and not self._is_daily_payload_all_zero(data):
                         return data, display_label
                 except Exception as e:
                     logging.warning(f"[LocalUserStats] 讀取 {fpath} 失敗: {e}")
 
-        # Fallback: 讀取本地最新一天的 daily 檔案（美西比賽日 + 1 天 = 對應之台灣戰績日期）
+        # Fallback: 讀取本地最新一天的非全 0 daily 檔案（美西比賽日 + 1 天 = 對應之台灣戰績日期）
         dated_files = []
         for fname in os.listdir(daily_dir):
             if not fname.endswith(".json"):
@@ -322,7 +357,7 @@ class LocalUserStatsHandler(BaseHandler):
             try:
                 with open(fpath, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                if isinstance(data, dict) and data.get("team_stats"):
+                if isinstance(data, dict) and data.get("team_stats") and not self._is_daily_payload_all_zero(data):
                     raw_d = data.get("date") or d_str
                     try:
                         tw_d = (datetime.strptime(raw_d, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")

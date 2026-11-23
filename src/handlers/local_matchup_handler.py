@@ -16,6 +16,7 @@ from src.utils.time_utils import (
     get_fantasy_week,
     get_stats_rule_date,
     tw_date_to_yahoo_date,
+    resolve_latest_active_tw_date,
 )
 from src.visualizer.flex_builder import build_matchup_comparison_card
 from src.visualizer.processor import is_mlb_pitcher_stat
@@ -395,7 +396,14 @@ class LocalMatchupHandler(BaseHandler):
             return None
 
         now_tw = _get_now_tw()
-        tw_rule_date = preferred_tw_date or get_stats_rule_date(now_tw)
+        sport, _ = parse_league_id(league_id)
+        base_tw_date = preferred_tw_date or get_stats_rule_date(now_tw)
+        tw_rule_date = resolve_latest_active_tw_date(
+            sport,
+            base_tw_date,
+            league_id=league_id,
+            prefer_existing_local=True,
+        )
         yahoo_date = tw_date_to_yahoo_date(tw_rule_date)
 
         candidate_names = [

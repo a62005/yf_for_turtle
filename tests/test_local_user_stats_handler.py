@@ -158,6 +158,59 @@ def test_local_user_stats_missing_local_data_replies_not_found(mocker, tmp_path,
     mock_reply_text.assert_called_once_with(mock_event, mock_config, "查無當天數據")
 
 
+def test_local_user_stats_skips_all_zero_no_game_day_and_returns_last_active_day(mocker, tmp_path, mock_event, mock_config):
+    mocker.patch("src.utils.path_utils.DATA_DIR", str(tmp_path))
+    mocker.patch("src.handlers.local_user_stats_handler.load_config", return_value={"LEAGUE_ID": "nba.l.123"})
+    mocker.patch("src.handlers.local_user_stats_handler.load_league_metadata", return_value=None)
+    mocker.patch.object(LocalUserStatsHandler, "_load_team_mapping", return_value={"1": "韋哥"})
+
+    tw_tz = pytz.timezone("Asia/Taipei")
+    mocker.patch(
+        "src.handlers.local_user_stats_handler._get_now_tw",
+        return_value=tw_tz.localize(datetime(2026, 11, 27, 15, 0, 0)),
+    )
+
+    daily_dir = tmp_path / "league" / "nba" / "123" / "daily"
+    weekly_dir = tmp_path / "league" / "nba" / "123" / "weekly"
+    daily_dir.mkdir(parents=True, exist_ok=True)
+    weekly_dir.mkdir(parents=True, exist_ok=True)
+
+    # 2026-11-26 (對應台灣 11/27) 為無比賽日全 0 殘留檔，應自動跳過並退回 2026-11-25 (對應台灣 11/26)
+    zero_daily = {
+        "league_id": "nba.l.123",
+        "date": "2026-11-26",
+        "week": 6,
+        "team_stats": [{"team_id": "1", "name": "韋哥", "stats": {"Today Player": 0, "PTS": 0, "REB": 0}}],
+    }
+    valid_daily = {
+        "league_id": "nba.l.123",
+        "date": "2026-11-25",
+        "week": 6,
+        "team_stats": [{"team_id": "1", "name": "韋哥", "stats": {"Today Player": 6, "PTS": 88, "REB": 32}}],
+    }
+    valid_weekly = {
+        "league_id": "nba.l.123",
+        "date": "2026-11-25",
+        "week": 6,
+        "team_stats": [{"team_id": "1", "name": "韋哥", "stats": {"Game Player": "18/40", "PTS": 320, "REB": 110}}],
+    }
+    (daily_dir / "date_2026-11-26.json").write_text(json.dumps(zero_daily), encoding="utf-8")
+    (daily_dir / "date_2026-11-25.json").write_text(json.dumps(valid_daily), encoding="utf-8")
+    (weekly_dir / "date_2026-11-25_weekly.json").write_text(json.dumps(valid_weekly), encoding="utf-8")
+
+    handler = LocalUserStatsHandler()
+    mock_reply_flex = mocker.patch.object(handler, "reply_flex")
+    mock_event.message.text = "#玩家 韋哥"
+
+    handler.execute(mock_event, mock_config)
+
+    mock_reply_flex.assert_called_once()
+    bubble = mock_reply_flex.call_args[0][3]
+    # 確認卡片顯示的是最後一天有比賽的台灣日期 2026-11-26，而非全 0 的 2026-11-27
+    assert bubble["body"]["contents"][1]["contents"][0]["text"] == "2026-11-26"
+
+
+
 def test_intent_router_semantic_mention_triggers_local_user_stats_and_matchup(mocker, tmp_path, mock_event, mock_config):
     from src.handlers.dispatcher import CommandDispatcher
     from src.handlers.intent_router import IntentRouter
