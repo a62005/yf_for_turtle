@@ -70,10 +70,14 @@ def test_league_role_security_flow(tmp_path):
     # 新增成員到該聯盟的白名單
     assert sm.add_to_league_whitelist("nba.l.123", "Uuser789", "大雄") is True
     assert sm.is_league_whitelisted("Uuser789", "nba.l.123") is True
+    assert sm.get_league_whitelist("nba.l.123") == {"Uuser789": "大雄"}
+    assert sm.get_league_whitelist("nba.l.999") == {}
+    assert sm.get_league_whitelist(None) == {}
     
     # 移除白名單成員
     assert sm.remove_from_league_whitelist("nba.l.123", "Uuser789") is True
     assert sm.is_league_whitelisted("Uuser789", "nba.l.123") is False
+    assert sm.get_league_whitelist("nba.l.123") == {}
 
 
 def test_security_manager_dynamic_path_by_data_dir(tmp_path, monkeypatch):

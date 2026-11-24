@@ -36,6 +36,7 @@ from src.handlers.set_league_id_handler import SetLeagueIdHandler
 from src.handlers.set_nickname_handler import SetNicknameHandler
 from src.handlers.set_time_handler import SetTimeHandler
 from src.handlers.set_prize_handler import SetPrizeHandler
+from src.handlers.whitelist_handler import WhitelistHandler
 from src.web_login_bridge import web_login_bp, bind_web_login_to_set_league_handler
 
 # Load env
@@ -73,6 +74,7 @@ dispatcher.register(bind_web_login_to_set_league_handler(SetLeagueIdHandler()))
 dispatcher.register(SetNicknameHandler())
 dispatcher.register(SetTimeHandler())
 dispatcher.register(SetPrizeHandler())
+dispatcher.register(WhitelistHandler())
 
 # Initialize IntentRouter (支援標準指令、會話以及 @提及 / 單聊之 LLM 語意解析路由)
 intent_router = IntentRouter(dispatcher)

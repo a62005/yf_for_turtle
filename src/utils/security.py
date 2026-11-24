@@ -118,6 +118,14 @@ class SecurityManager:
         league_data = data.get(league_id) or {}
         return user_id in league_data.get("whitelist", {})
 
+    def get_league_whitelist(self, league_id: str | None) -> dict:
+        if not league_id:
+            return {}
+        data = self._load_json(self.league_roles_path, {})
+        league_data = data.get(league_id) or {}
+        whitelist = league_data.get("whitelist")
+        return dict(whitelist) if isinstance(whitelist, dict) else {}
+
     def is_whitelisted(self, user_id: str | None) -> bool:
         if not user_id:
             return False
