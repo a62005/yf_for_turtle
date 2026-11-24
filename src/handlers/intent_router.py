@@ -201,11 +201,50 @@ class IntentRouter:
     def _clean_mention_text(self, text: str) -> str:
         return re.sub(r'(?i)@(?:bot|linebot)\s*', '', text).strip()
 
+    def _is_known_league_manager(self, candidate_name: str) -> bool:
+        """檢查名稱是否為本聯盟已註冊的聯賽玩家（比對 team_mapping.json 與本地最新日數據）。"""
+        name_clean = str(candidate_name or "").strip()
+        if not name_clean:
+            return False
+        name_lower = name_clean.lower()
+
+        mapping = self._load_team_mapping()
+        for val in mapping.values():
+            if str(val).strip().lower() == name_lower:
+                return True
+
+        try:
+            from src.handlers.local_user_stats_handler import LocalUserStatsHandler
+            user_handler = self.dispatcher.get_handler(LocalUserStatsHandler) if hasattr(self.dispatcher, "get_handler") else None
+            if user_handler is not None and user_handler.can_handle(f"#玩家 {name_clean}"):
+                return True
+        except Exception:
+            pass
+        return False
+
+    def _normalize_routed_command(self, command_text: str) -> str:
+        """
+        防呆校驗：
+        1. 若 LLM 轉出 '#玩家 <名稱>'（或 '#對戰 <名稱>'），但 <名稱> 根本不在聯賽玩家名單內（例如使用者輸入『泳池』想查 NBA 球員 Jordan Poole），
+           自動將指令轉為 '#球員 <名稱>' 交由 LivePlayerHandler 解析，避免因找不到聯賽玩家而靜默。
+        2. 若 <名稱> 確實存在於聯賽玩家名單內（即使與 NBA 球員撞名，如『喇叭』），則維持以聯賽玩家為主（'#玩家 <名稱>'）。
+        """
+        cmd = str(command_text or "").strip()
+        m_user = re.match(r"^#玩家\s+(.+)$", cmd)
+        if m_user:
+            target_name = m_user.group(1).strip()
+            if target_name and not self._is_known_league_manager(target_name):
+                logging.info(
+                    f"[IntentRouter] '{target_name}' 不在聯賽玩家名單內，自動將 '{cmd}' 改派為 '#球員 {target_name}'"
+                )
+                return f"#球員 {target_name}"
+        return cmd
+
     def _handle_llm_flow(self, event: MessageEvent, configuration: Configuration, text: str, is_mentioned: bool = False) -> None:
         result = self.llm_agent.analyze_intent(text, dispatcher=self.dispatcher)
         
         if result.get("is_command") and result.get("command_text"):
-            command_text = result["command_text"]
+            command_text = self._normalize_routed_command(result["command_text"])
             logging.info(f"[IntentRouter] LLM 意圖匹配成功，轉化指令: {command_text}")
             
             try:

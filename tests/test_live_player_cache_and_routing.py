@@ -221,6 +221,44 @@ def test_prompts_and_intent_router_distinguish_league_manager_vs_real_player(moc
     assert event.message.text == "#球員 LeBron James"
     mock_execute.assert_called_once_with(event, config)
 
+    # 4. Fallback verification: when user inputs "泳池" and LLM mistakenly outputs "#玩家 泳池",
+    # IntentRouter detects "泳池" is NOT in team_mapping ("喇叭", "小謝") and auto-converts it to "#球員 泳池"
+    from src.handlers.local_user_stats_handler import LocalUserStatsHandler
+    user_handler = LocalUserStatsHandler()
+    dispatcher.register(user_handler)
+
+    mocker.patch.object(router, "_load_team_mapping", return_value={"1": "喇叭", "2": "小謝"})
+    mocker.patch.object(user_handler, "_load_team_mapping", return_value={"1": "喇叭", "2": "小謝"})
+    mocker.patch.object(user_handler, "_load_default_local_daily_data", return_value=(None, None))
+    mock_user_exec = mocker.patch.object(user_handler, "execute")
+    mock_execute.reset_mock()
+
+    mocker.patch.object(
+        router.llm_agent,
+        "analyze_intent",
+        return_value={"is_command": True, "command_text": "#玩家 泳池", "reply_text": None},
+    )
+    event.message.text = "泳池"
+    router.route(event, config)
+    assert event.message.text == "#球員 泳池"
+    mock_execute.assert_called_once_with(event, config)
+    mock_user_exec.assert_not_called()
+
+    # 5. Name collision verification: when user inputs "喇叭" (which exists in team_mapping AND is a player nickname),
+    # league manager takes precedence -> stays "#玩家 喇叭" and dispatches to LocalUserStatsHandler
+    mock_execute.reset_mock()
+    mock_user_exec.reset_mock()
+    mocker.patch.object(
+        router.llm_agent,
+        "analyze_intent",
+        return_value={"is_command": True, "command_text": "#玩家 喇叭", "reply_text": None},
+    )
+    event.message.text = "喇叭"
+    router.route(event, config)
+    assert event.message.text == "#玩家 喇叭"
+    mock_user_exec.assert_called_once_with(event, config)
+    mock_execute.assert_not_called()
+
 
 def test_help_menu_and_bot_registration_include_live_player_command(mocker):
     from src.handlers.dispatcher import CommandDispatcher

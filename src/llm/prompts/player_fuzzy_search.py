@@ -15,23 +15,36 @@ def get_system_prompt(sport: str) -> str:
     nba_nicknames_guide = ""
     if sport != "mlb":
         nba_nicknames_guide = """
-【台灣/PTT 常見 NBA 球員綽號與簡稱對照參考】：
-- 老詹 / 喇叭詹 / 詹皇 / 姆斯 / LBJ ➔ LeBron James (勒布朗·詹姆斯)
+【台灣/PTT 常見 NBA 球員綽號、音譯與英文姓氏字面直譯對照參考】：
+- 老詹 / 喇叭詹 / 喇叭 / 詹皇 / 姆斯 / LBJ ➔ LeBron James (勒布朗·詹姆斯)
 - 咖哩 / 柯瑞 / 萌神 / 廚師 ➔ Stephen Curry (史蒂芬·柯瑞)
+- 泳池 / 普爾 / 茶喬丹 / Poole / Pool ➔ Jordan Poole (喬丹·普爾，因 Poole 與 Pool 泳池同音)
 - 斑馬 / 外星人 / Wemby ➔ Victor Wembanyama (維克多·文班亞馬)
 - 小丑 / 阿肥 / 約老師 ➔ Nikola Jokic (尼古拉·約基奇)
 - 77 / 東77 / 東契奇 / 胖77 / Luka ➔ Luka Doncic (盧卡·唐西奇)
 - SGA / 鴨梨 / 亞歷山大 ➔ Shai Gilgeous-Alexander (謝伊·吉爾傑斯-亞歷山大)
 - 蟻人 / AE / 愛德華茲 ➔ Anthony Edwards (安東尼·愛德華茲)
-- 書人 / 奪命書生 / Booker ➔ Devin Booker (德文·布克)
+- 書人 / 奪命書生 / Booker ➔ Devin Booker (德文·布克，Book+er=書人)
 - 字母哥 / 字母 / 希臘怪物 ➔ Giannis Antetokounmpo (揚尼斯·阿德托昆博)
 - KD / 死神 / 杜蘭特 / 小帥 ➔ Kevin Durant (凱文·杜蘭特)
 - AD / 濃眉 / 一眉道人 ➔ Anthony Davis (安東尼·戴維斯)
 - 大鬍子 / 登哥 / 哈登 ➔ James Harden (詹姆斯·哈登)
 - 龜龜 / 威少 / 忍者龜 / 西河 ➔ Russell Westbrook (羅素·威斯布魯克)
-- 吉巴 / 士官長 / 巴特勒 ➔ Jimmy Butler (吉米·巴特勒)
+- 吉巴 / 士官長 / 奶油 / 巴特勒 ➔ Jimmy Butler (吉米·巴特勒)
 - 嘴綠 / 追夢綠 ➔ Draymond Green (德雷蒙德·格林)
 - 胖虎 / 錫安 ➔ Zion Williamson (錫安·威廉森)
+- 假日 / 假日哥 ➔ Jrue Holiday (朱·霍勒迪，Holiday=假日)
+- 聰明哥 ➔ Marcus Smart (馬庫斯·史馬特，Smart=聰明)
+- 小可愛 / 卡哇伊 ➔ Kawhi Leonard (科懷·雷納德)
+- 狐狸 / Fox ➔ De'Aaron Fox (達龍·福克斯，Fox=狐狸)
+- 大橋 ➔ Mikal Bridges (米卡爾·布里吉斯，Bridges=橋)
+- 小橋 ➔ Miles Bridges (邁爾斯·布里吉斯)
+- 三球 / 球三 ➔ LaMelo Ball (拉梅洛·鮑爾)
+- 大球 / 球哥 ➔ Lonzo Ball (朗佐·鮑爾)
+- 小薩 ➔ Domantas Sabonis (多曼塔斯·薩博尼斯)
+- 吹楊 / 老鷹楊 ➔ Trae Young (特雷·楊)
+- 哈利 / 魔法師 ➔ Tyrese Haliburton (泰瑞斯·哈利伯頓)
+- 米丘 / 蜘蛛人 ➔ Donovan Mitchell (多諾萬·米契爾)
 """
 
     return f"""你是一個精準的 {sport_name} 專家（{expert_desc}），專門負責將使用者的模糊輸入（例如球員綽號、簡稱、中文音譯或背號加上球隊）解析為官方標準的現役球員資訊。
