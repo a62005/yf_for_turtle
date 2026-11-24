@@ -19,3 +19,15 @@ _Avoid_: 歷史週結算數據
 **歷史週結算數據 (Historical Week Final Data)**:
 已結束之過往週次中，該週最後一天（結算日）的本地週數據檔案（`weekly/*.json`）。
 _Avoid_: 當週即時週數據
+
+**聯賽玩家 (League Manager)**:
+參與本 Yahoo Fantasy 聯賽、擁有並管理虛擬隊伍的真實群組成員，其名單定義於聯盟的 `team_mapping.json` 中（對應指令：`#玩家`、`#對戰`、`#比分`）。
+_Avoid_: 球員、NBA 球員
+
+**真實球員 (Real-world Player)**:
+現實世界中於 NBA 出賽的職業運動員（對應指令：`#球員`）。
+_Avoid_: 玩家、聯賽玩家
+
+**球員即時比賽數據 (Live Player Boxscore)**:
+透過外部即時體育 API（如 ESPN Live API）直接獲取之真實球員單場即時或最新完賽攻守數據，不受比賽是否正在進行中或 Yahoo Fantasy 本地爬蟲排程限制。
+_Avoid_: 本地玩家日數據、Yahoo API 球員數據
