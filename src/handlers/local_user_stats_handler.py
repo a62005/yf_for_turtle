@@ -10,6 +10,7 @@ from linebot.v3.messaging import Configuration
 from .base_handler import BaseHandler
 
 from src.config import load_config
+from src.repositories.local_league_data_repository import LocalLeagueDataRepository
 from src.utils.cache_utils import load_league_metadata
 from src.utils.path_utils import get_league_daily_dir, get_league_weekly_dir, parse_league_id
 from src.utils.time_utils import (
@@ -42,11 +43,13 @@ class LocalUserStatsHandler(BaseHandler):
 
     def __init__(
         self,
+        repository: LocalLeagueDataRepository | None = None,
         renderer: UserStatsFlexRenderer | None = None,
         stat_toolkit: FantasyStatToolkit | None = None,
     ) -> None:
         super().__init__()
         self.pattern = re.compile(r"^#玩家(?:\s+(.+))?$")
+        self.repository = repository or LocalLeagueDataRepository()
         self.stat_toolkit = stat_toolkit or FantasyStatToolkit()
         self.renderer = renderer or UserStatsFlexRenderer(toolkit=self.stat_toolkit)
 
@@ -114,153 +117,23 @@ class LocalUserStatsHandler(BaseHandler):
     @staticmethod
     def _is_daily_payload_all_zero(data: dict) -> bool:
         """檢查一份 daily JSON 數據是否全聯盟當日出賽人數與計數數據皆為 0（無比賽日殘留檔）。"""
-        if not isinstance(data, dict):
-            return True
-        teams = data.get("team_stats")
-        if not isinstance(teams, list) or not teams:
-            return True
-        counting_keys = (
-            "PTS", "REB", "AST", "ST", "STL", "BLK", "TO", "3PTM", "3PT", "3PM", "DD", "TD",
-            "R", "H", "HR", "RBI", "SB", "BB", "W", "K", "QS",
-        )
-        for t in teams:
-            st = (t.get("stats") or {}) if isinstance(t, dict) else {}
-            try:
-                if int(st.get("Today Player") or 0) > 0:
-                    return False
-            except (ValueError, TypeError):
-                pass
-            for ck in counting_keys:
-                if ck in st:
-                    try:
-                        if float(st.get(ck) or 0) > 0:
-                            return False
-                    except (ValueError, TypeError):
-                        pass
-        return True
+        return LocalLeagueDataRepository.is_daily_payload_all_zero(data)
 
     def _load_default_local_daily_data(self, league_id: str) -> tuple[dict | None, str | None]:
         """
         讀取預設當日的本地 daily 數據（依據 #戰績 14:00 切日規則與無比賽日回退至最後一天比賽數據，若無則退回最新一天非全 0 檔案）。
         回傳 (daily_data, display_tw_date_str)，顯示日期與 #戰績 完全同步。
         """
-        daily_dir = get_league_daily_dir(league_id)
-        if not os.path.exists(daily_dir):
-            return None, None
-
-        sport, _ = parse_league_id(league_id)
-        now_tw = _get_now_tw()
-        tw_rule_date = resolve_latest_active_tw_date(
-            sport,
-            get_stats_rule_date(now_tw),
-            league_id=league_id,
-            prefer_existing_local=True,
-        )
-        yahoo_date = tw_date_to_yahoo_date(tw_rule_date)
-
-        candidates = [
-            (tw_rule_date, f"date_{yahoo_date}.json"),
-            (tw_rule_date, f"{yahoo_date}.json"),
-            (tw_rule_date, f"date_{tw_rule_date}.json"),
-            (tw_rule_date, f"{tw_rule_date}.json"),
-        ]
-        for display_label, fname in candidates:
-            fpath = os.path.join(daily_dir, fname)
-            if os.path.exists(fpath):
-                try:
-                    with open(fpath, "r", encoding="utf-8") as f:
-                        data = json.load(f)
-                    if isinstance(data, dict) and data.get("team_stats") and not self._is_daily_payload_all_zero(data):
-                        return data, display_label
-                except Exception as e:
-                    logging.warning(f"[LocalUserStats] 讀取 {fpath} 失敗: {e}")
-
-        # Fallback: 讀取本地最新一天的非全 0 daily 檔案（美西比賽日 + 1 天 = 對應之台灣戰績日期）
-        dated_files = []
-        for fname in os.listdir(daily_dir):
-            if not fname.endswith(".json"):
-                continue
-            m = re.match(r"^(?:date_)?(\d{4}-\d{2}-\d{2})\.json$", fname)
-            if m:
-                dated_files.append((m.group(1), os.path.join(daily_dir, fname)))
-
-        dated_files.sort(key=lambda x: x[0], reverse=True)
-        for d_str, fpath in dated_files:
-            try:
-                with open(fpath, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                if isinstance(data, dict) and data.get("team_stats") and not self._is_daily_payload_all_zero(data):
-                    raw_d = data.get("date") or d_str
-                    try:
-                        tw_d = (datetime.strptime(raw_d, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
-                    except Exception:
-                        tw_d = raw_d
-                    return data, tw_d
-            except Exception:
-                continue
-
-        return None, None
+        return self.repository.load_default_local_daily_data(league_id, now_tw=_get_now_tw())
 
     def _resolve_week_for_date(self, league_id: str, date_str: str, daily_data: dict, config: dict) -> int:
-        if isinstance(daily_data, dict) and daily_data.get("week") is not None:
-            try:
-                return int(daily_data["week"])
-            except (ValueError, TypeError):
-                pass
-
-        meta = load_league_metadata(league_id) or {}
-        date_to_week = meta.get("date_to_week") or {}
-        if date_str and date_str in date_to_week:
-            try:
-                return int(date_to_week[date_str])
-            except (ValueError, TypeError):
-                pass
-
-        start_date = meta.get("start_date") or config.get("SEASON_START_DATE")
-        end_date = meta.get("end_date")
-        end_week = meta.get("end_week")
-
-        next_season_raw = config.get("NEXT_SEASON_START_DATE") or meta.get("next_season_start_date")
-        next_season_date = str(next_season_raw).strip()[:10] if next_season_raw else None
-        if date_str and end_date and date_str > end_date:
-            if next_season_date and next_season_date > end_date and date_str >= next_season_date:
-                start_date = next_season_date
-                end_week = None
-            else:
-                try:
-                    days_past_end = (
-                        datetime.strptime(date_str, "%Y-%m-%d") - datetime.strptime(end_date, "%Y-%m-%d")
-                    ).days
-                except Exception:
-                    days_past_end = 0
-                if days_past_end > 90:
-                    daily_dir = get_league_daily_dir(league_id)
-                    season_dates = []
-                    if os.path.exists(daily_dir):
-                        for fn in os.listdir(daily_dir):
-                            m = re.match(r"^(?:date_)?(\d{4}-\d{2}-\d{2})\.json$", fn)
-                            if m and m.group(1) > end_date:
-                                season_dates.append(m.group(1))
-                    if season_dates:
-                        start_date = min(season_dates)
-                        end_week = None
-        elif not start_date and next_season_date and date_str and date_str >= next_season_date:
-            start_date = next_season_date
-
-        target_week = 1
-        if start_date and date_str:
-            try:
-                target_dt = pytz.timezone("US/Pacific").localize(datetime.strptime(date_str, "%Y-%m-%d"))
-                target_week = get_fantasy_week(start_date, target_dt)
-            except Exception:
-                try:
-                    target_week = get_fantasy_week(start_date)
-                except Exception:
-                    target_week = 1
-
-        if end_week and target_week > int(end_week):
-            target_week = int(end_week)
-        return max(1, int(target_week))
+        return self.repository.resolve_week_for_date(
+            league_id=league_id,
+            date_str=date_str,
+            daily_data=daily_data,
+            config=config,
+            meta=load_league_metadata(league_id) or {},
+        )
 
     def _load_matching_weekly_data(
         self,
@@ -269,75 +142,17 @@ class LocalUserStatsHandler(BaseHandler):
         target_week: int,
         config: dict,
     ) -> dict | None:
-        weekly_dir = get_league_weekly_dir(league_id)
-        if not os.path.exists(weekly_dir):
-            return None
-
-        direct_candidates = []
-        if daily_date:
-            yahoo_equiv = tw_date_to_yahoo_date(daily_date)
-            direct_candidates.extend([
-                f"date_{daily_date}_weekly.json",
-                f"{daily_date}_weekly.json",
-                f"date_{yahoo_equiv}_weekly.json",
-                f"{yahoo_equiv}_weekly.json",
-            ])
-        if target_week:
-            direct_candidates.append(f"week_{target_week}.json")
-
-        for fname in direct_candidates:
-            fpath = os.path.join(weekly_dir, fname)
-            if os.path.exists(fpath):
-                try:
-                    with open(fpath, "r", encoding="utf-8") as f:
-                        data = json.load(f)
-                    if isinstance(data, dict) and data.get("team_stats"):
-                        return data
-                except Exception:
-                    continue
-
-        # 搜尋同一個 target_week 的最新 weekly 檔案，或退回最新 weekly 檔案
-        dated_files = []
-        for fname in os.listdir(weekly_dir):
-            if not fname.endswith(".json"):
-                continue
-            m = re.match(r"^date_(\d{4}-\d{2}-\d{2})_weekly\.json$", fname)
-            if m:
-                dated_files.append((m.group(1), os.path.join(weekly_dir, fname)))
-
-        dated_files.sort(key=lambda x: x[0], reverse=True)
-        latest_valid = None
-        for d_str, fpath in dated_files:
-            try:
-                with open(fpath, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                if not isinstance(data, dict) or not data.get("team_stats"):
-                    continue
-                if latest_valid is None:
-                    latest_valid = data
-                file_week = self._resolve_week_for_date(league_id, d_str, data, config)
-                if target_week and file_week == target_week:
-                    return data
-            except Exception:
-                continue
-
-        return latest_valid
+        return self.repository.load_matching_weekly_data(
+            league_id=league_id,
+            daily_date=daily_date,
+            target_week=target_week,
+            config=config,
+            meta=load_league_metadata(league_id) or {},
+        )
 
     @staticmethod
     def _find_team_entry(data: dict | None, team_id: str | None, nickname: str, mapping: dict) -> dict | None:
-        if not isinstance(data, dict):
-            return None
-        teams = data.get("team_stats") or []
-        if team_id:
-            for t in teams:
-                if str(t.get("team_id", "")) == str(team_id):
-                    return t
-        for t in teams:
-            t_id = str(t.get("team_id", ""))
-            mapped_name = mapping.get(t_id)
-            if nickname in (mapped_name, t.get("name"), t.get("official_name")):
-                return t
-        return None
+        return LocalLeagueDataRepository.find_team_entry(data, team_id, nickname, mapping)
 
     def execute(self, event: MessageEvent, configuration: Configuration) -> None:
         try:

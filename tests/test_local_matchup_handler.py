@@ -405,3 +405,110 @@ def test_fantasy_stat_toolkit_and_comparator_and_matchup_flex_renderer():
     assert bubble["body"]["contents"][3]["contents"][2]["text"] == "2"
 
 
+def test_local_league_data_repository_and_decoupled_handlers(mocker, tmp_path):
+    from src.repositories.local_league_data_repository import LocalLeagueDataRepository, WeeklyFileEntry
+    from src.handlers.local_score_handler import LocalScoreHandler
+
+    mocker.patch("src.utils.path_utils.DATA_DIR", str(tmp_path))
+
+    repo = LocalLeagueDataRepository()
+    tw_tz = pytz.timezone("Asia/Taipei")
+    now_tw = tw_tz.localize(datetime(2026, 11, 23, 15, 0, 0))
+
+    league_id = "nba.l.123"
+    league_dir = tmp_path / "league" / "nba" / "123"
+    daily_dir = league_dir / "daily"
+    weekly_dir = league_dir / "weekly"
+    daily_dir.mkdir(parents=True, exist_ok=True)
+    weekly_dir.mkdir(parents=True, exist_ok=True)
+
+    # Stale metadata from previous season + new season config
+    stale_meta = {"start_date": "2025-10-21", "end_date": "2026-04-05", "end_week": 23}
+    config = {"NEXT_SEASON_START_DATE": "2026-10-20 08:00:00"}
+
+    start_y, end_y, end_w, is_stale = repo.get_current_season_bounds(league_id, config, stale_meta, now_tw)
+    assert is_stale is True
+    assert start_y == "2026-10-19"
+    assert end_y is None
+    assert end_w is None
+
+    assert repo.is_tw_date_in_current_season("2026-11-10", now_tw, start_y, end_y) is True
+    assert repo.is_tw_date_in_current_season("2026-01-01", now_tw, start_y, end_y) is False
+    assert repo.is_tw_date_in_current_season("2026-11-30", now_tw, start_y, end_y) is False
+
+    # Daily data: all zero vs valid
+    zero_daily = {
+        "date": "2026-11-22",
+        "week": 5,
+        "team_stats": [{"team_id": "1", "name": "韋哥", "stats": {"Today Player": 0, "PTS": 0}}],
+    }
+    valid_daily = {
+        "date": "2026-11-21",
+        "week": 5,
+        "team_stats": [{"team_id": "1", "name": "韋哥", "official_name": "Vigo", "stats": {"Today Player": 5, "PTS": 95}}],
+    }
+    assert repo.is_daily_payload_all_zero(zero_daily) is True
+    assert repo.is_daily_payload_all_zero(valid_daily) is False
+
+    (daily_dir / "date_2026-11-22.json").write_text(json.dumps(zero_daily), encoding="utf-8")
+    (daily_dir / "date_2026-11-21.json").write_text(json.dumps(valid_daily), encoding="utf-8")
+
+    loaded_daily, disp_date = repo.load_default_local_daily_data(league_id, now_tw=now_tw)
+    assert loaded_daily is not None
+    assert loaded_daily["date"] == "2026-11-21"
+    assert disp_date == "2026-11-22"
+
+    found_team = repo.find_team_entry(loaded_daily, "1", "韋哥", {"1": "韋哥"})
+    assert found_team is not None
+    assert found_team["official_name"] == "Vigo"
+
+    # Weekly data & matchups
+    w4_final = {
+        "date": "2026-11-15",
+        "week": 4,
+        "matchups": [{"team1_id": "1", "team2_id": "2"}],
+        "team_stats": [
+            {"team_id": "1", "name": "韋哥", "stats": {"PTS": 500}},
+            {"team_id": "2", "name": "Jerry", "stats": {"PTS": 450}},
+        ],
+    }
+    w5_live = {
+        "date": "2026-11-22",
+        "week": 5,
+        "matchups": [{"team1_id": "1", "team2_id": "2"}],
+        "team_stats": [
+            {"team_id": "1", "name": "韋哥", "stats": {"PTS": 300}},
+            {"team_id": "2", "name": "Jerry", "stats": {"PTS": 320}},
+        ],
+    }
+    (weekly_dir / "date_2026-11-15_weekly.json").write_text(json.dumps(w4_final), encoding="utf-8")
+    (weekly_dir / "date_2026-11-22_weekly.json").write_text(json.dumps(w5_live), encoding="utf-8")
+
+    q_data, q_week, q_miss = repo.load_weekly_data_for_query(
+        league_id, config, now_tw, week_mode="last_week", week_num=None, meta=stale_meta
+    )
+    assert q_miss is False
+    assert q_week == 4
+    assert q_data["date"] == "2026-11-15"
+
+    matchups = repo.build_matchups_from_weekly_data(q_data, {"1": "韋哥", "2": "Jerry"})
+    assert len(matchups) == 1
+    assert matchups[0]["team1"]["name"] == "韋哥"
+    assert matchups[0]["team2"]["name"] == "Jerry"
+
+    # Verify handlers no longer have cross-handler helper attributes
+    m_handler = LocalMatchupHandler(repository=repo)
+    s_handler = LocalScoreHandler(repository=repo)
+    st_handler = StatsHandler(repository=repo)
+    u_handler = LocalUserStatsHandler(repository=repo)
+
+    assert not hasattr(m_handler, "_stats_helper")
+    assert not hasattr(s_handler, "_matchup_helper")
+    assert not hasattr(s_handler, "_stats_helper")
+    assert m_handler.repository is repo
+    assert s_handler.repository is repo
+    assert st_handler.repository is repo
+    assert u_handler.repository is repo
+
+
+

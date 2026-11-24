@@ -9,9 +9,8 @@ from linebot.v3.webhooks import MessageEvent
 from linebot.v3.messaging import Configuration
 
 from .base_handler import BaseHandler
-from .local_matchup_handler import LocalMatchupHandler
-from .stats_handler import StatsHandler
 from src.config import load_config
+from src.repositories.local_league_data_repository import LocalLeagueDataRepository, WeeklyFileEntry
 from src.services.fantasy_stat_toolkit import FantasyStatComparator
 from src.utils.cache_utils import load_league_metadata
 from src.utils.path_utils import get_league_weekly_dir
@@ -28,13 +27,6 @@ class ParsedScoreCommand:
     week_num: int | None = None
 
 
-@dataclass(frozen=True)
-class WeeklyFileEntry:
-    yahoo_date: str
-    week: int
-    payload: dict
-
-
 def _get_now_tw() -> datetime:
     return datetime.now(pytz.timezone("Asia/Taipei"))
 
@@ -49,12 +41,12 @@ class LocalScoreHandler(BaseHandler):
 
     def __init__(
         self,
+        repository: LocalLeagueDataRepository | None = None,
         comparator: FantasyStatComparator | None = None,
         renderer: MatchupFlexRenderer | None = None,
     ) -> None:
         super().__init__()
-        self._matchup_helper = LocalMatchupHandler()
-        self._stats_helper = StatsHandler()
+        self.repository = repository or LocalLeagueDataRepository()
         self.comparator = comparator or FantasyStatComparator()
         self.renderer = renderer or MatchupFlexRenderer()
 
@@ -133,7 +125,7 @@ class LocalScoreHandler(BaseHandler):
         if not league_id:
             return False
 
-        weekly_data = self._matchup_helper._load_local_weekly_data(league_id)
+        weekly_data = self.repository.load_local_weekly_data(league_id, now_tw=_get_now_tw())
         if weekly_data:
             for t in weekly_data.get("team_stats", []):
                 if (
@@ -204,103 +196,14 @@ class LocalScoreHandler(BaseHandler):
         根據查詢模式載入對應週次的 weekly JSON 數據。
         回傳: (weekly_data, resolved_week, is_historical_silent_miss)
         """
-        preferred_tw_date = get_stats_rule_date(now_tw)
-
-        if week_mode is None:
-            weekly_data = self._matchup_helper._load_local_weekly_data(
-                league_id,
-                preferred_tw_date=preferred_tw_date,
-            )
-            if not weekly_data:
-                return None, None, False
-            week = self._matchup_helper._resolve_week_number(league_id, weekly_data, config)
-            return weekly_data, week, False
-
-        meta = load_league_metadata(league_id) or {}
-        season_start_yahoo, season_end_yahoo, end_week, is_stale_meta = (
-            self._stats_helper._get_current_season_bounds(
-                league_id=league_id,
-                config=config,
-                meta=meta,
-                now_tw=now_tw,
-            )
+        return self.repository.load_weekly_data_for_query(
+            league_id=league_id,
+            config=config,
+            now_tw=now_tw,
+            week_mode=week_mode,
+            week_num=week_num,
+            meta=load_league_metadata(league_id) or {},
         )
-
-        weekly_dir = get_league_weekly_dir(league_id)
-        if not os.path.exists(weekly_dir):
-            return None, None, True
-
-        # 掃描本地當季所有 weekly JSON 檔案與其所屬週次
-        weekly_entries: list[WeeklyFileEntry] = []
-        for fn in sorted(os.listdir(weekly_dir)):
-            if not fn.endswith(".json"):
-                continue
-            m = re.match(r"^(?:date_)?(\d{4}-\d{2}-\d{2})_weekly\.json$", fn)
-            if not m:
-                continue
-            y_date = m.group(1)
-            fpath = os.path.join(weekly_dir, fn)
-            try:
-                with open(fpath, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                if not isinstance(data, dict) or not data.get("team_stats"):
-                    continue
-            except Exception:
-                continue
-
-            if season_start_yahoo and y_date < season_start_yahoo:
-                continue
-            if season_end_yahoo and y_date > season_end_yahoo:
-                continue
-
-            w = self._stats_helper._resolve_week_for_yahoo_date(
-                yahoo_date_str=y_date,
-                payload=data,
-                season_start_yahoo=season_start_yahoo,
-                end_week=end_week,
-                meta=meta,
-                is_stale_meta=is_stale_meta,
-            )
-            if w is not None:
-                weekly_entries.append(WeeklyFileEntry(yahoo_date=y_date, week=int(w), payload=data))
-
-        if not weekly_entries:
-            return None, None, True
-
-        base_yahoo_date = tw_date_to_yahoo_date(preferred_tw_date)
-        current_week = self._stats_helper._resolve_week_for_yahoo_date(
-            yahoo_date_str=base_yahoo_date,
-            payload=None,
-            season_start_yahoo=season_start_yahoo,
-            end_week=end_week,
-            meta=meta,
-            is_stale_meta=is_stale_meta,
-        )
-        if current_week is None:
-            current_week = max(e.week for e in weekly_entries)
-
-        target_week = (current_week - 1) if week_mode == "last_week" else int(week_num)
-        if target_week < 1 or (end_week and target_week > end_week):
-            return None, None, True
-
-        # 若指定週次即為當前週次，優先按當週即時週數據規則讀取
-        if target_week == current_week:
-            live_data = self._matchup_helper._load_local_weekly_data(
-                league_id,
-                preferred_tw_date=preferred_tw_date,
-            )
-            if live_data:
-                live_w = self._matchup_helper._resolve_week_number(league_id, live_data, config)
-                if live_w == target_week:
-                    return live_data, target_week, False
-
-        matching = [e for e in weekly_entries if e.week == target_week]
-        if not matching:
-            return None, None, True
-
-        # 取該週日期最新的一天（歷史週結算日，或當週最新一天）
-        matching.sort(key=lambda x: x.yahoo_date, reverse=True)
-        return matching[0].payload, target_week, False
 
     def _enrich_teams_and_actual_opponent(
         self,
@@ -338,7 +241,7 @@ class LocalScoreHandler(BaseHandler):
             return None, [], None
 
         actual_opp_id = None
-        matchups = self._matchup_helper._build_matchups_from_weekly_data(weekly_data, team_mapping)
+        matchups = self.repository.build_matchups_from_weekly_data(weekly_data, team_mapping)
         my_tid = target_team["team_id"]
         for m in matchups:
             t1 = m.get("team1", {})

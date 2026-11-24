@@ -11,6 +11,7 @@ from .base_handler import BaseHandler
 
 # Required project imports
 from src.config import load_config
+from src.repositories.local_league_data_repository import LocalLeagueDataRepository
 from src.utils.cache_utils import load_league_metadata
 from src.utils.time_utils import (
     get_stats_rule_date,
@@ -61,7 +62,9 @@ class StatsHandler(BaseHandler):
     若為歷史查詢（昨天 / 上週 / 特定週數 / 特定日期）且非當季或本地無現有數據，則靜默不回應。
     """
 
-    def __init__(self):
+    def __init__(self, repository: LocalLeagueDataRepository | None = None):
+        super().__init__()
+        self.repository = repository or LocalLeagueDataRepository()
         self.combined_pattern = re.compile(r"^#戰績$")
         self.yesterday_pattern = re.compile(r"^#戰績\s*昨天$")
         self.last_week_pattern = re.compile(r"^#戰績\s*上週$")
@@ -204,110 +207,12 @@ class StatsHandler(BaseHandler):
         meta: dict,
         now_tw: datetime
     ) -> tuple[str | None, str | None, int | None, bool]:
-        """
-        計算「當季」的美西開季日期 (season_start_yahoo)、美西結束日期 (season_end_yahoo)、
-        總週數 (end_week)，以及 metadata.json 是否為過期的上一季資料 (is_stale_meta)。
-        """
-        meta = meta or {}
-        meta_start = meta.get("start_date")
-        meta_end = meta.get("end_date")
-        meta_end_week = meta.get("end_week")
-
-        next_season_raw = (
-            config.get("NEXT_SEASON_START_DATE")
-            or config.get(" next_season_start_date")
-            or meta.get("next_season_start_date")
+        return self.repository.get_current_season_bounds(
+            league_id=league_id,
+            config=config,
+            meta=meta,
+            now_tw=now_tw,
         )
-        if not next_season_raw:
-            settings_path = os.path.join(get_league_dir(league_id), "settings.json")
-            if os.path.exists(settings_path):
-                try:
-                    with open(settings_path, "r", encoding="utf-8") as f:
-                        s_data = json.load(f)
-                    next_season_raw = s_data.get("NEXT_SEASON_START_DATE") or s_data.get("next_season_start_date")
-                except Exception:
-                    pass
-
-        next_season_tw = str(next_season_raw).strip()[:10] if next_season_raw else None
-        today_tw_str = now_tw.strftime("%Y-%m-%d")
-        today_yahoo_str = tw_date_to_yahoo_date(today_tw_str)
-
-        # 收集本地現有檔案日期（轉為美西 yahoo_date 基準）
-        local_yahoo_dates = set()
-        daily_dir = get_league_daily_dir(league_id)
-        if os.path.exists(daily_dir):
-            for fn in os.listdir(daily_dir):
-                m = re.match(r"^(?:date_)?(\d{4}-\d{2}-\d{2})\.json$", fn)
-                if m:
-                    local_yahoo_dates.add(m.group(1))
-        weekly_dir = get_league_weekly_dir(league_id)
-        if os.path.exists(weekly_dir):
-            for fn in os.listdir(weekly_dir):
-                m = re.match(r"^(?:date_)?(\d{4}-\d{2}-\d{2})_weekly\.json$", fn)
-                if m:
-                    local_yahoo_dates.add(m.group(1))
-        image_dir = get_league_image_dir(league_id)
-        if os.path.exists(image_dir):
-            for fn in os.listdir(image_dir):
-                m = re.match(r"^(\d{4}-\d{2}-\d{2})_combined(?:_hitter|_pitcher)?\.png$", fn)
-                if m:
-                    try:
-                        local_yahoo_dates.add(tw_date_to_yahoo_date(m.group(1)))
-                    except Exception:
-                        pass
-
-        # 判斷是否已經進入新球季（metadata.json 停留在上一季）
-        is_stale_meta = False
-        if meta_end:
-            has_newer_local = any(d > meta_end for d in local_yahoo_dates)
-            has_newer_next = bool(next_season_tw and next_season_tw > meta_end and today_tw_str >= next_season_tw)
-            if has_newer_local or has_newer_next or today_yahoo_str > meta_end:
-                try:
-                    days_past = (
-                        datetime.strptime(today_yahoo_str, "%Y-%m-%d")
-                        - datetime.strptime(meta_end, "%Y-%m-%d")
-                    ).days
-                except Exception:
-                    days_past = 0
-                if has_newer_local or has_newer_next or days_past > 60:
-                    is_stale_meta = True
-
-        if is_stale_meta:
-            newer_local = sorted(d for d in local_yahoo_dates if d > meta_end)
-            if next_season_tw and next_season_tw > meta_end:
-                try:
-                    ns_yahoo = tw_date_to_yahoo_date(next_season_tw)
-                except Exception:
-                    ns_yahoo = next_season_tw
-                if newer_local:
-                    season_start_yahoo = min(ns_yahoo, newer_local[0])
-                else:
-                    season_start_yahoo = ns_yahoo
-            elif newer_local:
-                season_start_yahoo = newer_local[0]
-            else:
-                # 尚無新球季設定與本地檔案，推估當年 10 月 1 日為新球季起點
-                season_start_yahoo = f"{now_tw.year}-10-01"
-            return season_start_yahoo, None, None, True
-
-        # metadata 為當季或未設定 end_date
-        season_start_yahoo = meta_start or config.get("SEASON_START_DATE")
-        if not season_start_yahoo and next_season_tw:
-            try:
-                season_start_yahoo = tw_date_to_yahoo_date(next_season_tw)
-            except Exception:
-                season_start_yahoo = next_season_tw
-        if not season_start_yahoo and local_yahoo_dates:
-            season_start_yahoo = min(local_yahoo_dates)
-
-        end_week_val = None
-        if meta_end_week is not None:
-            try:
-                end_week_val = int(meta_end_week)
-            except (ValueError, TypeError):
-                end_week_val = None
-
-        return season_start_yahoo, meta_end, end_week_val, False
 
     def _is_tw_date_in_current_season(
         self,
@@ -316,30 +221,12 @@ class StatsHandler(BaseHandler):
         season_start_yahoo: str | None,
         season_end_yahoo: str | None
     ) -> bool:
-        """檢查台灣日期 (YYYY-MM-DD) 是否在當季有效範圍內且不超過今天。"""
-        today_tw_str = now_tw.strftime("%Y-%m-%d")
-        if tw_date_str > today_tw_str:
-            return False
-
-        try:
-            yahoo_date_str = tw_date_to_yahoo_date(tw_date_str)
-        except Exception:
-            return False
-
-        if season_start_yahoo:
-            # 容許 tw_date_str 本身 >= season_start_yahoo（以防測試直接以台灣日期作為 start_date）
-            if yahoo_date_str < season_start_yahoo and tw_date_str < season_start_yahoo:
-                return False
-
-        if season_end_yahoo:
-            try:
-                end_tw_str = _yahoo_date_to_tw_date(season_end_yahoo)
-            except Exception:
-                end_tw_str = season_end_yahoo
-            if yahoo_date_str > season_end_yahoo and tw_date_str > end_tw_str:
-                return False
-
-        return True
+        return self.repository.is_tw_date_in_current_season(
+            tw_date_str=tw_date_str,
+            now_tw=now_tw,
+            season_start_yahoo=season_start_yahoo,
+            season_end_yahoo=season_end_yahoo,
+        )
 
     def _resolve_week_for_yahoo_date(
         self,
@@ -350,38 +237,14 @@ class StatsHandler(BaseHandler):
         meta: dict,
         is_stale_meta: bool
     ) -> int | None:
-        if isinstance(payload, dict) and payload.get("week") is not None:
-            try:
-                return int(payload["week"])
-            except (ValueError, TypeError):
-                pass
-
-        if not is_stale_meta and isinstance(meta, dict):
-            date_to_week = meta.get("date_to_week") or {}
-            if yahoo_date_str in date_to_week:
-                try:
-                    return int(date_to_week[yahoo_date_str])
-                except (ValueError, TypeError):
-                    pass
-            try:
-                tw_d = _yahoo_date_to_tw_date(yahoo_date_str)
-                if tw_d in date_to_week:
-                    return int(date_to_week[tw_d])
-            except Exception:
-                pass
-
-        if season_start_yahoo and yahoo_date_str:
-            try:
-                target_dt = pytz.timezone("US/Pacific").localize(
-                    datetime.strptime(yahoo_date_str, "%Y-%m-%d")
-                )
-                w = get_fantasy_week(season_start_yahoo, target_dt)
-                if end_week and w > end_week:
-                    w = end_week
-                return max(1, int(w))
-            except Exception:
-                pass
-        return None
+        return self.repository.resolve_week_for_yahoo_date(
+            yahoo_date_str=yahoo_date_str,
+            payload=payload,
+            season_start_yahoo=season_start_yahoo,
+            end_week=end_week,
+            meta=meta,
+            is_stale_meta=is_stale_meta,
+        )
 
     def _collect_current_season_entries(
         self,
@@ -394,86 +257,16 @@ class StatsHandler(BaseHandler):
         meta: dict,
         is_stale_meta: bool
     ) -> list[dict]:
-        """
-        掃描本地現有的 image / daily / weekly 資料，回傳所有屬於「當季」的可用台灣日期清單（由舊到新排序）。
-        每個元素為: {"tw_date": str, "yahoo_date": str, "week": int | None}
-        """
-        is_mlb = (sport == "mlb")
-        image_dir = get_league_image_dir(league_id)
-        daily_dir = get_league_daily_dir(league_id)
-        weekly_dir = get_league_weekly_dir(league_id)
-
-        candidate_tw_dates: set[str] = set()
-        payload_by_yahoo_date: dict[str, dict] = {}
-
-        # 1. 掃描 image 目錄中的現有戰績圖
-        if os.path.exists(image_dir):
-            files = set(os.listdir(image_dir))
-            for fn in files:
-                if is_mlb:
-                    m = re.match(r"^(\d{4}-\d{2}-\d{2})_combined_hitter\.png$", fn)
-                    if m and f"{m.group(1)}_combined_pitcher.png" in files:
-                        candidate_tw_dates.add(m.group(1))
-                else:
-                    m = re.match(r"^(\d{4}-\d{2}-\d{2})_combined\.png$", fn)
-                    if m:
-                        candidate_tw_dates.add(m.group(1))
-
-        # 2. 掃描 daily 目錄中的 JSON
-        if os.path.exists(daily_dir):
-            for fn in os.listdir(daily_dir):
-                m = re.match(r"^(?:date_)?(\d{4}-\d{2}-\d{2})\.json$", fn)
-                if not m:
-                    continue
-                y_date = m.group(1)
-                fpath = os.path.join(daily_dir, fn)
-                try:
-                    with open(fpath, "r", encoding="utf-8") as f:
-                        data = json.load(f)
-                    if isinstance(data, dict) and data.get("team_stats"):
-                        payload_by_yahoo_date.setdefault(y_date, data)
-                        candidate_tw_dates.add(_yahoo_date_to_tw_date(y_date))
-                except Exception:
-                    continue
-
-        # 3. 掃描 weekly 目錄中的 JSON
-        if os.path.exists(weekly_dir):
-            for fn in os.listdir(weekly_dir):
-                m = re.match(r"^(?:date_)?(\d{4}-\d{2}-\d{2})_weekly\.json$", fn)
-                if not m:
-                    continue
-                y_date = m.group(1)
-                fpath = os.path.join(weekly_dir, fn)
-                try:
-                    with open(fpath, "r", encoding="utf-8") as f:
-                        data = json.load(f)
-                    if isinstance(data, dict) and data.get("team_stats"):
-                        payload_by_yahoo_date.setdefault(y_date, data)
-                        candidate_tw_dates.add(_yahoo_date_to_tw_date(y_date))
-                except Exception:
-                    continue
-
-        entries = []
-        for tw_d in sorted(candidate_tw_dates):
-            if not self._is_tw_date_in_current_season(tw_d, now_tw, season_start_yahoo, season_end_yahoo):
-                continue
-            y_d = tw_date_to_yahoo_date(tw_d)
-            payload = payload_by_yahoo_date.get(y_d) or payload_by_yahoo_date.get(tw_d)
-            w = self._resolve_week_for_yahoo_date(
-                yahoo_date_str=y_d,
-                payload=payload,
-                season_start_yahoo=season_start_yahoo,
-                end_week=end_week,
-                meta=meta,
-                is_stale_meta=is_stale_meta,
-            )
-            entries.append({
-                "tw_date": tw_d,
-                "yahoo_date": y_d,
-                "week": w,
-            })
-
-        return entries
+        return self.repository.collect_current_season_entries(
+            league_id=league_id,
+            sport=sport,
+            now_tw=now_tw,
+            season_start_yahoo=season_start_yahoo,
+            season_end_yahoo=season_end_yahoo,
+            end_week=end_week,
+            meta=meta,
+            is_stale_meta=is_stale_meta,
+        )
 
     def _load_local_stats_pair(self, league_id: str, target_tw_date: str) -> tuple[dict | None, dict | None]:
         """從本地端 daily/ 與 weekly/ 讀取指定台灣日期對應的 JSON 數據（絕不呼叫網路爬蟲）。"""
