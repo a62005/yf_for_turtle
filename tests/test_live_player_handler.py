@@ -349,12 +349,18 @@ def test_live_player_flex_renderer_default_and_custom_categories():
     assert banner_box["backgroundColor"] == "#FEF9E7"
     assert banner_box["contents"][0]["text"] == "⚠️ 今日未出賽 (DNP - Rest) • 以下為最近出賽"
 
-    # Index 2 is status_box with FINAL win color #27AE60 (LAL 88 : 82 GSW)
+    # Index 2 is status_box with FINAL color #2C3E50 and player's team+score span colored #27AE60 (LAL 88 : 82 GSW)
     c_status_box = c_body[2]
     assert c_status_box["contents"][0]["text"] == "🏁 FINAL"
-    assert c_status_box["contents"][0]["color"] == "#27AE60"
+    assert c_status_box["contents"][0]["color"] == "#2C3E50"
+    c_score_node = c_status_box["contents"][1]
+    assert c_score_node["text"] == "LAL 88 : 82 GSW"
+    assert c_score_node["contents"][0]["text"] == "LAL 88"
+    assert c_score_node["contents"][0]["color"] == "#27AE60"
+    assert c_score_node["contents"][1]["text"] == " : 82 GSW"
+    assert c_score_node["contents"][1]["color"] == "#111111"
 
-    # Verify FINAL loss color #C0392B and team-first score orientation (e.g. POR in back -> moved to front)
+    # Verify FINAL loss color #C0392B on player's team+score span and team-first orientation (POR in back -> moved to front)
     por_player = {
         "athlete_id": "5105623",
         "english_name": "Toumani Camara",
@@ -370,8 +376,13 @@ def test_live_player_flex_renderer_default_and_custom_categories():
     por_loss_bubble = renderer.render_player_card(por_player, por_loss_game)
     por_status_box = por_loss_bubble["body"]["contents"][1]
     assert por_loss_bubble["body"]["contents"][0]["contents"][1]["text"] == "POR #33 • F"
-    assert por_status_box["contents"][0]["color"] == "#C0392B"
-    assert por_status_box["contents"][1]["text"] == "POR 94 : 109 UTA"
+    assert por_status_box["contents"][0]["color"] == "#2C3E50"
+    por_score_node = por_status_box["contents"][1]
+    assert por_score_node["text"] == "POR 94 : 109 UTA"
+    assert por_score_node["contents"][0]["text"] == "POR 94"
+    assert por_score_node["contents"][0]["color"] == "#C0392B"
+    assert por_score_node["contents"][1]["text"] == " : 109 UTA"
+    assert por_score_node["contents"][1]["color"] == "#111111"
 
     c_stat_rows = c_body[4]["contents"][1]["contents"]
     c_labels = [r["contents"][0]["text"] for r in c_stat_rows]

@@ -181,19 +181,18 @@ class LivePlayerFlexRenderer:
         game_state = str(game_data.get("game_state") or "").lower()
         is_live = game_state == "in" or "LIVE" in status_label.upper()
         is_final = not is_live and (game_state == "post" or "FINAL" in status_label.upper())
+        status_color = "#C0392B" if is_live else "#2C3E50"
 
         raw_score_text = str(game_data.get("score_text") or "").strip()
         player_team_abbr = str(player_info.get("team_abbr") or "").strip()
         score_text, outcome = self._orient_score_and_determine_outcome(raw_score_text, player_team_abbr)
 
-        if is_live:
-            status_color = "#C0392B"
-        elif is_final and outcome == "win":
-            status_color = "#27AE60"
+        if is_final and outcome == "win":
+            my_team_color = "#27AE60"
         elif is_final and outcome == "loss":
-            status_color = "#C0392B"
+            my_team_color = "#C0392B"
         else:
-            status_color = "#2C3E50"
+            my_team_color = "#111111"
 
         status_box_contents = [
             {
@@ -206,18 +205,33 @@ class LivePlayerFlexRenderer:
             }
         ]
         if score_text:
-            status_box_contents.append(
-                {
-                    "type": "text",
-                    "text": score_text,
-                    "size": "sm",
-                    "weight": "bold",
-                    "color": "#111111",
-                    "align": "end",
-                    "flex": 0,
-                    "adjustMode": "shrink-to-fit",
-                }
-            )
+            score_node: dict[str, Any] = {
+                "type": "text",
+                "text": score_text,
+                "size": "sm",
+                "weight": "bold",
+                "color": "#111111",
+                "align": "end",
+                "flex": 0,
+                "adjustMode": "shrink-to-fit",
+            }
+            m_score = re.match(r"^([A-Za-z0-9]+\s+\d+)(\s*:\s*\d+\s+[A-Za-z0-9]+)$", score_text)
+            if is_final and m_score and outcome in ("win", "loss"):
+                score_node["contents"] = [
+                    {
+                        "type": "span",
+                        "text": m_score.group(1),
+                        "color": my_team_color,
+                        "weight": "bold",
+                    },
+                    {
+                        "type": "span",
+                        "text": m_score.group(2),
+                        "color": "#111111",
+                        "weight": "bold",
+                    },
+                ]
+            status_box_contents.append(score_node)
 
         body_contents.append(
             {
