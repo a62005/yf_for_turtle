@@ -358,5 +358,32 @@ def test_build_matchup_comparison_card_mlb():
     FlexContainer.from_json(json.dumps(card))
 
 
+def test_public_flex_primitives_and_aliases():
+    from src.visualizer.flex_builder import (
+        create_bubble,
+        create_header,
+        create_separator,
+        _create_bubble,
+        _create_header,
+        _create_separator,
+    )
+
+    assert create_bubble is _create_bubble
+    assert create_header is _create_header
+    assert create_separator is _create_separator
+
+    header = create_header("Stephen Curry", "史蒂芬·柯瑞 ｜ GSW #30 • PG")
+    sep = create_separator()
+    bubble = create_bubble([header, sep])
+
+    assert bubble["type"] == "bubble"
+    assert bubble["body"]["contents"][0] == header
+    assert bubble["body"]["contents"][1] == sep
+    assert header["contents"][0]["text"] == "Stephen Curry"
+    assert header["contents"][1]["text"] == "史蒂芬·柯瑞 ｜ GSW #30 • PG"
+    assert sep == {"type": "separator", "color": "#EAEAEA"}
+
+
+
 
 

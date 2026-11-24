@@ -1054,6 +1054,124 @@ def test_search_player_exact_match_and_recent_scoreboard_fallback(mocker):
     assert result["stats"]["3PT"] == "6"
 
 
+def test_player_identity_and_live_game_boxscore_domain_models_and_resolver_di(mocker):
+    from src.services.live_player_identity_resolver import (
+        PlayerIdentity,
+        LiveGameBoxscore,
+        LivePlayerIdentityResolver,
+    )
+    from src.visualizer import live_player_flex_renderer as renderer_mod
+    from src.visualizer.live_player_flex_renderer import LivePlayerFlexRenderer
+
+    # 1. PlayerIdentity dataclass & mapping compatibility
+    identity = PlayerIdentity.from_dict(
+        {
+            "athlete_id": "1966",
+            "english_name": "LeBron James",
+            "chinese_name": "勒布朗·詹姆斯",
+            "team_id": "13",
+            "team_abbr": "LAL",
+            "team_name": "Los Angeles Lakers",
+            "jersey_number": "23",
+            "position": "SF",
+        }
+    )
+    assert isinstance(identity, PlayerIdentity)
+    assert identity.athlete_id == "1966"
+    assert identity.english_name == "LeBron James"
+    assert identity.team == "Los Angeles Lakers"
+    assert identity["english_name"] == "LeBron James"
+    assert identity.get("team_abbr") == "LAL"
+    assert identity.get("non_existent", "fallback") == "fallback"
+    assert "athlete_id" in identity
+    assert "unknown_field" not in identity
+    assert identity.to_dict()["athlete_id"] == "1966"
+
+    with pytest.raises(KeyError):
+        _ = identity["unknown_field"]
+
+    # 2. LiveGameBoxscore dataclass & mapping compatibility
+    boxscore = LiveGameBoxscore.from_dict(
+        {
+            "event_id": "401704801",
+            "game_date": "2026-11-24",
+            "game_state": "in",
+            "status_label": "🔴 LIVE • Q3 04:12",
+            "score_text": "LAL 88 : 82 GSW",
+            "minutes": "28",
+            "stats": {"PTS": "24", "REB": "7", "AST": "8"},
+            "notice_banner": None,
+        }
+    )
+    assert isinstance(boxscore, LiveGameBoxscore)
+    assert boxscore.event_id == "401704801"
+    assert boxscore.game_state == "in"
+    assert boxscore["score_text"] == "LAL 88 : 82 GSW"
+    assert boxscore.get("minutes") == "28"
+    assert boxscore.get("missing_key", "N/A") == "N/A"
+    assert "stats" in boxscore
+    assert "missing_key" not in boxscore
+    assert boxscore.to_dict()["stats"]["PTS"] == "24"
+
+    # 3. LivePlayerIdentityResolver constructor DI (no global monkeypatch required)
+    in_memory_cache: dict[str, dict] = {}
+    mock_fetcher = mocker.MagicMock()
+    mock_fetcher.search_player.return_value = {
+        "athlete_id": "3975",
+        "english_name": "Stephen Curry",
+        "team_id": "9",
+        "team_abbr": "GSW",
+        "team_name": "Golden State Warriors",
+        "jersey_number": "30",
+        "position": "PG",
+    }
+    mock_llm = mocker.MagicMock()
+    mock_llm.player_fuzzy_search.return_value = {
+        "is_known_player": True,
+        "english_name": "Stephen Curry",
+        "chinese_name": "史蒂芬·柯瑞",
+        "team": "Golden State Warriors",
+        "jersey_number": "30",
+    }
+
+    resolver = LivePlayerIdentityResolver(
+        fetcher=mock_fetcher,
+        llm_agent=mock_llm,
+        cache_getter=lambda q: in_memory_cache.get(q.strip().lower()),
+        cache_setter=lambda q, d: in_memory_cache.__setitem__(q.strip().lower(), d),
+    )
+
+    resolved_1 = resolver.resolve_identity("咖哩")
+    assert isinstance(resolved_1, PlayerIdentity)
+    assert resolved_1.athlete_id == "3975"
+    assert resolved_1.english_name == "Stephen Curry"
+    assert resolved_1.chinese_name == "史蒂芬·柯瑞"
+    assert resolved_1["team_abbr"] == "GSW"
+    assert "咖哩" in in_memory_cache
+
+    # Second resolution hits injected cache_getter without calling LLM or fetcher
+    mock_llm.player_fuzzy_search.reset_mock()
+    mock_fetcher.search_player.reset_mock()
+    resolved_2 = resolver.resolve_identity("咖哩")
+    assert isinstance(resolved_2, PlayerIdentity)
+    assert resolved_2 == resolved_1
+    mock_llm.player_fuzzy_search.assert_not_called()
+    mock_fetcher.search_player.assert_not_called()
+
+    # 4. Verify LivePlayerFlexRenderer reuses public create_bubble, create_header, create_separator
+    spy_bubble = mocker.spy(renderer_mod, "create_bubble")
+    spy_header = mocker.spy(renderer_mod, "create_header")
+    spy_sep = mocker.spy(renderer_mod, "create_separator")
+
+    renderer = LivePlayerFlexRenderer()
+    card = renderer.render_player_card(resolved_1, boxscore)
+    assert card["type"] == "bubble"
+    spy_header.assert_called_once_with("Stephen Curry", "史蒂芬·柯瑞 ｜ GSW #30 • PG")
+    spy_sep.assert_called_once()
+    spy_bubble.assert_called_once()
+
+
+
 
 
 

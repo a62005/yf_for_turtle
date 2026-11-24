@@ -1,4 +1,9 @@
 from typing import Any
+from src.visualizer.flex_builder import (
+    create_bubble,
+    create_header,
+    create_separator,
+)
 
 
 class LivePlayerFlexRenderer:
@@ -164,32 +169,8 @@ class LivePlayerFlexRenderer:
         english_name = str(player_info.get("english_name") or "Unknown").strip()
         subtitle = self._build_subtitle(player_info)
 
-        header_contents = [
-            {
-                "type": "text",
-                "text": english_name,
-                "weight": "bold",
-                "size": "xl",
-                "color": "#111111",
-            }
-        ]
-        if subtitle:
-            header_contents.append(
-                {
-                    "type": "text",
-                    "text": subtitle,
-                    "size": "sm",
-                    "color": "#555555",
-                }
-            )
-
         body_contents: list[dict] = [
-            {
-                "type": "box",
-                "layout": "vertical",
-                "spacing": "xs",
-                "contents": header_contents,
-            }
+            create_header(english_name, subtitle or None)
         ]
 
         notice_banner = str(game_data.get("notice_banner") or "").strip()
@@ -259,12 +240,7 @@ class LivePlayerFlexRenderer:
             }
         )
 
-        body_contents.append(
-            {
-                "type": "separator",
-                "color": "#EAEAEA",
-            }
-        )
+        body_contents.append(create_separator())
 
         game_date = str(game_data.get("game_date") or "").strip()
         stats_dict = game_data.get("stats") or {}
@@ -336,12 +312,4 @@ class LivePlayerFlexRenderer:
             }
         )
 
-        return {
-            "type": "bubble",
-            "body": {
-                "type": "box",
-                "layout": "vertical",
-                "spacing": "md",
-                "contents": body_contents,
-            },
-        }
+        return create_bubble(body_contents)

@@ -624,7 +624,7 @@ class EspnLivePlayerFetcher:
         若目標日無比賽、尚未開打或 DNP，先透過 Athlete Gamelog 取得最近一場已出賽數據，
         若 Gamelog 無資料或失敗，再回退往前掃描近 1~3 天之 Scoreboard 與 Boxscore。
         """
-        if not isinstance(player_info, dict):
+        if not player_info or not hasattr(player_info, "get"):
             return None
 
         pac_tz = pytz.timezone("US/Pacific")
