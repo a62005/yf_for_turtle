@@ -19,6 +19,7 @@ from src.utils.oauth_handler import handle_oauth_callback
 from src.handlers.dispatcher import CommandDispatcher
 from src.handlers.stats_handler import StatsHandler
 from src.handlers.player_handler import PlayerHandler
+from src.handlers.live_player_handler import LivePlayerHandler
 from src.handlers.user_stats_handler import UserStatsHandler
 from src.handlers.matchup_handler import MatchupHandler
 from src.handlers.local_user_stats_handler import LocalUserStatsHandler
@@ -57,6 +58,7 @@ dispatcher = CommandDispatcher()
 dispatcher.register(IdHandler())
 dispatcher.register(StatsHandler())
 # dispatcher.register(PlayerHandler())
+dispatcher.register(LivePlayerHandler())
 # dispatcher.register(UserStatsHandler())
 # dispatcher.register(MatchupHandler())
 dispatcher.register(LocalUserStatsHandler())

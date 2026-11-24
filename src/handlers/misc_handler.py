@@ -130,7 +130,7 @@ class MiscHandler(BaseHandler):
                         },
                         {
                             "type": "text",
-                            "text": "支援點擊選單或輸入 #對戰 [暱稱]、#比分 [暱稱]、#玩家 [暱稱]",
+                            "text": "支援點擊選單或輸入 #對戰 [暱稱]、#比分 [暱稱]、#玩家 [暱稱]、#球員 [姓名]",
                             "size": "xs",
                             "color": "#777777",
                             "wrap": True
@@ -637,17 +637,13 @@ class MiscHandler(BaseHandler):
                     if not self._is_command_registered("#戰績W3"):
                         continue
                     kept_command_notes += 1
-                elif "#球員" in text_val:
-                    had_buttons_or_cmd_notes = True
-                    if not self._is_command_registered("#球員 老詹"):
-                        continue
-                    kept_command_notes += 1
                 elif "#對戰" in text_val or "#玩家" in text_val or "#比分" in text_val:
                     had_buttons_or_cmd_notes = True
                     has_m = self._is_command_registered("#對戰")
                     has_s = self._is_command_registered("#比分")
                     has_u = self._is_command_registered("#玩家")
-                    if not (has_m or has_s or has_u):
+                    has_p = self._is_command_registered("#球員 老詹")
+                    if not (has_m or has_s or has_u or has_p):
                         continue
                     active_notes = []
                     if has_m:
@@ -656,7 +652,14 @@ class MiscHandler(BaseHandler):
                         active_notes.append("#比分 [暱稱]")
                     if has_u:
                         active_notes.append("#玩家 [暱稱]")
+                    if has_p:
+                        active_notes.append("#球員 [姓名]")
                     item["text"] = "支援點擊選單或輸入 " + "、".join(active_notes)
+                    kept_command_notes += 1
+                elif "#球員" in text_val:
+                    had_buttons_or_cmd_notes = True
+                    if not self._is_command_registered("#球員 老詹"):
+                        continue
                     kept_command_notes += 1
                 elif "選秀與開季" in text_val:
                     had_buttons_or_cmd_notes = True
