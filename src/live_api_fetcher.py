@@ -295,6 +295,167 @@ class EspnLivePlayerFetcher:
             logging.error(f"[EspnLivePlayerFetcher] Summary API error for event {event_id}: {e}")
         return {}
 
+    def _fetch_gamelog(self, athlete_id: str) -> dict:
+        if not athlete_id:
+            return {}
+        url = self.GAMELOG_URL_TEMPLATE.format(athlete_id=athlete_id)
+        try:
+            resp = requests.get(url, timeout=self.timeout)
+            if resp.status_code == 200:
+                return resp.json() or {}
+        except Exception as e:
+            logging.error(f"[EspnLivePlayerFetcher] Gamelog API error for athlete {athlete_id}: {e}")
+        return {}
+
+    @staticmethod
+    def _extract_yyyy_mm_dd(raw_date: Any) -> str:
+        if not raw_date:
+            return ""
+        s = str(raw_date).strip()
+        m = re.match(r"^(\d{4}-\d{2}-\d{2})", s)
+        if m:
+            return m.group(1)
+        m2 = re.match(r"^(\d{4})(\d{2})(\d{2})", s)
+        if m2:
+            return f"{m2.group(1)}-{m2.group(2)}-{m2.group(3)}"
+        return ""
+
+    @staticmethod
+    def _build_gamelog_score_text(event_meta: dict, player_info: dict) -> str:
+        if not isinstance(event_meta, dict):
+            return ""
+        if event_meta.get("score_text"):
+            return str(event_meta["score_text"]).strip()
+        if event_meta.get("competitions"):
+            return EspnLivePlayerFetcher._build_score_text(event_meta["competitions"][0])
+
+        team_obj = event_meta.get("team") if isinstance(event_meta.get("team"), dict) else {}
+        opp_obj = event_meta.get("opponent") if isinstance(event_meta.get("opponent"), dict) else {}
+        team_abbr = (
+            str(team_obj.get("abbreviation") or player_info.get("team_abbr") or "TEAM")
+            .strip()
+            .upper()
+        )
+        opp_abbr = str(opp_obj.get("abbreviation") or "OPP").strip().upper()
+
+        score_raw = str(event_meta.get("score") or "").strip()
+        m = re.search(r"(\d+)\s*[-:]\s*(\d+)", score_raw)
+        if m:
+            s_a, s_b = int(m.group(1)), int(m.group(2))
+            result = str(event_meta.get("gameResult") or "").strip().upper()
+            if result == "W":
+                team_score, opp_score = max(s_a, s_b), min(s_a, s_b)
+            elif result == "L":
+                team_score, opp_score = min(s_a, s_b), max(s_a, s_b)
+            else:
+                team_score, opp_score = s_a, s_b
+            return f"{team_abbr} {team_score} : {opp_score} {opp_abbr}"
+
+        home_score = event_meta.get("homeTeamScore")
+        away_score = event_meta.get("awayTeamScore")
+        if home_score is not None and away_score is not None:
+            at_vs = str(event_meta.get("atVs") or "").strip().lower()
+            if at_vs == "@":
+                return f"{team_abbr} {away_score} : {home_score} {opp_abbr}"
+            return f"{team_abbr} {home_score} : {away_score} {opp_abbr}"
+
+        return ""
+
+    def _extract_latest_game_from_gamelog(
+        self,
+        gamelog_data: dict,
+        player_info: dict,
+        max_date_str: str = "",
+        exclude_event_id: str = "",
+        notice_banner: str | None = None,
+    ) -> dict | None:
+        if not isinstance(gamelog_data, dict) or not gamelog_data:
+            return None
+
+        default_labels = (
+            gamelog_data.get("labels")
+            or gamelog_data.get("names")
+            or [
+                "MIN", "FG", "FG%", "3PT", "3P%", "FT", "FT%",
+                "REB", "AST", "BLK", "STL", "PF", "TO", "PTS",
+            ]
+        )
+
+        events_meta_map: dict[str, dict] = {}
+        raw_events = gamelog_data.get("events")
+        if isinstance(raw_events, dict):
+            for k, v in raw_events.items():
+                if isinstance(v, dict):
+                    events_meta_map[str(k)] = v
+        elif isinstance(raw_events, list):
+            for item in raw_events:
+                if isinstance(item, dict):
+                    eid = str(item.get("id") or item.get("eventId") or "")
+                    if eid:
+                        events_meta_map[eid] = item
+
+        stat_entries: list[tuple[str, list[str], list[Any], dict]] = []
+        season_types = gamelog_data.get("seasonTypes")
+        if isinstance(season_types, list):
+            for st in season_types:
+                if not isinstance(st, dict):
+                    continue
+                st_labels = st.get("labels") or st.get("names") or default_labels
+                for cat in st.get("categories") or []:
+                    if not isinstance(cat, dict):
+                        continue
+                    cat_labels = cat.get("labels") or cat.get("names") or st_labels
+                    for ev in cat.get("events") or []:
+                        if not isinstance(ev, dict):
+                            continue
+                        eid = str(ev.get("eventId") or ev.get("id") or "").strip()
+                        stats_list = ev.get("stats") or []
+                        if not stats_list:
+                            continue
+                        meta = events_meta_map.get(eid, ev)
+                        stat_entries.append((eid, cat_labels, stats_list, meta))
+
+        if not stat_entries and isinstance(raw_events, list):
+            for ev in raw_events:
+                if not isinstance(ev, dict):
+                    continue
+                eid = str(ev.get("eventId") or ev.get("id") or "").strip()
+                stats_list = ev.get("stats") or []
+                if not stats_list:
+                    continue
+                ev_labels = ev.get("labels") or ev.get("names") or default_labels
+                stat_entries.append((eid, ev_labels, stats_list, ev))
+
+        candidates: list[tuple[str, str, list[str], list[Any], dict]] = []
+        for eid, labels, stats_list, meta in stat_entries:
+            if exclude_event_id and eid == exclude_event_id:
+                continue
+            g_date = self._extract_yyyy_mm_dd(meta.get("gameDate") or meta.get("date"))
+            if max_date_str and g_date and g_date > max_date_str:
+                continue
+            candidates.append((g_date, eid, labels, stats_list, meta))
+
+        if not candidates:
+            return None
+
+        candidates.sort(key=lambda x: x[0], reverse=True)
+        best_date, best_eid, best_labels, best_stats, best_meta = candidates[0]
+
+        raw_map = dict(zip(best_labels, best_stats))
+        computed = self.compute_fantasy_stats_from_raw(raw_map)
+        score_text = self._build_gamelog_score_text(best_meta, player_info)
+
+        return {
+            "event_id": best_eid,
+            "game_date": best_date,
+            "game_state": "post",
+            "status_label": "🏁 FINAL",
+            "score_text": score_text,
+            "minutes": computed.get("MIN", "0"),
+            "stats": computed,
+            "notice_banner": notice_banner,
+        }
+
     @staticmethod
     def _match_team_in_event(event: dict, team_id: str, team_abbr: str) -> dict | None:
         competitions = event.get("competitions") or []
@@ -411,6 +572,8 @@ class EspnLivePlayerFetcher:
         team_id = str(player_info.get("team_id") or "").strip()
         team_abbr = str(player_info.get("team_abbr") or "").strip().upper()
 
+        notice_banner: str | None = None
+        matched_event_id: str = ""
         scoreboard = self._fetch_scoreboard(date_yyyymmdd)
         for event in scoreboard.get("events") or []:
             comp = self._match_team_in_event(event, team_id, team_abbr)
@@ -418,6 +581,7 @@ class EspnLivePlayerFetcher:
                 continue
 
             event_id = str(event.get("id") or "").strip()
+            matched_event_id = event_id
             state, status_label = self._build_status_label(comp, event)
             score_text = self._build_score_text(comp)
 
@@ -437,6 +601,21 @@ class EspnLivePlayerFetcher:
                         "stats": computed,
                         "notice_banner": None,
                     }
+                reason = box_entry["reason"] if box_entry and box_entry.get("reason") else "DNP"
+                notice_banner = f"⚠️ 今日未出賽 ({reason}) • 以下為最近出賽"
+                break
 
-        return None
+            if state == "pre":
+                detail = status_label or "Scheduled"
+                notice_banner = f"🕒 今日賽事尚未開打 ({detail}) • 以下為最近出賽"
+                break
+
+        gamelog_data = self._fetch_gamelog(str(player_info.get("athlete_id") or "").strip())
+        return self._extract_latest_game_from_gamelog(
+            gamelog_data,
+            player_info,
+            max_date_str=game_date_str,
+            exclude_event_id=matched_event_id,
+            notice_banner=notice_banner,
+        )
 
