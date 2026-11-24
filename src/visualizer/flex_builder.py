@@ -3,7 +3,7 @@
 Provides templates for generating structured Flex Messages.
 """
 
-def _create_bubble(body_contents: list) -> dict:
+def create_bubble(body_contents: list) -> dict:
     """Wrap body contents into a Flex Bubble.
 
     Args:
@@ -23,7 +23,7 @@ def _create_bubble(body_contents: list) -> dict:
     }
 
 
-def _create_header(title: str, subtitle: str | None = None) -> dict:
+def create_header(title: str, subtitle: str | None = None) -> dict:
     """Create a header box for Flex Messages.
 
     Args:
@@ -57,7 +57,7 @@ def _create_header(title: str, subtitle: str | None = None) -> dict:
     }
 
 
-def _create_separator(color: str = "#EAEAEA") -> dict:
+def create_separator(color: str = "#EAEAEA") -> dict:
     """Create a refined separator.
 
     Args:
@@ -70,6 +70,11 @@ def _create_separator(color: str = "#EAEAEA") -> dict:
         "type": "separator",
         "color": color
     }
+
+
+_create_bubble = create_bubble
+_create_header = create_header
+_create_separator = create_separator
 
 
 def get_status_color(status: str) -> str:
