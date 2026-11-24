@@ -19,18 +19,14 @@ from src.utils.time_utils import (
     tw_date_to_yahoo_date,
     resolve_latest_active_tw_date,
 )
+from src.services.fantasy_stat_toolkit import (
+    EXTRA_NBA_ORDER,
+    STANDARD_NBA_KEYS,
+    FantasyStatToolkit,
+)
 from src.visualizer.flex_builder import build_stats_list_card
 from src.visualizer.processor import is_mlb_pitcher_stat
-
-
-STANDARD_NBA_KEYS = {
-    "FGM/A", "FGM/FGA", "FG%", "FTM/A", "FTM/FTA", "FT%",
-    "3PTM", "3PT", "3PM", "PTS", "REB", "AST", "ST", "STL", "BLK", "TO",
-    "Today Player", "Game Player", "GP_PLAYED", "GP_TOTAL", "GP_SORT_KEY",
-    "FG", "FT", "FGM", "FGA", "FTM", "FTA",
-    "stat_3", "stat_4", "stat_6", "stat_7",
-}
-EXTRA_NBA_ORDER = ["3PT%", "OREB", "DREB", "A/T", "AST/TO", "A/TO", "DD", "TD"]
+from src.visualizer.user_stats_flex_renderer import UserStatsFlexRenderer
 
 
 def _get_now_tw() -> datetime:
@@ -44,9 +40,15 @@ class LocalUserStatsHandler(BaseHandler):
     從本地端 daily 與 weekly JSON 檔案讀取數據，並組裝成與原本 API 版本完全一致的 LINE Flex Message 卡片。
     """
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        renderer: UserStatsFlexRenderer | None = None,
+        stat_toolkit: FantasyStatToolkit | None = None,
+    ) -> None:
         super().__init__()
         self.pattern = re.compile(r"^#玩家(?:\s+(.+))?$")
+        self.stat_toolkit = stat_toolkit or FantasyStatToolkit()
+        self.renderer = renderer or UserStatsFlexRenderer(toolkit=self.stat_toolkit)
 
     @property
     def instruction_desc(self) -> str:
@@ -85,54 +87,11 @@ class LocalUserStatsHandler(BaseHandler):
 
     @staticmethod
     def _get_stat_raw(stats: dict, key: str) -> Any:
-        if not isinstance(stats, dict):
-            return None
-        if key in stats:
-            return stats[key]
-        if key in ("FGM/A", "FGM/FGA"):
-            val = stats.get("FGM/FGA") if "FGM/FGA" in stats else stats.get("FGM/A")
-            if val is not None:
-                return val
-            fgm, fga = stats.get("stat_4"), stats.get("stat_3")
-            if fgm is not None and fga is not None:
-                return f"{fgm}/{fga}" if str(fga) != "0" else "0/0"
-            return None
-        if key in ("FTM/A", "FTM/FTA"):
-            val = stats.get("FTM/FTA") if "FTM/FTA" in stats else stats.get("FTM/A")
-            if val is not None:
-                return val
-            ftm, fta = stats.get("stat_7"), stats.get("stat_6")
-            if ftm is not None and fta is not None:
-                return f"{ftm}/{fta}" if str(fta) != "0" else "0/0"
-            return None
-        if key in ("3PTM", "3PT", "3PM"):
-            for k in ("3PTM", "3PT", "3PM"):
-                if k in stats:
-                    return stats[k]
-        if key in ("ST", "STL"):
-            for k in ("ST", "STL"):
-                if k in stats:
-                    return stats[k]
-        if key in ("A/T", "AST/TO", "A/TO"):
-            for k in ("A/T", "AST/TO", "A/TO"):
-                if k in stats:
-                    return stats[k]
-        return None
+        return FantasyStatToolkit.get_stat_raw(stats, key)
 
     @staticmethod
     def _extract_extra_custom_keys(stats: dict) -> list[str]:
-        if not isinstance(stats, dict):
-            return []
-        extra = []
-        seen_canonical = set()
-        for k in sorted(stats.keys(), key=lambda x: (0, EXTRA_NBA_ORDER.index(x)) if x in EXTRA_NBA_ORDER else (1, x)):
-            if k in STANDARD_NBA_KEYS or str(k).startswith("stat_"):
-                continue
-            canon = "A/T" if k in ("AST/TO", "A/TO") else k
-            if canon not in seen_canonical:
-                seen_canonical.add(canon)
-                extra.append(canon)
-        return extra
+        return FantasyStatToolkit.extract_extra_custom_keys(stats)
 
     def format_user_stats(
         self,
@@ -143,140 +102,13 @@ class LocalUserStatsHandler(BaseHandler):
         week_str: str,
         stat_categories: list = None,
     ) -> dict:
-        def to_percent_str(val):
-            try:
-                f_val = float(val)
-                if f_val == 0.0:
-                    return "-"
-                return f"{f_val * 100:.1f}%"
-            except (ValueError, TypeError):
-                return "-"
-
-        def fmt_val(display_name, val):
-            """Format a single stat value based on its display name."""
-            if val is None or str(val).strip() in ("", "-"):
-                return "-"
-            if display_name in ("FG%", "FT%") or "%" in display_name:
-                return to_percent_str(val)
-            if display_name in ("AVG", "OBP", "SLG", "OPS"):
-                try:
-                    num = float(val)
-                    if num == 0:
-                        return "-"
-                    formatted = f"{num:.3f}"
-                    return formatted[1:] if formatted.startswith("0.") else formatted
-                except (ValueError, TypeError):
-                    return str(val)
-            if display_name in ("ERA", "WHIP"):
-                try:
-                    num = float(val)
-                    return f"{num:.2f}"
-                except (ValueError, TypeError):
-                    return str(val)
-            if display_name in ("A/T", "AST/TO", "A/TO"):
-                try:
-                    num = float(val)
-                    if num.is_integer():
-                        return str(int(num))
-                    return f"{num:.2f}"
-                except (ValueError, TypeError):
-                    return str(val)
-            if "/" in display_name:
-                return str(val) if str(val) not in ("0", "None") else "-"
-            try:
-                return str(int(round(float(val))))
-            except (ValueError, TypeError):
-                return str(val)
-
-        def build_stat_rows(stats, categories_to_use=None):
-            rows = []
-            cats = categories_to_use if categories_to_use is not None else stat_categories
-            if cats:
-                DISPLAY_ALIASES = {"FGM/FGA": "FGM/A", "FTM/FTA": "FTM/A", "3PTM": "3PM"}
-                for cat in cats:
-                    disp = cat["display_name"]
-                    label = DISPLAY_ALIASES.get(disp, disp)
-                    val = self._get_stat_raw(stats, disp)
-                    rows.append((label, fmt_val(disp, val)))
-            else:
-                fgm_a = self._get_stat_raw(stats, "FGM/FGA") or "0/0"
-                fg_pct = to_percent_str(self._get_stat_raw(stats, "FG%") or "0.0")
-                ftm_a = self._get_stat_raw(stats, "FTM/FTA") or "0/0"
-                ft_pct = to_percent_str(self._get_stat_raw(stats, "FT%") or "0.0")
-                rows = [
-                    ("FGM/A", str(fgm_a)),
-                    ("FG%", fg_pct),
-                    ("FTM/A", str(ftm_a)),
-                    ("FT%", ft_pct),
-                    ("3PM", str(self._get_stat_raw(stats, "3PTM") or "0")),
-                    ("PTS", str(self._get_stat_raw(stats, "PTS") or "0")),
-                    ("REB", str(self._get_stat_raw(stats, "REB") or "0")),
-                    ("AST", str(self._get_stat_raw(stats, "AST") or "0")),
-                    ("STL", str(self._get_stat_raw(stats, "ST") or "0")),
-                    ("BLK", str(self._get_stat_raw(stats, "BLK") or "0")),
-                    ("TO", str(self._get_stat_raw(stats, "TO") or "0")),
-                ]
-                for extra_key in self._extract_extra_custom_keys(stats):
-                    raw_v = self._get_stat_raw(stats, extra_key)
-                    rows.append((extra_key, fmt_val(extra_key, raw_v)))
-            return rows
-
-        has_mlb_split = False
-        hitter_cats = []
-        pitcher_cats = []
-        if stat_categories:
-            for cat in stat_categories:
-                stat_id = cat.get("stat_id", "")
-                disp = cat.get("display_name", "")
-                if is_mlb_pitcher_stat(stat_id, disp):
-                    pitcher_cats.append(cat)
-                else:
-                    hitter_cats.append(cat)
-            if hitter_cats and pitcher_cats:
-                has_mlb_split = True
-
-        if has_mlb_split:
-            daily_hitter_rows = build_stat_rows(daily_stats, hitter_cats)
-            daily_pitcher_rows = build_stat_rows(daily_stats, pitcher_cats)
-            weekly_hitter_rows = build_stat_rows(weekly_stats, hitter_cats)
-            weekly_pitcher_rows = build_stat_rows(weekly_stats, pitcher_cats)
-
-            sections = [
-                {
-                    "header": f"{date_str} (Hitter)",
-                    "rows": daily_hitter_rows,
-                },
-                {
-                    "header": f"{date_str} (Pitcher)",
-                    "rows": daily_pitcher_rows,
-                },
-                {
-                    "header": f"W{week_str} (Hitter)",
-                    "rows": weekly_hitter_rows,
-                },
-                {
-                    "header": f"W{week_str} (Pitcher)",
-                    "rows": weekly_pitcher_rows,
-                },
-            ]
-        else:
-            daily_rows = build_stat_rows(daily_stats)
-            weekly_rows = build_stat_rows(weekly_stats)
-            sections = [
-                {
-                    "header": date_str,
-                    "rows": daily_rows,
-                },
-                {
-                    "header": f"W{week_str}",
-                    "rows": weekly_rows,
-                },
-            ]
-
-        return build_stats_list_card(
-            title=player_info["manager_name"],
-            subtitle=player_info["official_name"],
-            sections=sections,
+        return self.renderer.render_user_stats_card(
+            player_info=player_info,
+            daily_stats=daily_stats,
+            weekly_stats=weekly_stats,
+            date_str=date_str,
+            week_str=week_str,
+            stat_categories=stat_categories,
         )
 
     @staticmethod

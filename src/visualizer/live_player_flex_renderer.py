@@ -1,4 +1,5 @@
 from typing import Any
+from src.services.fantasy_stat_toolkit import FantasyStatToolkit
 from src.visualizer.flex_builder import (
     create_bubble,
     create_header,
@@ -39,56 +40,11 @@ class LivePlayerFlexRenderer:
 
     @staticmethod
     def _lookup_stat_val(stats: dict, label: str) -> Any:
-        if not isinstance(stats, dict):
-            return None
-        if label in stats:
-            return stats[label]
-        if label == "FGM/A":
-            return stats.get("FGM/FGA")
-        if label == "FTM/A":
-            return stats.get("FTM/FTA")
-        if label == "3PT":
-            return stats.get("3PTM") if "3PTM" in stats else stats.get("3PM")
-        if label == "ST":
-            return stats.get("STL")
-        if label == "A/T":
-            return stats.get("AST/TO") if "AST/TO" in stats else stats.get("A/TO")
-        return None
+        return FantasyStatToolkit.get_stat_raw(stats, label)
 
     @staticmethod
     def _format_stat_value(label: str, raw_val: Any) -> str:
-        if raw_val is None:
-            return "-"
-        s = str(raw_val).strip()
-        if not s or s == "-":
-            return "-"
-
-        if "%" in label:
-            if s.endswith("%"):
-                return s
-            try:
-                f_val = float(s)
-                if f_val == 0.0:
-                    return "-"
-                if f_val <= 1.0:
-                    return f"{f_val * 100:.1f}%"
-                return f"{f_val:.1f}%"
-            except (ValueError, TypeError):
-                return "-"
-
-        if label == "A/T":
-            try:
-                return f"{float(s):.2f}"
-            except (ValueError, TypeError):
-                return s
-
-        if "/" in label:
-            return s
-
-        try:
-            return str(int(round(float(s))))
-        except (ValueError, TypeError):
-            return s
+        return FantasyStatToolkit.format_stat_value(label, raw_val, integer_at_ratio_as_int=False)
 
     def build_ordered_stat_rows(
         self,

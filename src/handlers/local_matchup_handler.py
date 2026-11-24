@@ -20,7 +20,17 @@ from src.utils.time_utils import (
     tw_date_to_yahoo_date,
     resolve_latest_active_tw_date,
 )
+from src.services.fantasy_stat_toolkit import (
+    AUX_DISPLAY_NAMES,
+    AUX_STAT_IDS,
+    EXTRA_NBA_ORDER,
+    SMALLER_IS_BETTER_STATS,
+    STANDARD_NBA_KEYS,
+    FantasyStatComparator,
+    FantasyStatToolkit,
+)
 from src.visualizer.flex_builder import build_matchup_comparison_card, build_button_menu_card
+from src.visualizer.matchup_flex_renderer import MatchupFlexRenderer
 from src.visualizer.processor import is_mlb_pitcher_stat
 
 
@@ -39,19 +49,6 @@ class WeeklyMatchupFileEntry:
     payload: dict
 
 
-AUX_DISPLAY_NAMES = {"FGM/A", "FGM/FGA", "FTM/A", "FTM/FTA", "H/AB"}
-AUX_STAT_IDS = {"9004003", "9007006", "60"}
-STANDARD_NBA_KEYS = {
-    "FGM/A", "FGM/FGA", "FG%", "FTM/A", "FTM/FTA", "FT%",
-    "3PTM", "3PT", "3PM", "PTS", "REB", "AST", "ST", "STL", "BLK", "TO",
-    "Today Player", "Game Player", "GP_PLAYED", "GP_TOTAL", "GP_SORT_KEY",
-    "FG", "FT", "FGM", "FGA", "FTM", "FTA",
-    "stat_3", "stat_4", "stat_6", "stat_7",
-}
-EXTRA_NBA_ORDER = ["3PT%", "OREB", "DREB", "A/T", "AST/TO", "A/TO", "DD", "TD"]
-SMALLER_IS_BETTER_STATS = {"TO", "ERA", "WHIP", "L", "BB/9"}
-
-
 def _get_now_tw() -> datetime:
     return datetime.now(pytz.timezone("Asia/Taipei"))
 
@@ -64,10 +61,18 @@ class LocalMatchupHandler(BaseHandler):
     並組裝成與原本 API 版本完全一致的 LINE Flex Message 卡片。
     """
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        comparator: FantasyStatComparator | None = None,
+        renderer: MatchupFlexRenderer | None = None,
+        stat_toolkit: FantasyStatToolkit | None = None,
+    ) -> None:
         super().__init__()
         self.pattern = re.compile(r"^#對戰(?:\s*(.+))?$")
         self._stats_helper = StatsHandler()
+        self.stat_toolkit = stat_toolkit or FantasyStatToolkit()
+        self.comparator = comparator or FantasyStatComparator(toolkit=self.stat_toolkit)
+        self.renderer = renderer or MatchupFlexRenderer(toolkit=self.stat_toolkit)
 
     @property
     def instruction_desc(self) -> str:
@@ -202,301 +207,30 @@ class LocalMatchupHandler(BaseHandler):
 
     @staticmethod
     def _get_stat_raw(stats: dict, key: str) -> Any:
-        if not isinstance(stats, dict):
-            return None
-        if key in stats:
-            return stats[key]
-        if key in ("FGM/A", "FGM/FGA"):
-            val = stats.get("FGM/FGA") if "FGM/FGA" in stats else stats.get("FGM/A")
-            if val is not None:
-                return val
-            fgm, fga = stats.get("stat_4"), stats.get("stat_3")
-            if fgm is not None and fga is not None:
-                return f"{fgm}/{fga}" if str(fga) != "0" else "0/0"
-            return None
-        if key in ("FTM/A", "FTM/FTA"):
-            val = stats.get("FTM/FTA") if "FTM/FTA" in stats else stats.get("FTM/A")
-            if val is not None:
-                return val
-            ftm, fta = stats.get("stat_7"), stats.get("stat_6")
-            if ftm is not None and fta is not None:
-                return f"{ftm}/{fta}" if str(fta) != "0" else "0/0"
-            return None
-        if key in ("3PTM", "3PT", "3PM"):
-            for k in ("3PTM", "3PT", "3PM"):
-                if k in stats:
-                    return stats[k]
-        if key in ("ST", "STL"):
-            for k in ("ST", "STL"):
-                if k in stats:
-                    return stats[k]
-        if key in ("A/T", "AST/TO", "A/TO"):
-            for k in ("A/T", "AST/TO", "A/TO"):
-                if k in stats:
-                    return stats[k]
-        return None
+        return FantasyStatToolkit.get_stat_raw(stats, key)
 
     @staticmethod
     def _extract_extra_custom_keys(my_stats: dict, opp_stats: dict) -> list[str]:
-        all_keys = set()
-        if isinstance(my_stats, dict):
-            all_keys.update(my_stats.keys())
-        if isinstance(opp_stats, dict):
-            all_keys.update(opp_stats.keys())
-
-        extra = []
-        seen_canonical = set()
-        for k in sorted(all_keys, key=lambda x: (0, EXTRA_NBA_ORDER.index(x)) if x in EXTRA_NBA_ORDER else (1, x)):
-            if k in STANDARD_NBA_KEYS or str(k).startswith("stat_"):
-                continue
-            canon = "A/T" if k in ("AST/TO", "A/TO") else k
-            if canon not in seen_canonical:
-                seen_canonical.add(canon)
-                extra.append(canon)
-        return extra
+        return FantasyStatToolkit.extract_extra_custom_keys(my_stats, opp_stats)
 
     def to_percent_str(self, val: Any) -> str:
-        try:
-            f_val = float(val)
-            if f_val == 0.0:
-                return "-"
-            return f"{f_val * 100:.1f}%"
-        except (ValueError, TypeError):
-            return "-"
+        return self.stat_toolkit.to_percent_str(val)
 
     def to_val_str(self, val: Any) -> str:
-        if val is None:
-            return "-"
-        val_str = str(val).strip()
-        if val_str == "" or val_str == "-":
-            return "-"
-
-        if "/" in val_str:
-            parts = val_str.split("/")
-            if len(parts) == 2:
-                try:
-                    float(parts[0].strip())
-                    float(parts[1].strip())
-                    return val_str
-                except ValueError:
-                    return "-"
-
-        try:
-            f_val = float(val_str)
-            if f_val == 0.0:
-                return "0"
-            if f_val.is_integer():
-                return str(int(f_val))
-            return val_str
-        except ValueError:
-            return "-"
+        return self.stat_toolkit.to_val_str(val)
 
     def compare_stats(self, my_stats: dict, opp_stats: dict, stat_categories: list = None) -> dict:
         """比對數據並統計比分"""
-        if not stat_categories:
-            cats_to_compare = [
-                ("FG%", True), ("FT%", True), ("3PTM", True), ("PTS", True),
-                ("REB", True), ("AST", True), ("ST", True), ("BLK", True), ("TO", False)
-            ]
-            for extra_key in self._extract_extra_custom_keys(my_stats, opp_stats):
-                cats_to_compare.append((extra_key, extra_key not in SMALLER_IS_BETTER_STATS))
-
-            wins, losses, ties = 0, 0, 0
-            details = {}
-
-            details["FGM/A"] = {
-                "my_val": self.to_val_str(self._get_stat_raw(my_stats, "FGM/FGA")),
-                "opp_val": self.to_val_str(self._get_stat_raw(opp_stats, "FGM/FGA"))
-            }
-            details["FTM/A"] = {
-                "my_val": self.to_val_str(self._get_stat_raw(my_stats, "FTM/FTA")),
-                "opp_val": self.to_val_str(self._get_stat_raw(opp_stats, "FTM/FTA"))
-            }
-
-            for cat, is_larger_better in cats_to_compare:
-                my_raw = self._get_stat_raw(my_stats, cat)
-                opp_raw = self._get_stat_raw(opp_stats, cat)
-
-                if "%" in cat:
-                    my_val_str = self.to_percent_str(my_raw)
-                    opp_val_str = self.to_percent_str(opp_raw)
-                else:
-                    my_val_str = self.to_val_str(my_raw)
-                    opp_val_str = self.to_val_str(opp_raw)
-
-                try:
-                    my_num = float(my_raw) if my_raw is not None else 0.0
-                except (ValueError, TypeError):
-                    my_num = 0.0
-                try:
-                    opp_num = float(opp_raw) if opp_raw is not None else 0.0
-                except (ValueError, TypeError):
-                    opp_num = 0.0
-
-                if my_num == opp_num:
-                    status = "tie"
-                    ties += 1
-                elif is_larger_better:
-                    if my_num > opp_num:
-                        status = "my_win"
-                        wins += 1
-                    else:
-                        status = "opp_win"
-                        losses += 1
-                else:
-                    if my_num < opp_num:
-                        status = "my_win"
-                        wins += 1
-                    else:
-                        status = "opp_win"
-                        losses += 1
-
-                details[cat] = {
-                    "status": status,
-                    "my_val": my_val_str,
-                    "opp_val": opp_val_str
-                }
-
-            return {
-                "wins": wins,
-                "losses": losses,
-                "ties": ties,
-                "details": details
-            }
-        else:
-            wins, losses, ties = 0, 0, 0
-            details = {}
-            for cat in stat_categories:
-                disp = cat["display_name"]
-                sort_order = cat.get("sort_order")
-                stat_id = str(cat.get("stat_id", ""))
-                is_only_display = (
-                    (sort_order is None)
-                    or (sort_order not in [0, 1])
-                    or (disp in AUX_DISPLAY_NAMES)
-                    or (stat_id in AUX_STAT_IDS)
-                )
-
-                my_raw = self._get_stat_raw(my_stats, disp)
-                opp_raw = self._get_stat_raw(opp_stats, disp)
-
-                if "%" in disp:
-                    my_val_str = self.to_percent_str(my_raw)
-                    opp_val_str = self.to_percent_str(opp_raw)
-                else:
-                    my_val_str = self.to_val_str(my_raw)
-                    opp_val_str = self.to_val_str(opp_raw)
-
-                if is_only_display:
-                    details[disp] = {
-                        "my_val": my_val_str,
-                        "opp_val": opp_val_str
-                    }
-                    continue
-
-                is_larger_better = (sort_order == 1)
-
-                try:
-                    my_num = float(my_raw) if my_raw is not None else 0.0
-                except (ValueError, TypeError):
-                    my_num = 0.0
-                try:
-                    opp_num = float(opp_raw) if opp_raw is not None else 0.0
-                except (ValueError, TypeError):
-                    opp_num = 0.0
-
-                if my_num == opp_num:
-                    status = "tie"
-                    ties += 1
-                elif is_larger_better:
-                    if my_num > opp_num:
-                        status = "my_win"
-                        wins += 1
-                    else:
-                        status = "opp_win"
-                        losses += 1
-                else:
-                    if my_num < opp_num:
-                        status = "my_win"
-                        wins += 1
-                    else:
-                        status = "opp_win"
-                        losses += 1
-
-                details[disp] = {
-                    "status": status,
-                    "my_val": my_val_str,
-                    "opp_val": opp_val_str
-                }
-
-            return {
-                "wins": wins,
-                "losses": losses,
-                "ties": ties,
-                "details": details
-            }
+        return self.comparator.compare_stats(my_stats, opp_stats, stat_categories=stat_categories)
 
     def format_matchup_stats(self, player_info: dict, comp_res: dict, week_str: str, stat_categories: list = None, is_mlb: bool = False) -> dict:
         """組裝 Matchup Flex Message 卡片"""
-        details = comp_res["details"]
-        wins = comp_res["wins"]
-        losses = comp_res["losses"]
-
-        subtitle_dict = {
-            "my_nickname": player_info["my_nickname"],
-            "my_official": player_info["my_official"],
-            "opp_nickname": player_info["opp_nickname"],
-            "opp_official": player_info["opp_official"],
-            "wins": wins,
-            "losses": losses
-        }
-
-        if stat_categories:
-            DISPLAY_ALIASES = {"FGM/FGA": "FGM/A", "FTM/FTA": "FTM/A"}
-            comparison_rows = []
-            for cat in stat_categories:
-                disp = cat["display_name"]
-                label = DISPLAY_ALIASES.get(disp, disp)
-
-                my_val = details[disp]["my_val"]
-                opp_val = details[disp]["opp_val"]
-                status = details[disp].get("status")
-
-                sort_order = cat.get("sort_order")
-                stat_id = str(cat.get("stat_id", ""))
-                is_aux = (
-                    (sort_order is None)
-                    or (sort_order not in [0, 1])
-                    or (disp in AUX_DISPLAY_NAMES)
-                    or (stat_id in AUX_STAT_IDS)
-                )
-
-                is_pitcher = is_mlb_pitcher_stat(stat_id, disp)
-                comparison_rows.append((label, my_val, opp_val, status, is_aux, is_pitcher))
-        else:
-            comparison_rows = [
-                ("FGM/A", details["FGM/A"]["my_val"], details["FGM/A"]["opp_val"], None, True, False),
-                ("FG%", details["FG%"]["my_val"], details["FG%"]["opp_val"], details["FG%"]["status"], False, False),
-                ("FTM/A", details["FTM/A"]["my_val"], details["FTM/A"]["opp_val"], None, True, False),
-                ("FT%", details["FT%"]["my_val"], details["FT%"]["opp_val"], details["FT%"]["status"], False, False),
-                ("3PTM", details["3PTM"]["my_val"], details["3PTM"]["opp_val"], details["3PTM"]["status"], False, False),
-                ("PTS", details["PTS"]["my_val"], details["PTS"]["opp_val"], details["PTS"]["status"], False, False),
-                ("REB", details["REB"]["my_val"], details["REB"]["opp_val"], details["REB"]["status"], False, False),
-                ("AST", details["AST"]["my_val"], details["AST"]["opp_val"], details["AST"]["status"], False, False),
-                ("ST", details["ST"]["my_val"], details["ST"]["opp_val"], details["ST"]["status"], False, False),
-                ("BLK", details["BLK"]["my_val"], details["BLK"]["opp_val"], details["BLK"]["status"], False, False),
-                ("TO", details["TO"]["my_val"], details["TO"]["opp_val"], details["TO"]["status"], False, False),
-            ]
-            standard_row_keys = {"FGM/A", "FG%", "FTM/A", "FT%", "3PTM", "PTS", "REB", "AST", "ST", "BLK", "TO"}
-            for k, v in details.items():
-                if k not in standard_row_keys:
-                    comparison_rows.append((k, v["my_val"], v["opp_val"], v.get("status"), "status" not in v, False))
-
-        return build_matchup_comparison_card(
-            title=f"WEEK {week_str} MATCHUP",
-            subtitle=subtitle_dict,
-            comparison_rows=comparison_rows,
-            is_mlb=is_mlb
+        return self.renderer.render_matchup_card(
+            player_info=player_info,
+            comp_res=comp_res,
+            week_str=week_str,
+            stat_categories=stat_categories,
+            is_mlb=is_mlb,
         )
 
     def _load_local_weekly_data(self, league_id: str, preferred_tw_date: str = None) -> dict | None:

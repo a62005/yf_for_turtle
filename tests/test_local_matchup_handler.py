@@ -331,3 +331,77 @@ def test_local_matchup_historical_query_case_insensitive(mocker, tmp_path, mock_
     alt_text2 = mock_reply_flex.call_args[0][2]
     assert "WEEK 1 MATCHUP - Covi vs 胡哲" in alt_text2
 
+
+def test_fantasy_stat_toolkit_and_comparator_and_matchup_flex_renderer():
+    from src.services.fantasy_stat_toolkit import FantasyStatToolkit, FantasyStatComparator
+    from src.visualizer.matchup_flex_renderer import MatchupFlexRenderer
+
+    # 1. FantasyStatToolkit alias lookup & fallback
+    stats_fallback = {
+        "stat_4": 15,
+        "stat_3": 30,
+        "stat_7": 0,
+        "stat_6": 0,
+        "3PM": 4,
+        "STL": 3,
+        "AST/TO": 2.5,
+        "DD": 1,
+        "OREB": 5,
+    }
+    assert FantasyStatToolkit.get_stat_raw(stats_fallback, "FGM/A") == "15/30"
+    assert FantasyStatToolkit.get_stat_raw(stats_fallback, "FGM/FGA") == "15/30"
+    assert FantasyStatToolkit.get_stat_raw(stats_fallback, "FTM/A") == "0/0"
+    assert FantasyStatToolkit.get_stat_raw(stats_fallback, "3PTM") == 4
+    assert FantasyStatToolkit.get_stat_raw(stats_fallback, "3PT") == 4
+    assert FantasyStatToolkit.get_stat_raw(stats_fallback, "ST") == 3
+    assert FantasyStatToolkit.get_stat_raw(stats_fallback, "A/T") == 2.5
+
+    # 2. extract_extra_custom_keys ordered by EXTRA_NBA_ORDER
+    extra_keys = FantasyStatToolkit.extract_extra_custom_keys(stats_fallback, {"TD": 1, "3PT%": 0.4})
+    assert extra_keys == ["3PT%", "OREB", "A/T", "DD", "TD"]
+
+    # 3. Formatting helpers
+    assert FantasyStatToolkit.to_percent_str(0.514) == "51.4%"
+    assert FantasyStatToolkit.to_percent_str(0.0) == "-"
+    assert FantasyStatToolkit.to_val_str("180/350") == "180/350"
+    assert FantasyStatToolkit.to_val_str(12.0) == "12"
+    assert FantasyStatToolkit.to_val_str(0.0) == "0"
+    assert FantasyStatToolkit.to_val_str(None) == "-"
+    assert FantasyStatToolkit.format_stat_value("AVG", 0.312) == ".312"
+    assert FantasyStatToolkit.format_stat_value("ERA", 3.456) == "3.46"
+    assert FantasyStatToolkit.format_stat_value("A/T", 2.0, integer_at_ratio_as_int=True) == "2"
+    assert FantasyStatToolkit.format_stat_value("A/T", 2.0, integer_at_ratio_as_int=False) == "2.00"
+    assert FantasyStatToolkit.is_auxiliary_category({"stat_id": "9004003", "display_name": "FGM/A", "sort_order": 1}) is True
+    assert FantasyStatToolkit.is_auxiliary_category({"stat_id": "12", "display_name": "PTS", "sort_order": 1}) is False
+
+    # 4. FantasyStatComparator compare_stats & MatchupFlexRenderer render_matchup_card
+    comparator = FantasyStatComparator()
+    my_stats = {
+        "FGM/A": "180/350", "FG%": 0.514, "FTM/A": "20/25", "FT%": 0.800,
+        "3PTM": 35, "PTS": 450, "REB": 110, "AST": 95, "ST": 25, "BLK": 12, "TO": 32,
+    }
+    opp_stats = {
+        "FGM/A": "165/340", "FG%": 0.485, "FTM/A": "15/20", "FT%": 0.750,
+        "3PTM": 42, "PTS": 410, "REB": 110, "AST": 80, "ST": 20, "BLK": 18, "TO": 38,
+    }
+    comp_res = comparator.compare_stats(my_stats, opp_stats)
+    assert comp_res["wins"] == 6
+    assert comp_res["losses"] == 2
+    assert comp_res["ties"] == 1
+    assert comp_res["details"]["TO"]["status"] == "my_win"
+    assert comp_res["details"]["REB"]["status"] == "tie"
+
+    renderer = MatchupFlexRenderer()
+    player_info = {
+        "my_nickname": "韋哥",
+        "my_official": "Vigo Official",
+        "opp_nickname": "阿明",
+        "opp_official": "Ming Official",
+    }
+    bubble = renderer.render_matchup_card(player_info, comp_res, "23")
+    assert bubble["type"] == "bubble"
+    assert bubble["body"]["contents"][0]["text"] == "WEEK 23 MATCHUP"
+    assert bubble["body"]["contents"][3]["contents"][0]["text"] == "6"
+    assert bubble["body"]["contents"][3]["contents"][2]["text"] == "2"
+
+
