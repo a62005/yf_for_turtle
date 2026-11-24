@@ -268,62 +268,24 @@ class StatsHandler(BaseHandler):
             is_stale_meta=is_stale_meta,
         )
 
-    def _load_local_stats_pair(self, league_id: str, target_tw_date: str) -> tuple[dict | None, dict | None]:
+    def _load_local_stats_pair(
+        self,
+        league_id: str,
+        target_tw_date: str,
+        season_start_yahoo: str | None = None,
+        end_week: int | None = None,
+        meta: dict | None = None,
+        is_stale_meta: bool = False,
+    ) -> tuple[dict | None, dict | None]:
         """從本地端 daily/ 與 weekly/ 讀取指定台灣日期對應的 JSON 數據（絕不呼叫網路爬蟲）。"""
-        daily_dir = get_league_daily_dir(league_id)
-        weekly_dir = get_league_weekly_dir(league_id)
-        yahoo_date = tw_date_to_yahoo_date(target_tw_date)
-
-        daily_stats = None
-        if os.path.exists(daily_dir):
-            for fname in (
-                f"date_{yahoo_date}.json",
-                f"{yahoo_date}.json",
-                f"date_{target_tw_date}.json",
-                f"{target_tw_date}.json",
-            ):
-                fpath = os.path.join(daily_dir, fname)
-                if os.path.exists(fpath):
-                    try:
-                        with open(fpath, "r", encoding="utf-8") as f:
-                            data = json.load(f)
-                        if isinstance(data, dict) and data.get("team_stats"):
-                            daily_stats = data
-                            break
-                    except Exception:
-                        continue
-
-        weekly_stats = None
-        if os.path.exists(weekly_dir):
-            for fname in (
-                f"date_{yahoo_date}_weekly.json",
-                f"{yahoo_date}_weekly.json",
-                f"date_{target_tw_date}_weekly.json",
-                f"{target_tw_date}_weekly.json",
-            ):
-                fpath = os.path.join(weekly_dir, fname)
-                if os.path.exists(fpath):
-                    try:
-                        with open(fpath, "r", encoding="utf-8") as f:
-                            data = json.load(f)
-                        if isinstance(data, dict) and data.get("team_stats"):
-                            weekly_stats = data
-                            break
-                    except Exception:
-                        continue
-
-            if weekly_stats is None and isinstance(daily_stats, dict) and daily_stats.get("week"):
-                w_fpath = os.path.join(weekly_dir, f"week_{daily_stats['week']}.json")
-                if os.path.exists(w_fpath):
-                    try:
-                        with open(w_fpath, "r", encoding="utf-8") as f:
-                            data = json.load(f)
-                        if isinstance(data, dict) and data.get("team_stats"):
-                            weekly_stats = data
-                    except Exception:
-                        pass
-
-        return daily_stats, weekly_stats
+        return self.repository.load_local_stats_pair(
+            league_id=league_id,
+            tw_date_str=target_tw_date,
+            season_start_yahoo=season_start_yahoo,
+            end_week=end_week,
+            meta=meta,
+            is_stale_meta=is_stale_meta,
+        )
 
     def _check_and_generate_images(
         self,
