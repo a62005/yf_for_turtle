@@ -347,7 +347,11 @@ class EspnLivePlayerFetcher:
         if event_meta.get("score_text"):
             return str(event_meta["score_text"]).strip()
         if event_meta.get("competitions"):
-            return EspnLivePlayerFetcher._build_score_text(event_meta["competitions"][0])
+            return EspnLivePlayerFetcher._build_score_text(
+                event_meta["competitions"][0],
+                team_id=str(player_info.get("team_id") or "").strip(),
+                team_abbr=str(player_info.get("team_abbr") or "").strip(),
+            )
 
         team_obj = event_meta.get("team") if isinstance(event_meta.get("team"), dict) else {}
         opp_obj = event_meta.get("opponent") if isinstance(event_meta.get("opponent"), dict) else {}
@@ -493,11 +497,19 @@ class EspnLivePlayerFetcher:
         return None
 
     @staticmethod
-    def _build_score_text(competition: dict) -> str:
+    def _build_score_text(competition: dict, team_id: str = "", team_abbr: str = "") -> str:
         competitors = competition.get("competitors") or []
         if len(competitors) < 2:
             return ""
         c0, c1 = competitors[0], competitors[1]
+        target_id = str(team_id or "").strip()
+        target_abbr = str(team_abbr or "").strip().upper()
+        if target_id or target_abbr:
+            t1_obj = c1.get("team") or {}
+            c1_id = str(t1_obj.get("id") or "").strip()
+            c1_abbr = str(t1_obj.get("abbreviation") or "").strip().upper()
+            if (target_id and c1_id == target_id) or (target_abbr and c1_abbr == target_abbr):
+                c0, c1 = c1, c0
         t0 = (c0.get("team") or {}).get("abbreviation") or "TEAM1"
         t1 = (c1.get("team") or {}).get("abbreviation") or "TEAM2"
         s0 = c0.get("score") if c0.get("score") is not None else "0"
@@ -605,7 +617,7 @@ class EspnLivePlayerFetcher:
                         "game_date": game_date_str,
                         "game_state": state,
                         "status_label": status_label,
-                        "score_text": self._build_score_text(comp),
+                        "score_text": self._build_score_text(comp, team_id=team_id, team_abbr=team_abbr),
                         "minutes": computed.get("MIN", "0"),
                         "stats": computed,
                         "notice_banner": notice_banner,
@@ -655,7 +667,7 @@ class EspnLivePlayerFetcher:
             event_id = str(event.get("id") or "").strip()
             matched_event_id = event_id
             state, status_label = self._build_status_label(comp, event)
-            score_text = self._build_score_text(comp)
+            score_text = self._build_score_text(comp, team_id=team_id, team_abbr=team_abbr)
 
             if state in ("in", "post") and event_id:
                 summary = self._fetch_summary(event_id)

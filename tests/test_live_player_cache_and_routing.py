@@ -122,7 +122,7 @@ def test_live_player_handler_resolves_nickname_via_cache_llm_and_espn_calibratio
     flex_bubble = mock_reply_flex.call_args[0][3]
     header_contents = flex_bubble["body"]["contents"][0]["contents"]
     assert header_contents[0]["text"] == "Luka Doncic"
-    assert header_contents[1]["text"] == "盧卡·唐西奇 ｜ LAL #77 • PG"
+    assert header_contents[1]["text"] == "LAL #77 • PG"
 
     # Verify cache saved with calibrated team_abbr='LAL' and team_id='13'
     cached = get_cached_live_player("東77", cache_file)

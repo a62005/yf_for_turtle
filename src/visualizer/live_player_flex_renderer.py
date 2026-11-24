@@ -1,3 +1,4 @@
+import re
 from typing import Any
 from src.services.fantasy_stat_toolkit import FantasyStatToolkit
 from src.visualizer.flex_builder import (
@@ -91,7 +92,6 @@ class LivePlayerFlexRenderer:
 
     @staticmethod
     def _build_subtitle(player_info: dict) -> str:
-        chinese_name = str(player_info.get("chinese_name") or "").strip()
         team_abbr = str(player_info.get("team_abbr") or player_info.get("team") or "").strip()
         jersey = str(player_info.get("jersey_number") or "").strip().lstrip("#")
         position = str(player_info.get("position") or "").strip()
@@ -105,13 +105,37 @@ class LivePlayerFlexRenderer:
             meta_parts.append(f"#{jersey}")
 
         if position:
-            meta_str = f"{' '.join(meta_parts)} • {position}".strip(" •")
-        else:
-            meta_str = " ".join(meta_parts)
+            return f"{' '.join(meta_parts)} • {position}".strip(" •")
+        return " ".join(meta_parts)
 
-        if chinese_name and meta_str:
-            return f"{chinese_name} ｜ {meta_str}"
-        return chinese_name or meta_str
+    @staticmethod
+    def _orient_score_and_determine_outcome(score_text: str, player_team_abbr: str) -> tuple[str, str | None]:
+        """
+        解析比分字串（例如 'UTA 94 : 109 POR'），確保球員所屬球隊排在前面（例如 'POR 109 : 94 UTA'），
+        並回傳勝負狀態 ('win' / 'loss' / 'tie' / None)。
+        """
+        raw = str(score_text or "").strip()
+        if not raw:
+            return "", None
+
+        m = re.match(r"^([A-Za-z0-9]+)\s+(\d+)\s*:\s*(\d+)\s+([A-Za-z0-9]+)$", raw)
+        if not m:
+            return raw, None
+
+        t0, s0_str, s1_str, t1 = m.group(1), m.group(2), m.group(3), m.group(4)
+        s0, s1 = int(s0_str), int(s1_str)
+        target_abbr = str(player_team_abbr or "").strip().upper()
+
+        if target_abbr and t1.upper() == target_abbr and t0.upper() != target_abbr:
+            t0, t1 = t1, t0
+            s0, s1 = s1, s0
+
+        oriented = f"{t0} {s0} : {s1} {t1}"
+        if s0 > s1:
+            return oriented, "win"
+        if s0 < s1:
+            return oriented, "loss"
+        return oriented, "tie"
 
     def render_player_card(
         self,
@@ -156,8 +180,20 @@ class LivePlayerFlexRenderer:
         status_label = str(game_data.get("status_label") or "🏁 FINAL").strip()
         game_state = str(game_data.get("game_state") or "").lower()
         is_live = game_state == "in" or "LIVE" in status_label.upper()
-        status_color = "#C0392B" if is_live else "#2C3E50"
-        score_text = str(game_data.get("score_text") or "").strip()
+        is_final = not is_live and (game_state == "post" or "FINAL" in status_label.upper())
+
+        raw_score_text = str(game_data.get("score_text") or "").strip()
+        player_team_abbr = str(player_info.get("team_abbr") or "").strip()
+        score_text, outcome = self._orient_score_and_determine_outcome(raw_score_text, player_team_abbr)
+
+        if is_live:
+            status_color = "#C0392B"
+        elif is_final and outcome == "win":
+            status_color = "#27AE60"
+        elif is_final and outcome == "loss":
+            status_color = "#C0392B"
+        else:
+            status_color = "#2C3E50"
 
         status_box_contents = [
             {
@@ -166,7 +202,7 @@ class LivePlayerFlexRenderer:
                 "size": "xs",
                 "weight": "bold",
                 "color": status_color,
-                "flex": 5,
+                "flex": 4,
             }
         ]
         if score_text:
@@ -178,7 +214,8 @@ class LivePlayerFlexRenderer:
                     "weight": "bold",
                     "color": "#111111",
                     "align": "end",
-                    "flex": 5,
+                    "flex": 0,
+                    "adjustMode": "shrink-to-fit",
                 }
             )
 

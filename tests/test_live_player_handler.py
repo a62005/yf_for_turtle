@@ -289,10 +289,10 @@ def test_live_player_flex_renderer_default_and_custom_categories():
     assert bubble["type"] == "bubble"
     body_contents = bubble["body"]["contents"]
 
-    # Header: English name & subtitle
+    # Header: English name & subtitle (no Chinese name, team/jersey/position shifted left)
     header_box = body_contents[0]
     assert header_box["contents"][0]["text"] == "LeBron James"
-    assert header_box["contents"][1]["text"] == "勒布朗·詹姆斯 ｜ LAL #23 • SF"
+    assert header_box["contents"][1]["text"] == "LAL #23 • SF"
 
     # Status box (no notice_banner, so index 1 is status box)
     status_box = body_contents[1]
@@ -300,6 +300,8 @@ def test_live_player_flex_renderer_default_and_custom_categories():
     assert status_box["contents"][0]["text"] == "🔴 LIVE • Q3 04:12"
     assert status_box["contents"][0]["color"] == "#C0392B"
     assert status_box["contents"][1]["text"] == "LAL 88 : 82 GSW"
+    assert status_box["contents"][1]["flex"] == 0
+    assert status_box["contents"][1]["adjustMode"] == "shrink-to-fit"
 
     # Stats section after separator (index 3)
     stats_section = body_contents[3]
@@ -347,10 +349,29 @@ def test_live_player_flex_renderer_default_and_custom_categories():
     assert banner_box["backgroundColor"] == "#FEF9E7"
     assert banner_box["contents"][0]["text"] == "⚠️ 今日未出賽 (DNP - Rest) • 以下為最近出賽"
 
-    # Index 2 is status_box with FINAL color #2C3E50
+    # Index 2 is status_box with FINAL win color #27AE60 (LAL 88 : 82 GSW)
     c_status_box = c_body[2]
     assert c_status_box["contents"][0]["text"] == "🏁 FINAL"
-    assert c_status_box["contents"][0]["color"] == "#2C3E50"
+    assert c_status_box["contents"][0]["color"] == "#27AE60"
+
+    # Verify FINAL loss color #C0392B and team-first score orientation (e.g. POR in back -> moved to front)
+    por_player = {
+        "athlete_id": "5105623",
+        "english_name": "Toumani Camara",
+        "team_abbr": "POR",
+        "jersey_number": "33",
+        "position": "F",
+    }
+    por_loss_game = {
+        **final_game_data,
+        "score_text": "UTA 109 : 94 POR",
+        "notice_banner": None,
+    }
+    por_loss_bubble = renderer.render_player_card(por_player, por_loss_game)
+    por_status_box = por_loss_bubble["body"]["contents"][1]
+    assert por_loss_bubble["body"]["contents"][0]["contents"][1]["text"] == "POR #33 • F"
+    assert por_status_box["contents"][0]["color"] == "#C0392B"
+    assert por_status_box["contents"][1]["text"] == "POR 94 : 109 UTA"
 
     c_stat_rows = c_body[4]["contents"][1]["contents"]
     c_labels = [r["contents"][0]["text"] for r in c_stat_rows]
@@ -1166,7 +1187,7 @@ def test_player_identity_and_live_game_boxscore_domain_models_and_resolver_di(mo
     renderer = LivePlayerFlexRenderer()
     card = renderer.render_player_card(resolved_1, boxscore)
     assert card["type"] == "bubble"
-    spy_header.assert_called_once_with("Stephen Curry", "史蒂芬·柯瑞 ｜ GSW #30 • PG")
+    spy_header.assert_called_once_with("Stephen Curry", "GSW #30 • PG")
     spy_sep.assert_called_once()
     spy_bubble.assert_called_once()
 
