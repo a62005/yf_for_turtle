@@ -890,3 +890,124 @@ class LocalLeagueDataRepository:
             if nickname in (mapped_name, t.get("name"), t.get("official_name")):
                 return t
         return None
+
+    def is_team_nickname_in_weekly_data(
+        self,
+        league_id: str,
+        nickname: str,
+        now_tw: datetime | None = None,
+    ) -> bool:
+        """
+        檢查指定 nickname 是否存在於本地 weekly 資料夾（當週或任一歷史週 JSON）的 team_stats 中。
+        """
+        if not league_id or not nickname:
+            return False
+        n_lower = nickname.lower()
+
+        weekly_data = self.load_local_weekly_data(league_id, now_tw=now_tw)
+        if weekly_data:
+            for t in weekly_data.get("team_stats", []):
+                if (
+                    str(t.get("name") or "").lower() == n_lower
+                    or str(t.get("official_name") or "").lower() == n_lower
+                ):
+                    return True
+
+        weekly_dir = get_league_weekly_dir(league_id)
+        if os.path.exists(weekly_dir):
+            for fn in sorted(os.listdir(weekly_dir), reverse=True):
+                if not fn.endswith(".json"):
+                    continue
+                fpath = os.path.join(weekly_dir, fn)
+                try:
+                    with open(fpath, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                    for t in (data or {}).get("team_stats", []):
+                        if (
+                            str(t.get("name") or "").lower() == n_lower
+                            or str(t.get("official_name") or "").lower() == n_lower
+                        ):
+                            return True
+                except Exception:
+                    continue
+        return False
+
+    def load_local_stats_pair(
+        self,
+        league_id: str,
+        tw_date_str: str,
+        season_start_yahoo: str | None = None,
+        end_week: int | None = None,
+        meta: dict | None = None,
+        is_stale_meta: bool = False,
+    ) -> tuple[dict | None, dict | None]:
+        """
+        從本地端 daily/ 與 weekly/ 讀取指定台灣日期對應的 JSON 數據（絕不呼叫網路爬蟲）。
+        """
+        daily_dir = get_league_daily_dir(league_id)
+        weekly_dir = get_league_weekly_dir(league_id)
+        yahoo_date = tw_date_to_yahoo_date(tw_date_str)
+
+        daily_stats = None
+        if os.path.exists(daily_dir):
+            for fname in (
+                f"date_{yahoo_date}.json",
+                f"{yahoo_date}.json",
+                f"date_{tw_date_str}.json",
+                f"{tw_date_str}.json",
+            ):
+                fpath = os.path.join(daily_dir, fname)
+                if os.path.exists(fpath):
+                    try:
+                        with open(fpath, "r", encoding="utf-8") as f:
+                            data = json.load(f)
+                        if isinstance(data, dict) and data.get("team_stats"):
+                            daily_stats = data
+                            break
+                    except Exception:
+                        continue
+
+        weekly_stats = None
+        if os.path.exists(weekly_dir):
+            for fname in (
+                f"date_{yahoo_date}_weekly.json",
+                f"{yahoo_date}_weekly.json",
+                f"date_{tw_date_str}_weekly.json",
+                f"{tw_date_str}_weekly.json",
+            ):
+                fpath = os.path.join(weekly_dir, fname)
+                if os.path.exists(fpath):
+                    try:
+                        with open(fpath, "r", encoding="utf-8") as f:
+                            data = json.load(f)
+                        if isinstance(data, dict) and data.get("team_stats"):
+                            weekly_stats = data
+                            break
+                    except Exception:
+                        continue
+
+            if weekly_stats is None:
+                resolved_w = None
+                if isinstance(daily_stats, dict) and daily_stats.get("week"):
+                    resolved_w = daily_stats["week"]
+                elif season_start_yahoo or meta:
+                    resolved_w = self.resolve_week_for_yahoo_date(
+                        yahoo_date_str=yahoo_date,
+                        payload=daily_stats,
+                        season_start_yahoo=season_start_yahoo,
+                        end_week=end_week,
+                        meta=meta,
+                        is_stale_meta=is_stale_meta,
+                    )
+                if resolved_w:
+                    w_fpath = os.path.join(weekly_dir, f"week_{resolved_w}.json")
+                    if os.path.exists(w_fpath):
+                        try:
+                            with open(w_fpath, "r", encoding="utf-8") as f:
+                                data = json.load(f)
+                            if isinstance(data, dict) and data.get("team_stats"):
+                                weekly_stats = data
+                        except Exception:
+                            pass
+
+        return daily_stats, weekly_stats

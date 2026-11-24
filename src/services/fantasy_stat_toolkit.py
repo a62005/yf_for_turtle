@@ -208,6 +208,38 @@ class FantasyStatComparator:
     def __init__(self, toolkit: FantasyStatToolkit | None = None) -> None:
         self.toolkit = toolkit or FantasyStatToolkit()
 
+    def _evaluate_single_category(
+        self,
+        my_raw: Any,
+        opp_raw: Any,
+        is_percent: bool,
+        is_larger_better: bool,
+    ) -> tuple[str, str, str]:
+        if is_percent:
+            my_val_str = self.toolkit.to_percent_str(my_raw)
+            opp_val_str = self.toolkit.to_percent_str(opp_raw)
+        else:
+            my_val_str = self.toolkit.to_val_str(my_raw)
+            opp_val_str = self.toolkit.to_val_str(opp_raw)
+
+        try:
+            my_num = float(my_raw) if my_raw is not None else 0.0
+        except (ValueError, TypeError):
+            my_num = 0.0
+        try:
+            opp_num = float(opp_raw) if opp_raw is not None else 0.0
+        except (ValueError, TypeError):
+            opp_num = 0.0
+
+        if my_num == opp_num:
+            status = "tie"
+        elif is_larger_better:
+            status = "my_win" if my_num > opp_num else "opp_win"
+        else:
+            status = "my_win" if my_num < opp_num else "opp_win"
+
+        return status, my_val_str, opp_val_str
+
     def compare_stats(
         self,
         my_stats: dict,
@@ -237,40 +269,18 @@ class FantasyStatComparator:
             for cat, is_larger_better in cats_to_compare:
                 my_raw = self.toolkit.get_stat_raw(my_stats, cat)
                 opp_raw = self.toolkit.get_stat_raw(opp_stats, cat)
-
-                if "%" in cat:
-                    my_val_str = self.toolkit.to_percent_str(my_raw)
-                    opp_val_str = self.toolkit.to_percent_str(opp_raw)
-                else:
-                    my_val_str = self.toolkit.to_val_str(my_raw)
-                    opp_val_str = self.toolkit.to_val_str(opp_raw)
-
-                try:
-                    my_num = float(my_raw) if my_raw is not None else 0.0
-                except (ValueError, TypeError):
-                    my_num = 0.0
-                try:
-                    opp_num = float(opp_raw) if opp_raw is not None else 0.0
-                except (ValueError, TypeError):
-                    opp_num = 0.0
-
-                if my_num == opp_num:
-                    status = "tie"
+                status, my_val_str, opp_val_str = self._evaluate_single_category(
+                    my_raw=my_raw,
+                    opp_raw=opp_raw,
+                    is_percent=("%" in cat),
+                    is_larger_better=is_larger_better,
+                )
+                if status == "tie":
                     ties += 1
-                elif is_larger_better:
-                    if my_num > opp_num:
-                        status = "my_win"
-                        wins += 1
-                    else:
-                        status = "opp_win"
-                        losses += 1
+                elif status == "my_win":
+                    wins += 1
                 else:
-                    if my_num < opp_num:
-                        status = "my_win"
-                        wins += 1
-                    else:
-                        status = "opp_win"
-                        losses += 1
+                    losses += 1
 
                 details[cat] = {
                     "status": status,
@@ -295,48 +305,31 @@ class FantasyStatComparator:
             my_raw = self.toolkit.get_stat_raw(my_stats, disp)
             opp_raw = self.toolkit.get_stat_raw(opp_stats, disp)
 
-            if "%" in disp:
-                my_val_str = self.toolkit.to_percent_str(my_raw)
-                opp_val_str = self.toolkit.to_percent_str(opp_raw)
-            else:
-                my_val_str = self.toolkit.to_val_str(my_raw)
-                opp_val_str = self.toolkit.to_val_str(opp_raw)
-
             if is_only_display:
+                if "%" in disp:
+                    my_val_str = self.toolkit.to_percent_str(my_raw)
+                    opp_val_str = self.toolkit.to_percent_str(opp_raw)
+                else:
+                    my_val_str = self.toolkit.to_val_str(my_raw)
+                    opp_val_str = self.toolkit.to_val_str(opp_raw)
                 details[disp] = {
                     "my_val": my_val_str,
                     "opp_val": opp_val_str,
                 }
                 continue
 
-            is_larger_better = (sort_order == 1)
-
-            try:
-                my_num = float(my_raw) if my_raw is not None else 0.0
-            except (ValueError, TypeError):
-                my_num = 0.0
-            try:
-                opp_num = float(opp_raw) if opp_raw is not None else 0.0
-            except (ValueError, TypeError):
-                opp_num = 0.0
-
-            if my_num == opp_num:
-                status = "tie"
+            status, my_val_str, opp_val_str = self._evaluate_single_category(
+                my_raw=my_raw,
+                opp_raw=opp_raw,
+                is_percent=("%" in disp),
+                is_larger_better=(sort_order == 1),
+            )
+            if status == "tie":
                 ties += 1
-            elif is_larger_better:
-                if my_num > opp_num:
-                    status = "my_win"
-                    wins += 1
-                else:
-                    status = "opp_win"
-                    losses += 1
+            elif status == "my_win":
+                wins += 1
             else:
-                if my_num < opp_num:
-                    status = "my_win"
-                    wins += 1
-                else:
-                    status = "opp_win"
-                    losses += 1
+                losses += 1
 
             details[disp] = {
                 "status": status,

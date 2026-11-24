@@ -120,7 +120,11 @@ class IntentRouter:
                     return
         # 1. 優先處理標準指令
         if user_text.startswith("#"):
-            if self.whitelist_handler.can_handle(user_text):
+            has_registered_whitelist = (
+                hasattr(self.dispatcher, "get_handler")
+                and isinstance(self.dispatcher.get_handler(WhitelistHandler), WhitelistHandler)
+            )
+            if not has_registered_whitelist and self.whitelist_handler.can_handle(user_text):
                 self.whitelist_handler.execute(event, configuration)
                 return
             logging.info(f"[IntentRouter] 收到標準指令: {user_text}")

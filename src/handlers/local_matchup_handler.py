@@ -141,31 +141,11 @@ class LocalMatchupHandler(BaseHandler):
         config = load_config()
         league_id = config.get("LEAGUE_ID")
         if league_id:
-            weekly_data = self._load_local_weekly_data(league_id)
-            if weekly_data:
-                for t in weekly_data.get("team_stats", []):
-                    if (
-                        str(t.get("name") or "").lower() == n_lower
-                        or str(t.get("official_name") or "").lower() == n_lower
-                    ):
-                        return True
-            weekly_dir = get_league_weekly_dir(league_id)
-            if os.path.exists(weekly_dir):
-                for fn in sorted(os.listdir(weekly_dir), reverse=True):
-                    if not fn.endswith(".json"):
-                        continue
-                    fpath = os.path.join(weekly_dir, fn)
-                    try:
-                        with open(fpath, "r", encoding="utf-8") as f:
-                            data = json.load(f)
-                        for t in (data or {}).get("team_stats", []):
-                            if (
-                                str(t.get("name") or "").lower() == n_lower
-                                or str(t.get("official_name") or "").lower() == n_lower
-                            ):
-                                return True
-                    except Exception:
-                        continue
+            return self.repository.is_team_nickname_in_weekly_data(
+                league_id,
+                nickname,
+                now_tw=_get_now_tw(),
+            )
         return False
 
     def can_handle(self, user_text: str) -> bool:
