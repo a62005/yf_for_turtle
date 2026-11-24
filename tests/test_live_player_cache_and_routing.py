@@ -183,7 +183,7 @@ def test_prompts_and_intent_router_distinguish_league_manager_vs_real_player(moc
         "老詹", "喇叭詹", "LBJ", "咖哩", "柯瑞", "斑馬", "Wemby",
         "小丑", "阿肥", "77", "東77", "SGA", "鴨梨", "蟻人", "AE",
         "書人", "字母哥", "KD", "死神", "AD", "濃眉", "大鬍子", "登哥",
-        "龜龜", "威少", "吉巴", "士官長", "嘴綠", "胖虎",
+        "龜龜", "威少", "吉巴", "士官長", "嘴綠", "胖虎", "照相機", "Toumani Camara",
     ]:
         assert nickname in nba_prompt, f"Missing nickname {nickname} in player_fuzzy_search prompt"
 

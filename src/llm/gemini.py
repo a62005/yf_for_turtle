@@ -9,6 +9,7 @@ class GeminiProvider(BaseLLMProvider):
         "gemini-2.5-flash",
         "gemini-3.5-flash",
     ]
+    _UNSUPPORTED_THINKING_MODELS: set[str] = set()
 
     def __init__(self, api_key: str, model_name: str):
         # 自動映射過期、無額度或高延遲模型，預設採用高反應速度的 gemini-3.5-flash-lite
@@ -30,18 +31,24 @@ class GeminiProvider(BaseLLMProvider):
         models_to_try = [self.model_name] + [m for m in self.FALLBACK_MODELS if m != self.model_name]
         last_err = None
         for idx, m_name in enumerate(models_to_try):
+            effective_config = (
+                {k: v for k, v in config.items() if k != "thinking_config"}
+                if m_name in self._UNSUPPORTED_THINKING_MODELS
+                else config
+            )
             try:
                 return client.models.generate_content(
                     model=m_name,
                     contents=prompt,
-                    config=config
+                    config=effective_config
                 )
             except Exception as e:
                 last_err = e
                 err_str = str(e)
-                # 若該模型不支援 thinking_config (例如 400 INVALID_ARGUMENT)，移除後重試同模型
-                if "thinking_config" in config and ("thinking" in err_str.lower() or "400" in err_str or "INVALID_ARGUMENT" in err_str):
-                    fallback_config = {k: v for k, v in config.items() if k != "thinking_config"}
+                # 若該模型不支援 thinking_config (例如 400 INVALID_ARGUMENT)，記錄並移除後重試同模型
+                if "thinking_config" in effective_config and ("thinking" in err_str.lower() or "400" in err_str or "INVALID_ARGUMENT" in err_str):
+                    self._UNSUPPORTED_THINKING_MODELS.add(m_name)
+                    fallback_config = {k: v for k, v in effective_config.items() if k != "thinking_config"}
                     try:
                         return client.models.generate_content(
                             model=m_name,

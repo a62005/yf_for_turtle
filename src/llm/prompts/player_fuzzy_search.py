@@ -19,6 +19,7 @@ def get_system_prompt(sport: str) -> str:
 - 老詹 / 喇叭詹 / 喇叭 / 詹皇 / 姆斯 / LBJ ➔ LeBron James (勒布朗·詹姆斯)
 - 咖哩 / 柯瑞 / 萌神 / 廚師 ➔ Stephen Curry (史蒂芬·柯瑞)
 - 泳池 / 普爾 / 茶喬丹 / Poole / Pool ➔ Jordan Poole (喬丹·普爾，因 Poole 與 Pool 泳池同音)
+- 照相機 / 相機 / Camara / Camera ➔ Toumani Camara (圖馬尼·卡馬拉，因 Camara 與 Camera 照相機諧音)
 - 斑馬 / 外星人 / Wemby ➔ Victor Wembanyama (維克多·文班亞馬)
 - 小丑 / 阿肥 / 約老師 ➔ Nikola Jokic (尼古拉·約基奇)
 - 77 / 東77 / 東契奇 / 胖77 / Luka ➔ Luka Doncic (盧卡·唐西奇)

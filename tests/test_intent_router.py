@@ -811,3 +811,34 @@ def test_intent_router_remove_whitelist_flow():
             mock_reply.assert_called_once_with(
                 event, config, "✅ 成功將成員 大雄 移出白名單。"
             )
+
+
+@patch('src.handlers.intent_router.IntentRouter._get_bot_user_id', return_value='bot_user_id_123')
+@patch('src.llm.llm_agent.LLMAgent.analyze_intent')
+def test_router_strips_custom_bot_mention_before_llm_analysis(mock_analyze, mock_get_bot_id):
+    dispatcher = MagicMock()
+    router = IntentRouter(dispatcher)
+    mock_analyze.return_value = {"is_command": True, "command_text": "#球員 Toumani Camara", "reply_text": None}
+    config = MagicMock()
+
+    # 1. LINE official mentionees with index & length for "@StinkyTurtle"
+    event_with_span = create_mock_event(
+        "@StinkyTurtle 照相機數據來一下",
+        chat_type="group",
+        mentionees=[{"type": "user", "user_id": "bot_user_id_123"}],
+    )
+    event_with_span.message.mention.mentionees[0].index = 0
+    event_with_span.message.mention.mentionees[0].length = len("@StinkyTurtle")
+
+    router.route(event_with_span, config)
+    mock_analyze.assert_called_once_with("照相機數據來一下", dispatcher=dispatcher)
+
+    # 2. Mentionee without integer index/length (e.g. mocked object) still strips leading @StinkyTurtle
+    mock_analyze.reset_mock()
+    event_without_span = create_mock_event(
+        "@StinkyTurtle 自以為是GOAL那位老人的數據",
+        chat_type="group",
+        mentionees=[{"type": "user", "user_id": "bot_user_id_123"}],
+    )
+    router.route(event_without_span, config)
+    mock_analyze.assert_called_once_with("自以為是GOAL那位老人的數據", dispatcher=dispatcher)

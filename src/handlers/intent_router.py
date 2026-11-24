@@ -195,11 +195,31 @@ class IntentRouter:
         chat_type = "單聊" if is_private_chat else "群組提及"
         logging.info(f"[IntentRouter] 收到{chat_type}，開始 LLM 意圖解析: {user_text}")
         
-        clean_text = self._clean_mention_text(user_text)
+        clean_text = self._clean_mention_text(user_text, event=event, configuration=configuration)
         self._handle_llm_flow(event, configuration, clean_text, is_mentioned)
 
-    def _clean_mention_text(self, text: str) -> str:
-        return re.sub(r'(?i)@(?:bot|linebot)\s*', '', text).strip()
+    def _clean_mention_text(self, text: str, event: MessageEvent | None = None, configuration: Configuration | None = None) -> str:
+        cleaned = text
+        if event is not None and hasattr(event, "message") and hasattr(event.message, "mention") and event.message.mention:
+            mentionees = getattr(event.message.mention, "mentionees", None) or []
+            bot_user_id = self._get_bot_user_id(configuration) if configuration is not None else self._bot_user_id
+            spans = []
+            for m in mentionees:
+                if getattr(m, "type", None) == "user" and (bot_user_id is None or getattr(m, "user_id", None) == bot_user_id):
+                    idx = getattr(m, "index", None)
+                    length = getattr(m, "length", None)
+                    if isinstance(idx, int) and isinstance(length, int) and idx >= 0 and length > 0:
+                        spans.append((idx, idx + length))
+            if spans:
+                for start, end in sorted(spans, key=lambda x: x[0], reverse=True):
+                    if end <= len(cleaned):
+                        cleaned = cleaned[:start] + cleaned[end:]
+                cleaned = cleaned.strip()
+            elif any(getattr(m, "type", None) == "user" and (bot_user_id is None or getattr(m, "user_id", None) == bot_user_id) for m in mentionees):
+                cleaned = re.sub(r'^\s*@\S+\s*', '', cleaned).strip()
+
+        cleaned = re.sub(r'(?i)@(?:bot|linebot|stinkyturtle)\s*', '', cleaned).strip()
+        return cleaned
 
     def _is_known_league_manager(self, candidate_name: str) -> bool:
         """檢查名稱是否為本聯盟已註冊的聯賽玩家（比對 team_mapping.json 與本地最新日數據）。"""
