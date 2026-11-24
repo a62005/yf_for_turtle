@@ -369,6 +369,10 @@ def test_live_player_handler_execute_nba_live_and_mlb_rejection(mocker, tmp_path
     from src.handlers.live_player_handler import LivePlayerHandler
 
     mocker.patch("src.utils.path_utils.DATA_DIR", str(tmp_path))
+    mocker.patch(
+        "src.utils.live_player_cache.DEFAULT_LIVE_CACHE_PATH",
+        str(tmp_path / "live_player_mapping_cache.json"),
+    )
 
     event = MagicMock(spec=MessageEvent)
     event.message = MagicMock()
@@ -474,6 +478,10 @@ def test_live_player_handler_not_found_and_zero_attempt_stats(mocker, tmp_path):
     from src.handlers.live_player_handler import LivePlayerHandler
 
     mocker.patch("src.utils.path_utils.DATA_DIR", str(tmp_path))
+    mocker.patch(
+        "src.utils.live_player_cache.DEFAULT_LIVE_CACHE_PATH",
+        str(tmp_path / "live_player_mapping_cache.json"),
+    )
     mocker.patch("src.handlers.live_player_handler.load_config", return_value={"LEAGUE_ID": "nba.l.123"})
     mocker.patch("src.handlers.live_player_handler.load_league_metadata", return_value={"sport": "nba"})
 

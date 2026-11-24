@@ -6,6 +6,8 @@ from .base_handler import BaseHandler
 from src.config import load_config
 from src.utils.cache_utils import load_league_metadata
 from src.utils.path_utils import parse_league_id
+from src.utils.live_player_cache import get_cached_live_player, set_cached_live_player
+from src.llm.llm_agent import LLMAgent
 from src.live_api_fetcher import EspnLivePlayerFetcher
 from src.visualizer.live_player_flex_renderer import LivePlayerFlexRenderer
 
@@ -39,8 +41,58 @@ class LivePlayerHandler(BaseHandler):
             return False
         return bool(self.pattern.match(user_text.strip()))
 
+    def _resolve_player_identity(self, nickname: str) -> dict | None:
+        raw_query = (nickname or "").strip()
+        if not raw_query:
+            return None
+
+        # 1. Check independent live player cache first
+        cached = get_cached_live_player(raw_query)
+        if cached:
+            return cached
+
+        # 2. Cache Miss: call LLMAgent.player_fuzzy_search to resolve nickname into official English/Chinese names
+        llm_res: dict = {}
+        try:
+            agent = LLMAgent()
+            llm_res = agent.player_fuzzy_search(raw_query, sport="nba") or {}
+        except Exception as e:
+            logging.warning(f"[LivePlayerHandler] LLM player_fuzzy_search failed for '{raw_query}': {e}")
+
+        is_known = bool(llm_res.get("is_known_player"))
+        llm_en_name = str(llm_res.get("english_name") or "").strip()
+        llm_zh_name = str(llm_res.get("chinese_name") or "").strip()
+
+        espn_info = None
+        if is_known and llm_en_name:
+            espn_info = self.fetcher.search_player(llm_en_name)
+
+        # Fallback: direct ESPN search if input is already an English name or LLM isn't configured
+        if not espn_info and re.search(r"[A-Za-z]", raw_query):
+            espn_info = self.fetcher.search_player(raw_query)
+
+        if not espn_info:
+            return None
+
+        team_name = str(espn_info.get("team_name") or espn_info.get("team") or llm_res.get("team") or "").strip()
+        resolved = {
+            "athlete_id": str(espn_info.get("athlete_id") or "").strip(),
+            "english_name": str(espn_info.get("english_name") or llm_en_name or raw_query).strip(),
+            "chinese_name": str(espn_info.get("chinese_name") or llm_zh_name or "").strip(),
+            "team_id": str(espn_info.get("team_id") or "").strip(),
+            "team_abbr": str(espn_info.get("team_abbr") or "").strip(),
+            "team_name": team_name,
+            "team": team_name,
+            "jersey_number": str(espn_info.get("jersey_number") or llm_res.get("jersey_number") or "").strip(),
+            "position": str(espn_info.get("position") or "").strip(),
+        }
+
+        # 3. Save resolved identity to independent live player cache
+        set_cached_live_player(raw_query, resolved)
+        return resolved
+
     def _resolve_player(self, query_name: str) -> dict | None:
-        return self.fetcher.search_player(query_name)
+        return self._resolve_player_identity(query_name)
 
     def execute(self, event: MessageEvent, configuration: Configuration) -> None:
         user_text = (event.message.text or "").strip()
@@ -65,7 +117,7 @@ class LivePlayerHandler(BaseHandler):
             self.reply_text(event, configuration, "⚠️ 球員即時數據查詢目前僅支援 NBA 聯賽。")
             return
 
-        player_info = self._resolve_player(query_name)
+        player_info = self._resolve_player_identity(query_name)
         if not player_info:
             self.reply_text(
                 event,
