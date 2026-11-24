@@ -12,10 +12,12 @@ from .base_handler import BaseHandler
 from .local_matchup_handler import LocalMatchupHandler
 from .stats_handler import StatsHandler
 from src.config import load_config
+from src.services.fantasy_stat_toolkit import FantasyStatComparator
 from src.utils.cache_utils import load_league_metadata
 from src.utils.path_utils import get_league_weekly_dir
 from src.utils.time_utils import get_stats_rule_date, tw_date_to_yahoo_date
 from src.visualizer.flex_builder import build_all_play_score_card, build_button_menu_card
+from src.visualizer.matchup_flex_renderer import MatchupFlexRenderer
 
 
 @dataclass(frozen=True)
@@ -45,10 +47,16 @@ class LocalScoreHandler(BaseHandler):
     將單一玩家與聯盟內所有其他玩家逐一進行比項對決，並組裝成 LINE Flex Message 卡片。
     """
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        comparator: FantasyStatComparator | None = None,
+        renderer: MatchupFlexRenderer | None = None,
+    ) -> None:
         super().__init__()
         self._matchup_helper = LocalMatchupHandler()
         self._stats_helper = StatsHandler()
+        self.comparator = comparator or FantasyStatComparator()
+        self.renderer = renderer or MatchupFlexRenderer()
 
     @property
     def instruction_desc(self) -> str:
@@ -352,50 +360,12 @@ class LocalScoreHandler(BaseHandler):
         actual_opp_id: str | None,
         stat_categories: list | None = None,
     ) -> tuple[list[dict], list[dict], list[dict]]:
-        win_rows = []
-        tie_rows = []
-        loss_rows = []
-
-        for opp in opponents:
-            comp_res = self._matchup_helper.compare_stats(
-                my_team["stats"],
-                opp["stats"],
-                stat_categories=stat_categories,
-            )
-            wins = int(comp_res["wins"])
-            losses = int(comp_res["losses"])
-            ties = int(comp_res["ties"])
-            is_actual = bool(actual_opp_id and opp["team_id"] == actual_opp_id)
-            row = {
-                "opp_team_id": opp["team_id"],
-                "opp_nickname": opp["name"],
-                "opp_official": opp["official_name"],
-                "wins": wins,
-                "losses": losses,
-                "ties": ties,
-                "is_actual_opponent": is_actual,
-                "order_index": opp["order_index"],
-            }
-            if wins > losses:
-                win_rows.append(row)
-            elif wins < losses:
-                loss_rows.append(row)
-            else:
-                tie_rows.append(row)
-
-        def sort_key(r: dict) -> tuple:
-            return (
-                -(r["wins"] - r["losses"]),
-                -r["wins"],
-                r["losses"],
-                not r["is_actual_opponent"],
-                r["order_index"],
-            )
-
-        win_rows.sort(key=sort_key)
-        tie_rows.sort(key=sort_key)
-        loss_rows.sort(key=sort_key)
-        return win_rows, tie_rows, loss_rows
+        return self.comparator.build_all_play_comparison(
+            my_team=my_team,
+            opponents=opponents,
+            actual_opp_id=actual_opp_id,
+            stat_categories=stat_categories,
+        )
 
     def execute(self, event: MessageEvent, configuration: Configuration) -> None:
         try:
@@ -464,8 +434,8 @@ class LocalScoreHandler(BaseHandler):
                 "my_nickname": my_team["name"],
                 "my_official": my_team["official_name"],
             }
-            flex_dict = build_all_play_score_card(
-                title=f"WEEK {week} ALL-PLAY",
+            flex_dict = self.renderer.render_all_play_score_card(
+                week_str=week,
                 player_info=player_info,
                 win_rows=win_rows,
                 tie_rows=tie_rows,

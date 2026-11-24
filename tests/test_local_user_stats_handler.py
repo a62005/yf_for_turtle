@@ -261,3 +261,44 @@ def test_intent_router_semantic_mention_triggers_local_user_stats_and_matchup(mo
     mock_matchup_exec.assert_called_once()
     assert mock_event.message.text == "#對戰 肥儒"
 
+
+def test_user_stats_flex_renderer_nba_and_mlb_split():
+    from src.visualizer.user_stats_flex_renderer import UserStatsFlexRenderer
+
+    renderer = UserStatsFlexRenderer()
+    player_info = {"manager_name": "韋哥", "official_name": "Vigo Super"}
+    daily_stats = {"FGM/A": "14/24", "FG%": 0.583, "PTS": 35, "A/T": 3.0}
+    weekly_stats = {"FGM/A": "80/150", "FG%": 0.533, "PTS": 210, "A/T": 2.45}
+
+    rows = renderer.build_stat_rows(daily_stats)
+    row_dict = dict(rows)
+    assert row_dict["FGM/A"] == "14/24"
+    assert row_dict["FG%"] == "58.3%"
+    assert row_dict["PTS"] == "35"
+    assert row_dict["A/T"] == "3"
+
+    nba_card = renderer.render_user_stats_card(player_info, daily_stats, weekly_stats, "2026-04-05", "23")
+    assert nba_card["type"] == "bubble"
+    assert nba_card["body"]["contents"][1]["contents"][0]["text"] == "2026-04-05"
+    assert nba_card["body"]["contents"][3]["contents"][0]["text"] == "W23"
+
+    mlb_cats = [
+        {"stat_id": "7", "display_name": "R"},
+        {"stat_id": "3", "display_name": "AVG"},
+        {"stat_id": "28", "display_name": "W"},
+        {"stat_id": "26", "display_name": "ERA"},
+    ]
+    mlb_daily = {"R": 5, "AVG": 0.312, "W": 1, "ERA": 2.5}
+    mlb_weekly = {"R": 25, "AVG": 0.285, "W": 4, "ERA": 3.15}
+    mlb_card = renderer.render_user_stats_card(
+        player_info, mlb_daily, mlb_weekly, "2026-04-05", "2", stat_categories=mlb_cats
+    )
+    mlb_str = json.dumps(mlb_card, ensure_ascii=False)
+    assert "2026-04-05 (Hitter)" in mlb_str
+    assert "2026-04-05 (Pitcher)" in mlb_str
+    assert "W2 (Hitter)" in mlb_str
+    assert "W2 (Pitcher)" in mlb_str
+    assert ".312" in mlb_str
+    assert "2.50" in mlb_str
+
+

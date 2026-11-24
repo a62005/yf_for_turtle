@@ -702,5 +702,63 @@ def test_local_score_historical_query_case_insensitive_actual_opponent(
     assert "⚔️ 肥儒" not in flex_str
 
 
+def test_fantasy_stat_comparator_all_play_and_matchup_flex_renderer_score_card():
+    from src.services.fantasy_stat_toolkit import FantasyStatComparator
+    from src.visualizer.matchup_flex_renderer import MatchupFlexRenderer
+
+    comparator = FantasyStatComparator()
+    my_team = {
+        "team_id": "10",
+        "name": "小謝",
+        "official_name": "姆主席萬歲",
+        "stats": {"PTS": 500, "REB": 200, "AST": 150, "TO": 50},
+    }
+    opponents = [
+        {
+            "team_id": "1",
+            "name": "韋哥",
+            "official_name": "Vigo",
+            "order_index": 1,
+            "stats": {"PTS": 400, "REB": 180, "AST": 120, "TO": 60},
+        },
+        {
+            "team_id": "2",
+            "name": "Jerry",
+            "official_name": "Jerry Team",
+            "order_index": 2,
+            "stats": {"PTS": 600, "REB": 250, "AST": 180, "TO": 40},
+        },
+    ]
+    cats = [
+        {"stat_id": "12", "display_name": "PTS", "sort_order": 1},
+        {"stat_id": "15", "display_name": "REB", "sort_order": 1},
+        {"stat_id": "16", "display_name": "AST", "sort_order": 1},
+        {"stat_id": "19", "display_name": "TO", "sort_order": 0},
+    ]
+    win_rows, tie_rows, loss_rows = comparator.build_all_play_comparison(
+        my_team, opponents, actual_opp_id="2", stat_categories=cats
+    )
+    assert len(win_rows) == 1
+    assert win_rows[0]["opp_nickname"] == "韋哥"
+    assert win_rows[0]["wins"] == 4
+    assert len(tie_rows) == 0
+    assert len(loss_rows) == 1
+    assert loss_rows[0]["opp_nickname"] == "Jerry"
+    assert loss_rows[0]["is_actual_opponent"] is True
+
+    renderer = MatchupFlexRenderer()
+    card = renderer.render_all_play_score_card(
+        week_str=5,
+        player_info={"my_nickname": "小謝", "my_official": "姆主席萬歲"},
+        win_rows=win_rows,
+        tie_rows=tie_rows,
+        loss_rows=loss_rows,
+    )
+    card_str = json.dumps(card, ensure_ascii=False)
+    assert "WEEK 5 ALL-PLAY" in card_str
+    assert "⚔️ Jerry" in card_str
+
+
+
 
 
