@@ -118,8 +118,11 @@ class EspnLivePlayerFetcher:
         if not query_name or not str(query_name).strip():
             return None
 
+        query_clean = str(query_name).strip()
+        query_lower = query_clean.lower()
+
         params = {
-            "query": str(query_name).strip(),
+            "query": query_clean,
             "limit": 10,
             "type": "player",
         }
@@ -143,14 +146,35 @@ class EspnLivePlayerFetcher:
                     if isinstance(contents, list):
                         candidates.extend(contents)
 
+        valid_matches: list[tuple[dict, dict]] = []
         for item in candidates:
             if not self._is_nba_player_item(item):
                 continue
             normalized = self._normalize_player_search_item(item)
             if normalized:
+                valid_matches.append((item, normalized))
+
+        if not valid_matches:
+            return None
+
+        # 1. Exact displayName match + active player
+        for item, normalized in valid_matches:
+            is_active = item.get("isActive", True) is not False
+            if normalized["english_name"].lower() == query_lower and is_active:
                 return normalized
 
-        return None
+        # 2. Exact displayName match (any status)
+        for item, normalized in valid_matches:
+            if normalized["english_name"].lower() == query_lower:
+                return normalized
+
+        # 3. First active NBA player item
+        for item, normalized in valid_matches:
+            if item.get("isActive", True) is not False:
+                return normalized
+
+        # 4. Fallback to first NBA player item
+        return valid_matches[0][1]
 
     @staticmethod
     def _parse_made_attempted(raw_val: Any) -> tuple[int, int]:
@@ -275,37 +299,33 @@ class EspnLivePlayerFetcher:
             "AST/TO": at_ratio,
         }
 
+    def _get_json(self, url: str, params: dict | None = None, context: str = "") -> dict:
+        try:
+            kwargs: dict[str, Any] = {"timeout": self.timeout}
+            if params is not None:
+                kwargs["params"] = params
+            resp = requests.get(url, **kwargs)
+            if resp.status_code == 200:
+                data = resp.json()
+                return data if isinstance(data, dict) else {}
+            logging.warning(f"[EspnLivePlayerFetcher] {context or url} HTTP {resp.status_code}")
+        except Exception as e:
+            logging.error(f"[EspnLivePlayerFetcher] {context or url} error: {e}")
+        return {}
+
     def _fetch_scoreboard(self, date_yyyymmdd: str) -> dict:
         url = f"{self.SCOREBOARD_URL}?dates={date_yyyymmdd}"
-        try:
-            resp = requests.get(url, timeout=self.timeout)
-            if resp.status_code == 200:
-                return resp.json() or {}
-        except Exception as e:
-            logging.error(f"[EspnLivePlayerFetcher] Scoreboard API error for {date_yyyymmdd}: {e}")
-        return {}
+        return self._get_json(url, context=f"Scoreboard API for {date_yyyymmdd}")
 
     def _fetch_summary(self, event_id: str) -> dict:
         url = f"{self.SUMMARY_URL}?event={event_id}"
-        try:
-            resp = requests.get(url, timeout=self.timeout)
-            if resp.status_code == 200:
-                return resp.json() or {}
-        except Exception as e:
-            logging.error(f"[EspnLivePlayerFetcher] Summary API error for event {event_id}: {e}")
-        return {}
+        return self._get_json(url, context=f"Summary API for event {event_id}")
 
     def _fetch_gamelog(self, athlete_id: str) -> dict:
         if not athlete_id:
             return {}
         url = self.GAMELOG_URL_TEMPLATE.format(athlete_id=athlete_id)
-        try:
-            resp = requests.get(url, timeout=self.timeout)
-            if resp.status_code == 200:
-                return resp.json() or {}
-        except Exception as e:
-            logging.error(f"[EspnLivePlayerFetcher] Gamelog API error for athlete {athlete_id}: {e}")
-        return {}
+        return self._get_json(url, context=f"Gamelog API for athlete {athlete_id}")
 
     @staticmethod
     def _extract_yyyy_mm_dd(raw_date: Any) -> str:
@@ -530,16 +550,66 @@ class EspnLivePlayerFetcher:
                     a_id = str(ath.get("id") or "").strip()
                     a_name = str(ath.get("displayName") or "").strip().lower()
                     if (target_id and a_id == target_id) or (target_name and a_name == target_name):
-                        if not player_info.get("jersey_number") and ath.get("jersey"):
-                            player_info["jersey_number"] = str(ath["jersey"]).strip().lstrip("#")
-                        if not player_info.get("position") and isinstance(ath.get("position"), dict):
-                            player_info["position"] = str(ath["position"].get("abbreviation") or "").strip()
+                        jersey_number = (
+                            str(ath["jersey"]).strip().lstrip("#")
+                            if ath.get("jersey")
+                            else str(player_info.get("jersey_number") or "").strip()
+                        )
+                        position = (
+                            str(ath["position"].get("abbreviation") or "").strip()
+                            if isinstance(ath.get("position"), dict)
+                            else str(player_info.get("position") or "").strip()
+                        )
                         return {
                             "did_not_play": bool(ath_entry.get("didNotPlay")),
                             "reason": str(ath_entry.get("reason") or "DNP").strip(),
                             "labels": labels,
                             "stats": ath_entry.get("stats") or [],
+                            "jersey_number": jersey_number,
+                            "position": position,
                         }
+        return None
+
+    def _find_recent_played_game_via_scoreboards(
+        self,
+        player_info: dict,
+        base_dt: datetime,
+        max_lookback_days: int = 3,
+        notice_banner: str | None = None,
+    ) -> dict | None:
+        team_id = str(player_info.get("team_id") or "").strip()
+        team_abbr = str(player_info.get("team_abbr") or "").strip().upper()
+        if not team_id and not team_abbr:
+            return None
+
+        for offset in range(1, max_lookback_days + 1):
+            check_dt = base_dt - timedelta(days=offset)
+            date_yyyymmdd = check_dt.strftime("%Y%m%d")
+            game_date_str = check_dt.strftime("%Y-%m-%d")
+            scoreboard = self._fetch_scoreboard(date_yyyymmdd)
+            for event in scoreboard.get("events") or []:
+                comp = self._match_team_in_event(event, team_id, team_abbr)
+                if not comp:
+                    continue
+                event_id = str(event.get("id") or "").strip()
+                state, status_label = self._build_status_label(comp, event)
+                if state not in ("in", "post") or not event_id:
+                    continue
+                summary = self._fetch_summary(event_id)
+                box_entry = self._extract_player_from_boxscore(summary, player_info)
+                if box_entry and not box_entry["did_not_play"] and box_entry["stats"]:
+                    raw_map = dict(zip(box_entry["labels"], box_entry["stats"]))
+                    computed = self.compute_fantasy_stats_from_raw(raw_map)
+                    return {
+                        "event_id": event_id,
+                        "game_date": game_date_str,
+                        "game_state": state,
+                        "status_label": status_label,
+                        "score_text": self._build_score_text(comp),
+                        "minutes": computed.get("MIN", "0"),
+                        "stats": computed,
+                        "notice_banner": notice_banner,
+                    }
         return None
 
     def fetch_player_live_or_latest_game(
@@ -551,6 +621,8 @@ class EspnLivePlayerFetcher:
         """
         根據美西時間檢查目標日之 ESPN Scoreboard 與 Game Summary Boxscore，
         取得該球員當日進行中 (LIVE) 或已完賽 (FINAL) 的即時比賽數據。
+        若目標日無比賽、尚未開打或 DNP，先透過 Athlete Gamelog 取得最近一場已出賽數據，
+        若 Gamelog 無資料或失敗，再回退往前掃描近 1~3 天之 Scoreboard 與 Boxscore。
         """
         if not isinstance(player_info, dict):
             return None
@@ -611,11 +683,20 @@ class EspnLivePlayerFetcher:
                 break
 
         gamelog_data = self._fetch_gamelog(str(player_info.get("athlete_id") or "").strip())
-        return self._extract_latest_game_from_gamelog(
+        gamelog_result = self._extract_latest_game_from_gamelog(
             gamelog_data,
             player_info,
             max_date_str=game_date_str,
             exclude_event_id=matched_event_id,
+            notice_banner=notice_banner,
+        )
+        if gamelog_result:
+            return gamelog_result
+
+        return self._find_recent_played_game_via_scoreboards(
+            player_info,
+            base_dt=target_dt,
+            max_lookback_days=3,
             notice_banner=notice_banner,
         )
 

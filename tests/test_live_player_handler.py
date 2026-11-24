@@ -756,6 +756,10 @@ def test_live_player_handler_no_season_stats_and_last_night_command(mocker, tmp_
     from src.handlers.live_player_handler import LivePlayerHandler
 
     mocker.patch("src.utils.path_utils.DATA_DIR", str(tmp_path))
+    mocker.patch(
+        "src.utils.live_player_cache.DEFAULT_LIVE_CACHE_PATH",
+        str(tmp_path / "live_player_mapping_cache.json"),
+    )
     mocker.patch("src.handlers.live_player_handler.load_config", return_value={"LEAGUE_ID": "nba.l.123"})
     mocker.patch("src.handlers.live_player_handler.load_league_metadata", return_value={"sport": "nba"})
 
@@ -894,6 +898,161 @@ def test_live_player_handler_no_season_stats_and_last_night_command(mocker, tmp_
     spy_fetch.assert_called_once()
     assert spy_fetch.call_args.kwargs.get("prefer_previous_day") is True
     mock_reply_flex.assert_called_once()
+
+
+def test_search_player_exact_match_and_recent_scoreboard_fallback(mocker):
+    pac_tz = pytz.timezone("US/Pacific")
+    now_pac = pac_tz.localize(datetime(2026, 11, 24, 21, 0, 0))
+
+    fetcher = EspnLivePlayerFetcher()
+
+    # 1. Exact displayName match & isActive preference over partial/first item
+    mock_get = mocker.patch("src.live_api_fetcher.requests.get")
+    mock_get.return_value.status_code = 200
+    mock_get.return_value.json.return_value = {
+        "items": [
+            {
+                "id": "9991",
+                "displayName": "Gary Payton",
+                "league": "nba",
+                "sport": "basketball",
+                "isActive": False,
+            },
+            {
+                "id": "9992",
+                "displayName": "Stephen Curry Jr.",
+                "league": "nba",
+                "sport": "basketball",
+                "isActive": True,
+            },
+            {
+                "id": "3975",
+                "displayName": "Stephen Curry",
+                "league": "nba",
+                "sport": "basketball",
+                "isActive": True,
+                "team": {"id": "9", "abbreviation": "GSW", "displayName": "Golden State Warriors"},
+            },
+        ]
+    }
+    matched = fetcher.search_player("stephen curry")
+    assert matched is not None
+    assert matched["athlete_id"] == "3975"
+    assert matched["english_name"] == "Stephen Curry"
+
+    # 2. Recent 1-3 days Scoreboard fallback when Gamelog is empty/fails
+    scoreboard_dnp_today = {
+        "events": [
+            {
+                "id": "401704801",
+                "competitions": [
+                    {
+                        "status": {"type": {"state": "post", "shortDetail": "Final"}},
+                        "competitors": [
+                            {"team": {"id": "9", "abbreviation": "GSW"}, "score": "100"},
+                            {"team": {"id": "13", "abbreviation": "LAL"}, "score": "105"},
+                        ],
+                    }
+                ],
+            }
+        ]
+    }
+    summary_dnp_today = {
+        "boxscore": {
+            "players": [
+                {
+                    "team": {"id": "9", "abbreviation": "GSW"},
+                    "statistics": [
+                        {
+                            "labels": ["MIN", "FG", "3PT", "FT", "REB", "AST", "STL", "BLK", "TO", "PTS"],
+                            "athletes": [
+                                {
+                                    "athlete": {"id": "3975", "displayName": "Stephen Curry"},
+                                    "didNotPlay": True,
+                                    "reason": "DNP - Rest",
+                                    "stats": [],
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ]
+        }
+    }
+    scoreboard_two_days_ago = {
+        "events": [
+            {
+                "id": "401704755",
+                "competitions": [
+                    {
+                        "status": {"type": {"state": "post", "shortDetail": "Final"}},
+                        "competitors": [
+                            {"team": {"id": "9", "abbreviation": "GSW"}, "score": "118"},
+                            {"team": {"id": "21", "abbreviation": "PHX"}, "score": "110"},
+                        ],
+                    }
+                ],
+            }
+        ]
+    }
+    summary_two_days_ago = {
+        "boxscore": {
+            "players": [
+                {
+                    "team": {"id": "9", "abbreviation": "GSW"},
+                    "statistics": [
+                        {
+                            "labels": ["MIN", "FG", "3PT", "FT", "REB", "AST", "STL", "BLK", "TO", "PTS"],
+                            "athletes": [
+                                {
+                                    "athlete": {"id": "3975", "displayName": "Stephen Curry"},
+                                    "didNotPlay": False,
+                                    "stats": ["33", "10-18", "6-11", "4-4", "5", "8", "2", "0", "2", "30"],
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ]
+        }
+    }
+
+    def side_effect_lookback(url, params=None, timeout=10):
+        resp = mocker.MagicMock()
+        resp.status_code = 200
+        if "dates=20261124" in url:
+            resp.json.return_value = scoreboard_dnp_today
+        elif "event=401704801" in url:
+            resp.json.return_value = summary_dnp_today
+        elif "gamelog" in url:
+            resp.json.return_value = {}
+        elif "dates=20261123" in url:
+            resp.json.return_value = {"events": []}
+        elif "dates=20261122" in url:
+            resp.json.return_value = scoreboard_two_days_ago
+        elif "event=401704755" in url:
+            resp.json.return_value = summary_two_days_ago
+        else:
+            resp.json.return_value = {}
+        return resp
+
+    mocker.patch("src.live_api_fetcher.requests.get", side_effect=side_effect_lookback)
+
+    player_info = {
+        "athlete_id": "3975",
+        "english_name": "Stephen Curry",
+        "team_id": "9",
+        "team_abbr": "GSW",
+    }
+    result = fetcher.fetch_player_live_or_latest_game(player_info, now_pacific=now_pac)
+    assert result is not None
+    assert result["event_id"] == "401704755"
+    assert result["game_date"] == "2026-11-22"
+    assert result["notice_banner"] == "⚠️ 今日未出賽 (DNP - Rest) • 以下為最近出賽"
+    assert result["score_text"] == "GSW 118 : 110 PHX"
+    assert result["stats"]["PTS"] == "30"
+    assert result["stats"]["3PT"] == "6"
+
 
 
 

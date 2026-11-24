@@ -1,8 +1,18 @@
 import os
 import json
 import logging
+from src.utils import path_utils
 
-DEFAULT_LIVE_CACHE_PATH = "data/live_player_mapping_cache.json"
+_SENTINEL_DEFAULT_CACHE_PATH = "data/live_player_mapping_cache.json"
+DEFAULT_LIVE_CACHE_PATH = _SENTINEL_DEFAULT_CACHE_PATH
+
+
+def _resolve_cache_path(cache_path: str | None = None) -> str:
+    if cache_path:
+        return cache_path
+    if DEFAULT_LIVE_CACHE_PATH != _SENTINEL_DEFAULT_CACHE_PATH:
+        return DEFAULT_LIVE_CACHE_PATH
+    return os.path.join(path_utils.DATA_DIR, "live_player_mapping_cache.json")
 
 
 def _normalize_key(nickname: str) -> str:
@@ -10,7 +20,7 @@ def _normalize_key(nickname: str) -> str:
 
 
 def load_live_player_cache(cache_path: str | None = None) -> dict:
-    cache_path = cache_path or DEFAULT_LIVE_CACHE_PATH
+    cache_path = _resolve_cache_path(cache_path)
     if not os.path.exists(cache_path):
         return {}
     try:
@@ -23,7 +33,7 @@ def load_live_player_cache(cache_path: str | None = None) -> dict:
 
 
 def save_live_player_cache(cache: dict, cache_path: str | None = None) -> None:
-    cache_path = cache_path or DEFAULT_LIVE_CACHE_PATH
+    cache_path = _resolve_cache_path(cache_path)
     try:
         dir_name = os.path.dirname(cache_path)
         if dir_name:
@@ -35,7 +45,7 @@ def save_live_player_cache(cache: dict, cache_path: str | None = None) -> None:
 
 
 def get_cached_live_player(nickname: str, cache_path: str | None = None) -> dict | None:
-    cache_path = cache_path or DEFAULT_LIVE_CACHE_PATH
+    cache_path = _resolve_cache_path(cache_path)
     key = _normalize_key(nickname)
     if not key:
         return None
@@ -53,7 +63,7 @@ def set_cached_live_player(
     player_data: dict,
     cache_path: str | None = None,
 ) -> None:
-    cache_path = cache_path or DEFAULT_LIVE_CACHE_PATH
+    cache_path = _resolve_cache_path(cache_path)
     key = _normalize_key(nickname)
     if not key:
         return
