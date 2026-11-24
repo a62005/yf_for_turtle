@@ -842,3 +842,78 @@ def test_router_strips_custom_bot_mention_before_llm_analysis(mock_analyze, mock
     )
     router.route(event_without_span, config)
     mock_analyze.assert_called_once_with("自以為是GOAL那位老人的數據", dispatcher=dispatcher)
+
+
+def test_whitelist_handler_and_intent_router_cleanup():
+    from src.handlers.whitelist_handler import WhitelistHandler
+    from src.handlers.dispatcher import CommandDispatcher
+    from src.handlers.intent_router import IntentRouter
+    from src.utils.session_manager import get_active_session, clear_active_session, AddWhitelistSession
+    from linebot.v3.messaging import Configuration
+
+    # 1. Verify dead code methods are removed from IntentRouter
+    assert not hasattr(IntentRouter, "_update_team_nickname")
+    assert not hasattr(IntentRouter, "_update_league_settings")
+
+    # 2. Verify WhitelistHandler standalone contract
+    handler = WhitelistHandler()
+    assert handler.exclude_from_llm is True
+    assert handler.can_handle("#新增白名單成員") is True
+    assert handler.can_handle("#移除白名單成員") is True
+    assert handler.can_handle("#確切移除白名單 U123456") is True
+    assert handler.can_handle("#確切移除白名單 ") is False
+    assert handler.can_handle("#戰績") is False
+
+    config = Configuration()
+    config.access_token = "dummy"
+
+    # 2a. Non-manager is silently ignored
+    event = create_mock_event("#新增白名單成員", chat_type="user")
+    event.source.user_id = "U_non_manager"
+    clear_active_session("U_non_manager")
+    with patch("src.utils.security.security_manager.is_super_admin", return_value=False), \
+         patch("src.utils.security.security_manager.is_league_manager", return_value=False), \
+         patch.object(handler, "reply_text") as mock_reply:
+        handler.execute(event, config)
+        assert get_active_session("U_non_manager") is None
+        mock_reply.assert_not_called()
+
+    # 2b. League manager can start AddWhitelistSession, render remove menu, and remove member via get_league_whitelist
+    event.source.user_id = "U_league_mgr"
+    clear_active_session("U_league_mgr")
+    with patch("src.utils.security.security_manager.is_super_admin", return_value=False), \
+         patch("src.utils.security.security_manager.is_league_manager", return_value=True), \
+         patch("src.config.load_config", return_value={"LEAGUE_ID": "123"}):
+        try:
+            event.message.text = "#新增白名單成員"
+            with patch.object(handler, "reply_text") as mock_reply:
+                handler.execute(event, config)
+                sess = get_active_session("U_league_mgr")
+                assert isinstance(sess, AddWhitelistSession)
+                mock_reply.assert_called_once()
+        finally:
+            clear_active_session("U_league_mgr")
+
+        target_id = "U" + "c" * 32
+        event.message.text = "#移除白名單成員"
+        with patch("src.utils.security.security_manager.get_league_whitelist", return_value={target_id: "胖虎"}) as mock_get_wl, \
+             patch.object(handler, "reply_flex") as mock_flex:
+            handler.execute(event, config)
+            mock_get_wl.assert_called_once_with("123")
+            mock_flex.assert_called_once()
+            assert mock_flex.call_args[0][2] == "移除白名單成員選單"
+
+        event.message.text = f"#確切移除白名單 {target_id}"
+        with patch("src.utils.security.security_manager.get_league_whitelist", return_value={target_id: "胖虎"}) as mock_get_wl, \
+             patch("src.utils.security.security_manager.remove_from_league_whitelist", return_value=True) as mock_rm, \
+             patch.object(handler, "reply_text") as mock_reply:
+            handler.execute(event, config)
+            mock_get_wl.assert_called_once_with("123")
+            mock_rm.assert_called_once_with("123", target_id)
+            mock_reply.assert_called_once_with(event, config, "✅ 成功將成員 胖虎 移出白名單。")
+
+    # 3. Verify dispatcher with registered WhitelistHandler routes through CommandDispatcher
+    dispatcher = CommandDispatcher()
+    dispatcher.register(handler)
+    assert "#新增白名單成員" not in dispatcher.get_all_instruction_descs()
+

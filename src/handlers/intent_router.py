@@ -6,16 +6,22 @@ import time
 from linebot.v3.webhooks import MessageEvent
 from linebot.v3.messaging import Configuration, ApiClient, MessagingApi, ReplyMessageRequest, TextMessage, FlexMessage, FlexContainer
 from src.handlers.dispatcher import CommandDispatcher
+from src.handlers.whitelist_handler import WhitelistHandler
 from src.llm.llm_agent import LLMAgent
 from src.config import load_config
 from src.utils.session_manager import get_active_session, clear_active_session
 from src.utils.path_utils import get_league_team_mapping_path
 
 class IntentRouter:
-    def __init__(self, dispatcher: CommandDispatcher):
+    def __init__(self, dispatcher: CommandDispatcher, whitelist_handler: WhitelistHandler | None = None):
         self.dispatcher = dispatcher
         self.llm_agent = LLMAgent()
         self._bot_user_id = None
+        self.whitelist_handler = whitelist_handler or WhitelistHandler(
+            reply_text_fn=lambda ev, cfg, txt: self.reply_text(ev, cfg, txt),
+            reply_flex_fn=lambda ev, cfg, alt, flex: self.reply_flex(ev, cfg, alt, flex),
+            config_loader=lambda: load_config(),
+        )
 
     def _get_bot_user_id(self, configuration: Configuration) -> str | None:
         """Fetch and cache the bot's own user_id."""
@@ -112,78 +118,11 @@ class IntentRouter:
                     if not should_continue:
                         clear_active_session(user_id)
                     return
-        # 0.7 攔截白名單成員管理指令
-        from src.utils.security import security_manager
-        
-        if user_text == "#新增白名單成員":
-            is_manager = False
-            if user_id:
-                if security_manager.is_super_admin(user_id):
-                    is_manager = True
-                else:
-                    config = load_config()
-                    league_id = config.get("LEAGUE_ID")
-                    if league_id and security_manager.is_league_manager(user_id, league_id):
-                        is_manager = True
-            if is_manager:
-                from src.utils.session_manager import register_session, AddWhitelistSession
-                register_session(AddWhitelistSession(user_id, duration_sec=60))
-                self.reply_text(event, configuration, "請在 60 秒內輸入欲新增的白名單成員 LINE ID（例如：U123456...），或輸入 # 取消：")
-            return
-
-        if user_text == "#移除白名單成員":
-            is_manager = False
-            if user_id:
-                if security_manager.is_super_admin(user_id):
-                    is_manager = True
-                else:
-                    config = load_config()
-                    league_id = config.get("LEAGUE_ID")
-                    if league_id and security_manager.is_league_manager(user_id, league_id):
-                        is_manager = True
-            if is_manager:
-                config = load_config()
-                league_id = config.get("LEAGUE_ID")
-                roles = security_manager._load_json(security_manager.league_roles_path, {})
-                league_data = roles.get(league_id) or {} if league_id else {}
-                whitelist = league_data.get("whitelist", {})
-                if not whitelist:
-                    self.reply_text(event, configuration, "ℹ️ 目前此聯盟無任何白名單成員。")
-                else:
-                    from src.visualizer.flex_builder import build_button_menu_card
-                    buttons = []
-                    for target_id, name in whitelist.items():
-                        buttons.append((name, f"#確切移除白名單 {target_id}"))
-                    flex_dict = build_button_menu_card("移除白名單成員", "請選擇欲移除的成員：", buttons)
-                    self.reply_flex(event, configuration, "移除白名單成員選單", flex_dict)
-            return
-
-        if user_text.startswith("#確切移除白名單 "):
-            is_manager = False
-            if user_id:
-                if security_manager.is_super_admin(user_id):
-                    is_manager = True
-                else:
-                    config = load_config()
-                    league_id = config.get("LEAGUE_ID")
-                    if league_id and security_manager.is_league_manager(user_id, league_id):
-                        is_manager = True
-            if is_manager:
-                target_id = user_text[len("#確切移除白名單 "):].strip()
-                config = load_config()
-                league_id = config.get("LEAGUE_ID")
-                if league_id:
-                    roles = security_manager._load_json(security_manager.league_roles_path, {})
-                    league_data = roles.get(league_id) or {}
-                    whitelist = league_data.get("whitelist", {})
-                    display_name = whitelist.get(target_id, target_id)
-                    
-                    security_manager.remove_from_league_whitelist(league_id, target_id)
-                    self.reply_text(event, configuration, f"✅ 成功將成員 {display_name} 移出白名單。")
-            return
-
         # 1. 優先處理標準指令
         if user_text.startswith("#"):
+            if self.whitelist_handler.can_handle(user_text):
+                self.whitelist_handler.execute(event, configuration)
+                return
             logging.info(f"[IntentRouter] 收到標準指令: {user_text}")
             self.dispatcher.handle(event, configuration)
             return
@@ -316,59 +255,6 @@ class IntentRouter:
                     messages=[FlexMessage(alt_text=alt_text, contents=flex_container)]
                 )
             )
-
-    def _update_team_nickname(self, team_id: str, new_nickname: str) -> None:
-        config = load_config()
-        league_id = config.get("LEAGUE_ID")
-        if not league_id:
-            return
-        mapping_path = get_league_team_mapping_path(league_id)
-        
-        mapping = {}
-        if os.path.exists(mapping_path):
-            try:
-                with open(mapping_path, "r", encoding="utf-8") as f:
-                    mapping = json.load(f)
-            except Exception:
-                mapping = {}
-                
-        mapping[str(team_id)] = new_nickname
-        
-        try:
-            os.makedirs(os.path.dirname(mapping_path), exist_ok=True)
-            with open(mapping_path, "w", encoding="utf-8") as f:
-                json.dump(mapping, f, ensure_ascii=False, indent=2)
-        except Exception as e:
-            import logging
-            logging.error(f"[IntentRouter] 寫入暱稱對應檔失敗: {e}")
-
-    def _update_league_settings(self, new_settings: dict) -> None:
-        config = load_config()
-        league_id = config.get("LEAGUE_ID")
-        if not league_id:
-            return
-            
-        from src.utils.path_utils import get_league_dir
-        league_dir = get_league_dir(league_id)
-        settings_path = os.path.join(league_dir, "settings.json")
-        
-        settings = {}
-        if os.path.exists(settings_path):
-            try:
-                with open(settings_path, "r", encoding="utf-8") as f:
-                    settings = json.load(f)
-            except Exception:
-                settings = {}
-                
-        settings.update(new_settings)
-        
-        try:
-            os.makedirs(os.path.dirname(settings_path), exist_ok=True)
-            with open(settings_path, "w", encoding="utf-8") as f:
-                json.dump(settings, f, ensure_ascii=False, indent=2)
-        except Exception as e:
-            import logging
-            logging.error(f"[IntentRouter] 寫入設定檔 settings.json 失敗: {e}")
 
     def route_image(self, event: MessageEvent, configuration: Configuration) -> None:
         """路由圖片訊息事件"""
