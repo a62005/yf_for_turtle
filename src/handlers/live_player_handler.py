@@ -91,9 +91,6 @@ class LivePlayerHandler(BaseHandler):
         set_cached_live_player(raw_query, resolved)
         return resolved
 
-    def _resolve_player(self, query_name: str) -> dict | None:
-        return self._resolve_player_identity(query_name)
-
     def execute(self, event: MessageEvent, configuration: Configuration) -> None:
         user_text = (event.message.text or "").strip()
         match = self.pattern.match(user_text)

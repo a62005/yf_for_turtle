@@ -39,6 +39,7 @@ def cleanup_test_data_after_suite():
         "logs/data_audit.log",
         "logs/data_audit.log.1",
         "logs/data_audit.log.2",
+        "data/live_player_mapping_cache.json",
     ]
     for f in test_log_files:
         if os.path.exists(f):
