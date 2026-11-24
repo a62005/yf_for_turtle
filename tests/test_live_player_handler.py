@@ -518,5 +518,378 @@ def test_live_player_handler_not_found_and_zero_attempt_stats(mocker, tmp_path):
     assert computed["A/T"] == "2.00"
 
 
+def test_espn_fetcher_dnp_fallback_to_gamelog_with_notice_banner(mocker):
+    pac_tz = pytz.timezone("US/Pacific")
+    now_pac = pac_tz.localize(datetime(2026, 11, 24, 21, 0, 0))
+
+    scoreboard_today = {
+        "events": [
+            {
+                "id": "401704801",
+                "competitions": [
+                    {
+                        "status": {
+                            "period": 4,
+                            "displayClock": "0.0",
+                            "type": {"state": "post", "shortDetail": "Final"},
+                        },
+                        "competitors": [
+                            {"team": {"id": "13", "abbreviation": "LAL"}, "score": "105"},
+                            {"team": {"id": "9", "abbreviation": "GSW"}, "score": "110"},
+                        ],
+                    }
+                ],
+            }
+        ]
+    }
+    summary_dnp = {
+        "boxscore": {
+            "players": [
+                {
+                    "team": {"id": "13", "abbreviation": "LAL"},
+                    "statistics": [
+                        {
+                            "labels": [
+                                "MIN", "FG", "3PT", "FT", "OREB", "DREB",
+                                "REB", "AST", "STL", "BLK", "TO", "PF", "+/-", "PTS",
+                            ],
+                            "athletes": [
+                                {
+                                    "athlete": {"id": "1966", "displayName": "LeBron James"},
+                                    "didNotPlay": True,
+                                    "reason": "DNP - Left Ankle Soreness",
+                                    "stats": [],
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ]
+        }
+    }
+    gamelog_payload = {
+        "labels": [
+            "MIN", "FG", "FG%", "3PT", "3P%", "FT", "FT%",
+            "REB", "AST", "BLK", "STL", "PF", "TO", "PTS",
+        ],
+        "events": {
+            "401704750": {
+                "id": "401704750",
+                "gameDate": "2026-11-22T00:00:00.000+00:00",
+                "score": "118-112",
+                "gameResult": "W",
+                "opponent": {"id": "7", "abbreviation": "DEN"},
+            }
+        },
+        "seasonTypes": [
+            {
+                "categories": [
+                    {
+                        "type": "event",
+                        "events": [
+                            {
+                                "eventId": "401704750",
+                                "stats": [
+                                    "37", "11-20", "55.0", "3-6", "50.0", "6-7", "85.7",
+                                    "9", "10", "1", "2", "1", "3", "31",
+                                ],
+                            }
+                        ],
+                    }
+                ]
+            }
+        ],
+    }
+
+    def side_effect_dnp(url, params=None, timeout=10):
+        resp = mocker.MagicMock()
+        resp.status_code = 200
+        if "scoreboard" in url:
+            resp.json.return_value = scoreboard_today
+        elif "summary" in url:
+            resp.json.return_value = summary_dnp
+        elif "gamelog" in url:
+            resp.json.return_value = gamelog_payload
+        return resp
+
+    mocker.patch("src.live_api_fetcher.requests.get", side_effect=side_effect_dnp)
+
+    fetcher = EspnLivePlayerFetcher()
+    player_info = {
+        "athlete_id": "1966",
+        "english_name": "LeBron James",
+        "team_id": "13",
+        "team_abbr": "LAL",
+    }
+    game_data = fetcher.fetch_player_live_or_latest_game(player_info, now_pacific=now_pac)
+
+    assert game_data is not None
+    assert game_data["notice_banner"] == "⚠️ 今日未出賽 (DNP - Left Ankle Soreness) • 以下為最近出賽"
+    assert game_data["game_date"] == "2026-11-22"
+    assert game_data["game_state"] == "post"
+    assert game_data["status_label"] == "🏁 FINAL"
+    assert game_data["score_text"] == "LAL 118 : 112 DEN"
+    assert game_data["minutes"] == "37"
+    assert game_data["stats"]["FGM/A"] == "11/20"
+    assert game_data["stats"]["PTS"] == "31"
+    assert game_data["stats"]["AST"] == "10"
+    assert game_data["stats"]["DD"] == "1"
+
+
+def test_espn_fetcher_pregame_and_no_game_today_gamelog_fallback(mocker):
+    pac_tz = pytz.timezone("US/Pacific")
+    now_pac = pac_tz.localize(datetime(2026, 11, 24, 15, 0, 0))
+
+    scoreboard_pre = {
+        "events": [
+            {
+                "id": "401704805",
+                "competitions": [
+                    {
+                        "status": {
+                            "type": {
+                                "state": "pre",
+                                "shortDetail": "7:00 PM PST",
+                            }
+                        },
+                        "competitors": [
+                            {"team": {"id": "13", "abbreviation": "LAL"}, "score": "0"},
+                            {"team": {"id": "21", "abbreviation": "PHX"}, "score": "0"},
+                        ],
+                    }
+                ],
+            }
+        ]
+    }
+    gamelog_payload = {
+        "labels": [
+            "MIN", "FG", "FG%", "3PT", "3P%", "FT", "FT%",
+            "REB", "AST", "BLK", "STL", "PF", "TO", "PTS",
+        ],
+        "events": {
+            "401704750": {
+                "id": "401704750",
+                "gameDate": "2026-11-22T00:00:00.000+00:00",
+                "score": "118-112",
+                "gameResult": "W",
+                "opponent": {"id": "7", "abbreviation": "DEN"},
+            }
+        },
+        "seasonTypes": [
+            {
+                "categories": [
+                    {
+                        "type": "event",
+                        "events": [
+                            {
+                                "eventId": "401704750",
+                                "stats": [
+                                    "37", "11-20", "55.0", "3-6", "50.0", "6-7", "85.7",
+                                    "9", "10", "1", "2", "1", "3", "31",
+                                ],
+                            }
+                        ],
+                    }
+                ]
+            }
+        ],
+    }
+
+    def side_effect_pre(url, params=None, timeout=10):
+        resp = mocker.MagicMock()
+        resp.status_code = 200
+        if "scoreboard" in url:
+            resp.json.return_value = scoreboard_pre
+        elif "gamelog" in url:
+            resp.json.return_value = gamelog_payload
+        return resp
+
+    mocker.patch("src.live_api_fetcher.requests.get", side_effect=side_effect_pre)
+
+    fetcher = EspnLivePlayerFetcher()
+    player_info = {
+        "athlete_id": "1966",
+        "english_name": "LeBron James",
+        "team_id": "13",
+        "team_abbr": "LAL",
+    }
+
+    # 1. Pre-game fallback with notice_banner
+    pre_data = fetcher.fetch_player_live_or_latest_game(player_info, now_pacific=now_pac)
+    assert pre_data is not None
+    assert pre_data["notice_banner"] == "🕒 今日賽事尚未開打 (7:00 PM PST) • 以下為最近出賽"
+    assert pre_data["game_date"] == "2026-11-22"
+    assert pre_data["score_text"] == "LAL 118 : 112 DEN"
+    assert pre_data["stats"]["PTS"] == "31"
+
+    # 2. No game scheduled today -> gamelog fallback without notice_banner
+    def side_effect_no_game(url, params=None, timeout=10):
+        resp = mocker.MagicMock()
+        resp.status_code = 200
+        if "scoreboard" in url:
+            resp.json.return_value = {"events": []}
+        elif "gamelog" in url:
+            resp.json.return_value = gamelog_payload
+        return resp
+
+    mocker.patch("src.live_api_fetcher.requests.get", side_effect=side_effect_no_game)
+    no_game_data = fetcher.fetch_player_live_or_latest_game(player_info, now_pacific=now_pac)
+    assert no_game_data is not None
+    assert no_game_data["notice_banner"] is None
+    assert no_game_data["game_date"] == "2026-11-22"
+    assert no_game_data["score_text"] == "LAL 118 : 112 DEN"
+    assert no_game_data["stats"]["PTS"] == "31"
+
+
+def test_live_player_handler_no_season_stats_and_last_night_command(mocker, tmp_path):
+    from unittest.mock import MagicMock
+    from linebot.v3.webhooks import MessageEvent
+    from linebot.v3.messaging import Configuration
+    from src.handlers.live_player_handler import LivePlayerHandler
+
+    mocker.patch("src.utils.path_utils.DATA_DIR", str(tmp_path))
+    mocker.patch("src.handlers.live_player_handler.load_config", return_value={"LEAGUE_ID": "nba.l.123"})
+    mocker.patch("src.handlers.live_player_handler.load_league_metadata", return_value={"sport": "nba"})
+
+    event = MagicMock(spec=MessageEvent)
+    event.message = MagicMock()
+    event.reply_token = "test_token"
+    config = MagicMock(spec=Configuration)
+
+    handler = LivePlayerHandler()
+    assert handler.can_handle("#球員昨晚 Stephen Curry") is True
+
+    mock_reply_text = mocker.patch.object(handler, "reply_text")
+    mock_reply_flex = mocker.patch.object(handler, "reply_flex")
+
+    # 1. Player has no active game stats at all this season
+    pac_tz = pytz.timezone("US/Pacific")
+    now_pac = pac_tz.localize(datetime(2026, 11, 24, 20, 0, 0))
+
+    def side_effect_empty(url, params=None, timeout=10):
+        resp = mocker.MagicMock()
+        resp.status_code = 200
+        resp.json.return_value = {"events": {}, "seasonTypes": []}
+        return resp
+
+    mocker.patch("src.live_api_fetcher.requests.get", side_effect=side_effect_empty)
+    mocker.patch.object(
+        handler.fetcher,
+        "search_player",
+        return_value={
+            "athlete_id": "3975",
+            "english_name": "Stephen Curry",
+            "team_id": "9",
+            "team_abbr": "GSW",
+            "jersey_number": "30",
+            "position": "PG",
+        },
+    )
+
+    event.message.text = "#球員 Stephen Curry"
+    handler.execute(event, config)
+    mock_reply_text.assert_called_once_with(
+        event,
+        config,
+        "目前查無 Stephen Curry 的近期出賽數據。",
+    )
+    mock_reply_flex.assert_not_called()
+
+    # 2. '#球員昨晚 <球員姓名>' anchors target date to now_pacific.date() - 1 day
+    mock_reply_text.reset_mock()
+    requested_urls: list[str] = []
+    scoreboard_yesterday = {
+        "events": [
+            {
+                "id": "401704799",
+                "competitions": [
+                    {
+                        "status": {
+                            "period": 4,
+                            "displayClock": "0.0",
+                            "type": {"state": "post", "shortDetail": "Final"},
+                        },
+                        "competitors": [
+                            {"team": {"id": "9", "abbreviation": "GSW"}, "score": "120"},
+                            {"team": {"id": "3", "abbreviation": "NOP"}, "score": "109"},
+                        ],
+                    }
+                ],
+            }
+        ]
+    }
+    summary_yesterday = {
+        "boxscore": {
+            "players": [
+                {
+                    "team": {"id": "9", "abbreviation": "GSW"},
+                    "statistics": [
+                        {
+                            "labels": [
+                                "MIN", "FG", "3PT", "FT", "OREB", "DREB",
+                                "REB", "AST", "STL", "BLK", "TO", "PF", "+/-", "PTS",
+                            ],
+                            "athletes": [
+                                {
+                                    "athlete": {"id": "3975", "displayName": "Stephen Curry"},
+                                    "didNotPlay": False,
+                                    "stats": [
+                                        "34", "13-22", "7-13", "5-5", "1", "5",
+                                        "6", "7", "2", "0", "2", "1", "+14", "38",
+                                    ],
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ]
+        }
+    }
+
+    def side_effect_yesterday(url, params=None, timeout=10):
+        requested_urls.append(url)
+        resp = mocker.MagicMock()
+        resp.status_code = 200
+        if "scoreboard" in url:
+            resp.json.return_value = scoreboard_yesterday
+        elif "summary" in url:
+            resp.json.return_value = summary_yesterday
+        return resp
+
+    mocker.patch("src.live_api_fetcher.requests.get", side_effect=side_effect_yesterday)
+
+    yesterday_data = handler.fetcher.fetch_player_live_or_latest_game(
+        {
+            "athlete_id": "3975",
+            "english_name": "Stephen Curry",
+            "team_id": "9",
+            "team_abbr": "GSW",
+        },
+        prefer_previous_day=True,
+        now_pacific=now_pac,
+    )
+    assert any("dates=20261123" in u for u in requested_urls)
+    assert yesterday_data is not None
+    assert yesterday_data["game_date"] == "2026-11-23"
+    assert yesterday_data["score_text"] == "GSW 120 : 109 NOP"
+    assert yesterday_data["stats"]["3PT"] == "7"
+    assert yesterday_data["stats"]["PTS"] == "38"
+
+    # Also verify LivePlayerHandler.execute with '#球員昨晚 Stephen Curry' passes prefer_previous_day=True
+    spy_fetch = mocker.patch.object(
+        handler.fetcher,
+        "fetch_player_live_or_latest_game",
+        return_value=yesterday_data,
+    )
+    event.message.text = "#球員昨晚 Stephen Curry"
+    handler.execute(event, config)
+    spy_fetch.assert_called_once()
+    assert spy_fetch.call_args.kwargs.get("prefer_previous_day") is True
+    mock_reply_flex.assert_called_once()
+
+
+
+
+
 
 
